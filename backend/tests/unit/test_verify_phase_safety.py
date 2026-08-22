@@ -165,15 +165,21 @@ class TestCappedOptionalStepTimeout:
 
 
 class TestPhase1Dispatch:
-    """Phase 1 extends the gate without weakening Phase 0 (PRD 16)."""
+    """Phase 1 extends the gate without weakening Phase 0 (PRD 16).
 
-    def test_supported_phases_are_zero_and_one(self, verify_phase: ModuleType) -> None:
+    The supported-phase set grows with each implemented phase (Phase 2 added
+    reconciliation); the assertion pins the exact known set so accidental
+    removal of an earlier phase still fails loudly.
+    """
+
+    def test_supported_phases_are_exactly_zero_one_two(self, verify_phase: ModuleType) -> None:
         phases = verify_phase.SUPPORTED_PHASES
-        assert len(phases) == 2 and 0 in phases and 1 in phases
+        assert phases == {0, 1, 2}
 
-    def test_phase_names_cover_both_phases(self, verify_phase: ModuleType) -> None:
+    def test_phase_names_cover_all_phases(self, verify_phase: ModuleType) -> None:
         assert verify_phase.PHASE_NAMES[0] == "Foundation and Frozen Contracts"
         assert verify_phase.PHASE_NAMES[1] == "Synthetic Data, Ground Truth, and Isolation"
+        assert verify_phase.PHASE_NAMES[2] == "Normalization, Reconciliation, and Evidence Graph"
 
     def test_phase1_artifact_uses_phase_name_and_zero_padded_name(
         self, verify_phase: ModuleType, tmp_path: Path

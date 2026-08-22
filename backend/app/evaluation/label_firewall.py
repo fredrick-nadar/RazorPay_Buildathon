@@ -29,6 +29,10 @@ RUNTIME_PY_ROOTS = (
     "backend/app/api",
     "backend/app/domain",
     "backend/app/persistence",
+    "backend/app/importers",
+    "backend/app/reconciliation",
+    "backend/app/graph",
+    "backend/app/runs.py",
 )
 
 LABEL_FIELD_NAMES = (

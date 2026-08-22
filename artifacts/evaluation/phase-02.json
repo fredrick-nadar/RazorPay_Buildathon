@@ -1,0 +1,487 @@
+{
+  "phase": 2,
+  "phase_name": "Normalization, Reconciliation, and Evidence Graph",
+  "status": "PASS",
+  "started_at_utc": "2026-08-22T15:15:34+00:00",
+  "finished_at_utc": "2026-08-22T15:16:15+00:00",
+  "environment": {
+    "python": "Python 3.12.9",
+    "node": "v22.13.1",
+    "npm": "11.1.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "git": "git version 2.53.0.windows.3; HEAD 9bcfc3155e0cea40a5b18045e26690adf93856fe"
+  },
+  "commands": [
+    {
+      "name": "preflight-backend-imports",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -c import fastapi, uvicorn, pydantic_settings, pytest, ruff, mypy, httpx",
+      "status": "PASS",
+      "duration_s": 0.64,
+      "summary": "exit code 0",
+      "gate_blocking": true
+    },
+    {
+      "name": "preflight-frontend-node-modules",
+      "command": "frontend/node_modules + package-lock.json",
+      "status": "PASS",
+      "duration_s": 0.0,
+      "summary": "installed",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-ruff-check",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m ruff check backend",
+      "status": "PASS",
+      "duration_s": 0.09,
+      "summary": "All checks passed!",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-ruff-format",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m ruff format --check backend",
+      "status": "PASS",
+      "duration_s": 0.09,
+      "summary": "57 files already formatted",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-mypy",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m mypy",
+      "status": "PASS",
+      "duration_s": 0.29,
+      "summary": "Success: no issues found in 33 source files",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-pytest",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-0k6n4yeg -p no:cacheprovider",
+      "status": "PASS",
+      "duration_s": 6.61,
+      "summary": "198 passed, 1 warning in 6.14s",
+      "gate_blocking": true
+    },
+    {
+      "name": "frontend-lint",
+      "command": "cmd /c npm --prefix frontend run lint",
+      "status": "PASS",
+      "duration_s": 3.16,
+      "summary": "> eslint .",
+      "gate_blocking": true
+    },
+    {
+      "name": "frontend-typecheck",
+      "command": "cmd /c npm --prefix frontend run typecheck",
+      "status": "PASS",
+      "duration_s": 1.46,
+      "summary": "> tsc --noEmit",
+      "gate_blocking": true
+    },
+    {
+      "name": "frontend-test",
+      "command": "cmd /c npm --prefix frontend run test",
+      "status": "PASS",
+      "duration_s": 1.32,
+      "summary": "   Duration  460ms (transform 188ms, setup 0ms, collect 38ms, tests 4ms, environment 0ms, prepare 225ms)",
+      "gate_blocking": true
+    },
+    {
+      "name": "frontend-build",
+      "command": "cmd /c npm --prefix frontend run build",
+      "status": "PASS",
+      "duration_s": 12.27,
+      "summary": "○  (Static)  prerendered as static content",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-boot-health",
+      "command": "uvicorn boot + GET /api/v1/health,/version",
+      "status": "PASS",
+      "duration_s": 0.65,
+      "summary": "health ok, persistence sqlite ok, api v1",
+      "gate_blocking": true
+    },
+    {
+      "name": "frontend-boot-home",
+      "command": "next start boot + GET /",
+      "status": "PASS",
+      "duration_s": 1.06,
+      "summary": "home page served with ARGUS CONTROL heading",
+      "gate_blocking": true
+    },
+    {
+      "name": "secret-scan",
+      "command": "repository secret scan",
+      "status": "PASS",
+      "duration_s": 0.0,
+      "summary": "no secret-like content found",
+      "gate_blocking": true
+    },
+    {
+      "name": "gitignore-coverage",
+      "command": "check .gitignore patterns",
+      "status": "PASS",
+      "duration_s": 0.0,
+      "summary": "required ignore patterns present",
+      "gate_blocking": true
+    },
+    {
+      "name": "optional-e2e-playwright",
+      "command": "cmd /c npm --prefix frontend run test:e2e",
+      "status": "PASS",
+      "duration_s": 1.85,
+      "summary": "  1 passed (970ms)",
+      "gate_blocking": false
+    },
+    {
+      "name": "dataset-generate-dev",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/generate_dataset.py --profile dev --seed 4104 --output-root D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-o7ur8_8g",
+      "status": "PASS",
+      "duration_s": 0.12,
+      "summary": "generated in 13 ms",
+      "gate_blocking": true
+    },
+    {
+      "name": "dataset-reproducibility-dev",
+      "command": "compare D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-o7ur8_8g\\dev vs D:\\Programming\\RazorPay_Buildathon\\datasets\\dev",
+      "status": "PASS",
+      "duration_s": 0.05,
+      "summary": "byte-identical regeneration of inputs, labels, and manifests",
+      "gate_blocking": true
+    },
+    {
+      "name": "dataset-generate-adversarial",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/generate_dataset.py --profile adversarial --seed 4105 --output-root D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-o7ur8_8g",
+      "status": "PASS",
+      "duration_s": 0.11,
+      "summary": "generated in 8 ms",
+      "gate_blocking": true
+    },
+    {
+      "name": "dataset-reproducibility-adversarial",
+      "command": "compare D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-o7ur8_8g\\adversarial vs D:\\Programming\\RazorPay_Buildathon\\datasets\\adversarial",
+      "status": "PASS",
+      "duration_s": 0.01,
+      "summary": "byte-identical regeneration of inputs, labels, and manifests",
+      "gate_blocking": true
+    },
+    {
+      "name": "check-label-isolation",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/check_label_isolation.py",
+      "status": "PASS",
+      "duration_s": 0.13,
+      "summary": "label firewall holds: runtime code cannot reach ground-truth labels",
+      "gate_blocking": true
+    },
+    {
+      "name": "dataset-tests",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_dataset_generation.py backend/tests/unit/test_dataset_injectors.py backend/tests/unit/test_label_isolation.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-01-rpepce8l -p no:cacheprovider",
+      "status": "PASS",
+      "duration_s": 1.06,
+      "summary": "55 passed in 0.67s",
+      "gate_blocking": true
+    },
+    {
+      "name": "dataset-gate-assertions",
+      "command": "evaluator-side dataset acceptance assertions",
+      "status": "PASS",
+      "duration_s": 0.02,
+      "summary": "dev>=100 eligible; 4 categories; candidate rules; variance equation; referential integrity; manifests hashed; holdout seed separated",
+      "gate_blocking": true
+    },
+    {
+      "name": "unit-tests-migration",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_migration.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-majjeibm\\unit-tests-migration -p no:cacheprovider",
+      "status": "PASS",
+      "duration_s": 0.68,
+      "summary": "6 passed in 0.24s",
+      "gate_blocking": true
+    },
+    {
+      "name": "unit-tests-normalization",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_normalization.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-majjeibm\\unit-tests-normalization -p no:cacheprovider",
+      "status": "PASS",
+      "duration_s": 0.55,
+      "summary": "16 passed in 0.18s",
+      "gate_blocking": true
+    },
+    {
+      "name": "unit-tests-reconciliation",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_reconciliation_matching.py backend/tests/unit/test_reconciliation_cases.py backend/tests/unit/test_reconciliation_totals.py backend/tests/unit/test_reconciliation_graph.py backend/tests/unit/test_reconciliation_idempotency.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-majjeibm\\unit-tests-reconciliation -p no:cacheprovider",
+      "status": "PASS",
+      "duration_s": 2.05,
+      "summary": "43 passed in 1.64s",
+      "gate_blocking": true
+    },
+    {
+      "name": "unit-tests-benchmark-evaluator",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_benchmark_evaluator.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-majjeibm\\unit-tests-benchmark-evaluator -p no:cacheprovider",
+      "status": "PASS",
+      "duration_s": 1.28,
+      "summary": "10 passed in 0.87s",
+      "gate_blocking": true
+    },
+    {
+      "name": "integration-rules-only-run",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/integration/test_rules_only_run.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-majjeibm\\integration-rules-only-run -p no:cacheprovider",
+      "status": "PASS",
+      "duration_s": 1.21,
+      "summary": "6 passed in 0.82s",
+      "gate_blocking": true
+    },
+    {
+      "name": "adversarial-tests",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/adversarial/test_phase2_adversarial.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-majjeibm\\adversarial-tests -p no:cacheprovider",
+      "status": "PASS",
+      "duration_s": 0.65,
+      "summary": "14 passed in 0.26s",
+      "gate_blocking": true
+    },
+    {
+      "name": "benchmark-rules-only-dev",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/run_benchmark.py --dataset datasets/dev --mode rules-only --output artifacts/benchmark/phase-02-dev.json",
+      "status": "PASS",
+      "duration_s": 0.46,
+      "summary": "[run_benchmark] PASS",
+      "gate_blocking": true
+    },
+    {
+      "name": "benchmark-rules-only-adversarial",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/run_benchmark.py --dataset datasets/adversarial --mode rules-only --output artifacts/benchmark/phase-02-adversarial.json",
+      "status": "PASS",
+      "duration_s": 0.42,
+      "summary": "[run_benchmark] PASS",
+      "gate_blocking": true
+    },
+    {
+      "name": "phase2-gate-assertions",
+      "command": "evaluator-side phase 2 acceptance assertions",
+      "status": "PASS",
+      "duration_s": 0.1,
+      "summary": "dev precision 1.0 (explicit denominators); 282 eligible; 12 cases 3x4 matched one-to-one on anchors; idempotent rerun; graph valid; adversarial 64 eligible, 2 quarantined, 1 duplicate, 3 cases",
+      "gate_blocking": true
+    }
+  ],
+  "counts": {
+    "backend_tests_passed": 198,
+    "backend_tests_failed": 0,
+    "backend_tests_skipped": 0,
+    "dataset_tests_passed": 55,
+    "dataset_tests_failed": 0,
+    "dataset_tests_skipped": 0,
+    "datasets": {
+      "dev": {
+        "rows_by_file": {
+          "inputs/bank_entries.csv": 18,
+          "inputs/ledger_entries.csv": 132,
+          "inputs/payments.csv": 96,
+          "inputs/refunds.csv": 18,
+          "inputs/settlements.csv": 18
+        },
+        "eligible_row_count": 282,
+        "quarantine_expected_count": 0,
+        "duplicate_delivery_count": 0,
+        "case_count": 12,
+        "cases_by_category": {
+          "AMBIGUOUS_EVIDENCE": 3,
+          "DUPLICATE_LEDGER_POSTING": 3,
+          "MISSING_REFUND_POSTING": 3,
+          "SETTLEMENT_TIMING_WINDOW_SHIFT": 3
+        },
+        "totals_paise": {
+          "bank_credit": 186087906,
+          "ledger_by_account": {
+            "1100-BANK-OPERATING": 186087906,
+            "2100-PAYMENTS-CLEARING": 194451301
+          },
+          "ledger_total": 380539207,
+          "payment_fee": 4340504,
+          "payment_gross": 217025200,
+          "payment_net": 211903406,
+          "payment_tax": 781290,
+          "refund_total": 25815500,
+          "settlement_net": 186087906
+        },
+        "reproducibility_hash": "85adb7d0b919145616b672a0a267fabd405d88dccc44f774f619ac0555cfea67",
+        "labels_sha256": "1691323a86a7faffb6ff263aa6c850e18914dad8d91246c6fe6407d946bab409",
+        "seed": 4104
+      },
+      "adversarial": {
+        "rows_by_file": {
+          "inputs/bank_entries.csv": 5,
+          "inputs/ledger_entries.csv": 29,
+          "inputs/payments.csv": 20,
+          "inputs/refunds.csv": 7,
+          "inputs/settlements.csv": 6
+        },
+        "eligible_row_count": 64,
+        "quarantine_expected_count": 2,
+        "duplicate_delivery_count": 1,
+        "case_count": 3,
+        "cases_by_category": {
+          "AMBIGUOUS_EVIDENCE": 3
+        },
+        "totals_paise": {
+          "bank_credit": 11916537,
+          "ledger_by_account": {
+            "1100-BANK-OPERATING": 16337579,
+            "2100-PAYMENTS-CLEARING": 16337579
+          },
+          "ledger_total": 32675158,
+          "payment_fee": 400272,
+          "payment_gross": 20013600,
+          "payment_net": 19541279,
+          "payment_tax": 72049,
+          "refund_total": 3203700,
+          "settlement_net": 16337579
+        },
+        "reproducibility_hash": "d5e176ddeb20ff9f508f07667656376ecb22a7f6807932f1523f3b3e85e5d62a",
+        "labels_sha256": "b7b4ee7c73c025a2cf2bf50d3bf23a4ab8f3b67f665976cd699264e6c5736308",
+        "seed": 4105
+      }
+    },
+    "phase2": {
+      "dev": {
+        "eligible_canonical_records": 282,
+        "match_precision": {
+          "denominator": 177,
+          "false_relationship_count": 0,
+          "numerator": 177,
+          "rate": 1.0
+        },
+        "record_match_rate": {
+          "denominator": 282,
+          "numerator": 273,
+          "rate": 0.968085
+        },
+        "case_classification_accuracy": {
+          "denominator": 12,
+          "numerator": 12,
+          "rate": 1.0
+        },
+        "quarantined": {
+          "expected": 0,
+          "match": true,
+          "runtime": 0
+        },
+        "duplicate_deliveries": {
+          "expected": 0,
+          "match": true,
+          "runtime": 0
+        },
+        "throughput": {
+          "eligible_records": 282,
+          "reconcile_seconds": 0.010174,
+          "records_per_second": 5879.59
+        },
+        "graph": {
+          "edge_count": 297,
+          "edges_by_relationship": {
+            "ADJUSTS_SETTLEMENT": 18,
+            "CASE_EVIDENCE": 36,
+            "LEDGER_SOURCE": 129,
+            "MEMBER_OF_SETTLEMENT": 96,
+            "REFUND_OF_PAYMENT": 18
+          },
+          "node_count": 294,
+          "nodes_by_type": {
+            "BANK_ENTRY": 18,
+            "CASE": 12,
+            "LEDGER_ENTRY": 132,
+            "PAYMENT": 96,
+            "REFUND": 18,
+            "SETTLEMENT": 18
+          }
+        },
+        "residual_variance": {
+          "equal": true,
+          "evaluator_ledger_scope_paise": 8363395,
+          "ledger_scope_equal": true,
+          "note": "evaluator derives the ledger-side residual independently from clean_reference; bank-side residual (missing bank evidence) is runtime-computed and cross-checked via case anchors",
+          "runtime_abs_sum_paise": 8363395,
+          "runtime_bank_scope_paise": 0,
+          "runtime_ledger_scope_paise": 8363395
+        },
+        "economic_output_hash": "e120be770bca11ff75dc1c4c85df438de90473c024d5e974414d68d32b8b8053",
+        "economically_identical_rerun": true,
+        "cases_by_category": {
+          "AMBIGUOUS_EVIDENCE": 3,
+          "DUPLICATE_LEDGER_POSTING": 3,
+          "MISSING_REFUND_POSTING": 3,
+          "SETTLEMENT_TIMING_WINDOW_SHIFT": 3
+        }
+      },
+      "adversarial": {
+        "eligible_canonical_records": 64,
+        "match_precision": {
+          "denominator": 42,
+          "false_relationship_count": 0,
+          "numerator": 42,
+          "rate": 1.0
+        },
+        "record_match_rate": {
+          "denominator": 64,
+          "numerator": 60,
+          "rate": 0.9375
+        },
+        "case_classification_accuracy": {
+          "denominator": 3,
+          "numerator": 3,
+          "rate": 1.0
+        },
+        "quarantined": {
+          "expected": 2,
+          "match": true,
+          "runtime": 2
+        },
+        "duplicate_deliveries": {
+          "expected": 1,
+          "match": true,
+          "runtime": 1
+        },
+        "throughput": {
+          "eligible_records": 64,
+          "reconcile_seconds": 0.006419,
+          "records_per_second": 1792.55
+        },
+        "graph": {
+          "edge_count": 69,
+          "edges_by_relationship": {
+            "ADJUSTS_SETTLEMENT": 6,
+            "CASE_EVIDENCE": 12,
+            "LEDGER_SOURCE": 27,
+            "MEMBER_OF_SETTLEMENT": 18,
+            "REFUND_OF_PAYMENT": 6
+          },
+          "node_count": 67,
+          "nodes_by_type": {
+            "BANK_ENTRY": 5,
+            "CASE": 3,
+            "LEDGER_ENTRY": 29,
+            "PAYMENT": 18,
+            "REFUND": 6,
+            "SETTLEMENT": 6
+          }
+        },
+        "residual_variance": {
+          "equal": true,
+          "evaluator_ledger_scope_paise": 0,
+          "ledger_scope_equal": true,
+          "note": "evaluator derives the ledger-side residual independently from clean_reference; bank-side residual (missing bank evidence) is runtime-computed and cross-checked via case anchors",
+          "runtime_abs_sum_paise": 4421042,
+          "runtime_bank_scope_paise": 4421042,
+          "runtime_ledger_scope_paise": 0
+        },
+        "economic_output_hash": "06218d4f30b181f08b56a99df7c3d0359dcb9ebe9cfa7456cdda4ce296b593bd",
+        "economically_identical_rerun": true,
+        "cases_by_category": {
+          "AMBIGUOUS_EVIDENCE": 3
+        }
+      }
+    }
+  },
+  "known_failures": [],
+  "notes": [],
+  "failed_step": null,
+  "next_phase": 3,
+  "reviewer_note": ""
+}

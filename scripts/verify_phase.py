@@ -4,9 +4,12 @@ Usage:
 
     .venv\\Scripts\\python scripts\\verify_phase.py --phase 0
     .venv\\Scripts\\python scripts\\verify_phase.py --phase 1
+    .venv\\Scripts\\python scripts\\verify_phase.py --phase 2
 
 Phase 1 runs the complete, unchanged Phase 0 step list first and then appends
-the dataset steps; Phase 0 can never be weakened by a later phase gate.
+the dataset steps; Phase 2 runs the unchanged Phase 0 and Phase 1 lists and
+appends the reconciliation steps. No later phase gate can weaken an earlier
+one.
 
 Portability contract (Windows cmd/PowerShell, any active code page):
 
@@ -56,11 +59,12 @@ VENV_PYTHON = (
 if not VENV_PYTHON.is_file():
     VENV_PYTHON = Path(sys.executable)
 
-SUPPORTED_PHASES = {0, 1}
+SUPPORTED_PHASES = {0, 1, 2}
 
 PHASE_NAMES = {
     0: "Foundation and Frozen Contracts",
     1: "Synthetic Data, Ground Truth, and Isolation",
+    2: "Normalization, Reconciliation, and Evidence Graph",
 }
 
 DATASET_PROFILES = (
@@ -248,7 +252,9 @@ def begin_run(report: GateReport, artifact_dir: Path = ARTIFACT_DIR) -> Path:
     return path
 
 
-def record_unexpected_failure(report: GateReport, step: str, exc: BaseException) -> None:
+def record_unexpected_failure(
+    report: GateReport, step: str, exc: BaseException
+) -> None:
     report.known_failures.append(
         f"unexpected exception during step '{step}': {type(exc).__name__}: {exc}"
     )
@@ -260,11 +266,15 @@ def finalize_run(
     forced_failure: str | None = None,
 ) -> Path:
     report.finished_at_utc = utc_now()
-    blocking_failures = [s for s in report.steps if s.status == "FAIL" and s.gate_blocking]
+    blocking_failures = [
+        s for s in report.steps if s.status == "FAIL" and s.gate_blocking
+    ]
     for step in report.steps:
         if step.status == "FAIL" and not step.gate_blocking:
             report.known_failures.append(f"non-blocking failure: {step.name}")
-    report.status = "FAIL" if (forced_failure is not None or blocking_failures) else "PASS"
+    report.status = (
+        "FAIL" if (forced_failure is not None or blocking_failures) else "PASS"
+    )
     path = write_artifact(report, artifact_dir)
     if forced_failure is not None:
         # Annotate the failed step directly in the artifact.
@@ -316,7 +326,12 @@ def run_command(
     except subprocess.TimeoutExpired:
         duration = round(time.perf_counter() - started, 2)
         return StepResult(
-            name, display, "FAIL", duration, f"timed out after {timeout_s}s", gate_blocking
+            name,
+            display,
+            "FAIL",
+            duration,
+            f"timed out after {timeout_s}s",
+            gate_blocking,
         )
     except OSError as exc:
         # Missing binary, bad PATH, unwritable cwd: a step failure, not a crash.
@@ -405,7 +420,9 @@ def free_port() -> int:
 
 
 def http_get(url: str, timeout_s: float) -> tuple[int, str]:
-    request = urllib.request.Request(url, headers={"User-Agent": "argus-verify-phase/0"})
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "argus-verify-phase/0"}
+    )
     with urllib.request.urlopen(request, timeout=timeout_s) as response:
         body = response.read().decode("utf-8", errors="replace")
         return response.status, body
@@ -571,10 +588,14 @@ def scan_for_secrets(report: GateReport) -> StepResult:
                 stripped = line.strip()
                 if stripped and not stripped.startswith("#") and "=" in stripped:
                     if stripped.split("=", 1)[1].strip():
-                        findings.append(f".env.example has a non-empty value: {relative}")
+                        findings.append(
+                            f".env.example has a non-empty value: {relative}"
+                        )
 
     status = "PASS" if not findings else "FAIL"
-    summary = "no secret-like content found" if not findings else "; ".join(findings[:5])
+    summary = (
+        "no secret-like content found" if not findings else "; ".join(findings[:5])
+    )
     return StepResult("secret-scan", "repository secret scan", status, 0.0, summary)
 
 
@@ -583,13 +604,19 @@ def check_gitignore_coverage(report: GateReport) -> StepResult:
     gitignore = REPO_ROOT / ".gitignore"
     if not gitignore.is_file():
         return StepResult(
-            "gitignore-coverage", "check .gitignore patterns", "FAIL", 0.0, ".gitignore missing"
+            "gitignore-coverage",
+            "check .gitignore patterns",
+            "FAIL",
+            0.0,
+            ".gitignore missing",
         )
     text = gitignore.read_text(encoding="utf-8")
     missing = [p for p in REQUIRED_GITIGNORE_PATTERNS if p not in text]
     status = "PASS" if not missing else "FAIL"
     summary = (
-        "required ignore patterns present" if not missing else f"missing patterns: {missing}"
+        "required ignore patterns present"
+        if not missing
+        else f"missing patterns: {missing}"
     )
     return StepResult(
         "gitignore-coverage", "check .gitignore patterns", status, 0.0, summary
@@ -779,14 +806,22 @@ def collect_environment(report: GateReport) -> None:
                 timeout=30,
                 check=False,
             )
-            return (completed.stdout or completed.stderr or "").strip().splitlines()[-1][:100]
+            return (
+                (completed.stdout or completed.stderr or "")
+                .strip()
+                .splitlines()[-1][:100]
+            )
         except (OSError, subprocess.SubprocessError):
             return "unavailable"
 
-    node_cmd = ["cmd", "/c", "node", "--version"] if IS_WINDOWS else ["node", "--version"]
+    node_cmd = (
+        ["cmd", "/c", "node", "--version"] if IS_WINDOWS else ["node", "--version"]
+    )
     git_cmd = find_git()
     if git_cmd is None:
-        git_detail = "unavailable (not on PATH and not at the standard install location)"
+        git_detail = (
+            "unavailable (not on PATH and not at the standard install location)"
+        )
     else:
         version = probe([git_cmd, "--version"])
         head = probe([git_cmd, "-C", str(REPO_ROOT), "rev-parse", "HEAD"])
@@ -811,8 +846,10 @@ def run_gate(report: GateReport) -> None:
 
     if not run_phase0_steps(report):
         return
-    if report.phase == 1:
+    if report.phase >= 1:
         run_phase1_steps(report)
+    if report.phase == 2:
+        run_phase2_steps(report)
 
 
 def run_phase0_steps(report: GateReport) -> bool:
@@ -852,7 +889,11 @@ def run_phase0_steps(report: GateReport) -> bool:
 
         frontend_steps: list[tuple[str, list[str], float]] = [
             ("frontend-lint", npm_args("--prefix", "frontend", "run", "lint"), 300),
-            ("frontend-typecheck", npm_args("--prefix", "frontend", "run", "typecheck"), 300),
+            (
+                "frontend-typecheck",
+                npm_args("--prefix", "frontend", "run", "typecheck"),
+                300,
+            ),
             ("frontend-test", npm_args("--prefix", "frontend", "run", "test"), 300),
             ("frontend-build", npm_args("--prefix", "frontend", "run", "build"), 600),
         ]
@@ -911,7 +952,9 @@ def compare_directory_tree(name: str, generated: Path, committed: Path) -> StepR
         for relative in sorted(gen_files - committed_files):
             problems.append(f"extra in regenerated output: {relative}")
         for relative in sorted(gen_files & committed_files):
-            if (generated / relative).read_bytes() != (committed / relative).read_bytes():
+            if (generated / relative).read_bytes() != (
+                committed / relative
+            ).read_bytes():
                 problems.append(f"bytes differ: {relative}")
     duration = round(time.perf_counter() - started, 2)
     status = "PASS" if not problems else "FAIL"
@@ -920,7 +963,9 @@ def compare_directory_tree(name: str, generated: Path, committed: Path) -> StepR
         if not problems
         else "; ".join(problems[:5])
     )
-    return StepResult(name, f"compare {generated} vs {committed}", status, duration, summary)
+    return StepResult(
+        name, f"compare {generated} vs {committed}", status, duration, summary
+    )
 
 
 def load_backend_evaluation() -> None:
@@ -949,11 +994,15 @@ def collect_phase1_metrics_and_violations() -> tuple[list[str], dict[str, object
             ct.clean_structure_violations,
         ):
             violations.extend(f"{profile}: {problem}" for problem in checker(ds))
-        violations.extend(f"{profile}: {problem}" for problem in ct.root_manifest_violations(root))
+        violations.extend(
+            f"{profile}: {problem}" for problem in ct.root_manifest_violations(root)
+        )
         violations.extend(
             f"{profile}: {problem}" for problem in ct.labels_manifest_violations(root)
         )
-        labels = json.loads((root / "labels" / "labels.json").read_text(encoding="utf-8"))
+        labels = json.loads(
+            (root / "labels" / "labels.json").read_text(encoding="utf-8")
+        )
         labels_manifest = json.loads(
             (root / "labels" / "manifest.json").read_text(encoding="utf-8")
         )
@@ -961,7 +1010,8 @@ def collect_phase1_metrics_and_violations() -> tuple[list[str], dict[str, object
         seeds_in_use.add(int(root_manifest["seed"]))
         dataset_metrics[profile] = {
             "rows_by_file": {
-                relative: info["rows"] for relative, info in root_manifest["files"].items()
+                relative: info["rows"]
+                for relative, info in root_manifest["files"].items()
             },
             "eligible_row_count": labels_manifest["eligible_row_count"],
             "quarantine_expected_count": labels_manifest["quarantine_expected_count"],
@@ -995,7 +1045,9 @@ def collect_phase1_metrics_and_violations() -> tuple[list[str], dict[str, object
         holdout_spec = json.loads(holdout_spec_path.read_text(encoding="utf-8"))
         holdout_seed = holdout_spec.get("seed")
         if not isinstance(holdout_seed, int) or holdout_seed in seeds_in_use:
-            violations.append("holdout: seed must exist and differ from dev/adversarial")
+            violations.append(
+                "holdout: seed must exist and differ from dev/adversarial"
+            )
     return violations, {"datasets": dataset_metrics}
 
 
@@ -1058,7 +1110,9 @@ def parse_dataset_pytest_summary(step: StepResult, report: GateReport) -> None:
 
 def run_phase1_steps(report: GateReport) -> None:
     """Phase 1 blocking steps, appended after the unchanged Phase 0 list."""
-    scratch = Path(tempfile.mkdtemp(prefix="verify-phase-01-datasets-", dir=str(TMP_DIR)))
+    scratch = Path(
+        tempfile.mkdtemp(prefix="verify-phase-01-datasets-", dir=str(TMP_DIR))
+    )
     basetemp = new_basetemp(1)
     emit(f"[verify_phase] dataset scratch: {scratch}")
     try:
@@ -1127,9 +1181,263 @@ def run_phase1_steps(report: GateReport) -> None:
         shutil.rmtree(basetemp, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------------
+# Phase 2 steps (PRD 16: Normalization, Reconciliation, Evidence Graph).
+# Explicit test file paths only: no wildcard expansion, which cmd.exe does
+# not perform. Migration tests are their own blocking step because
+# test_migration.py is not matched by the reconciliation file set.
+# ---------------------------------------------------------------------------
+
+
+def phase2_pytest_paths(group: str) -> list[str]:
+    groups: dict[str, list[str]] = {
+        "migration": ["backend/tests/unit/test_migration.py"],
+        "normalization": ["backend/tests/unit/test_normalization.py"],
+        "reconciliation": [
+            "backend/tests/unit/test_reconciliation_matching.py",
+            "backend/tests/unit/test_reconciliation_cases.py",
+            "backend/tests/unit/test_reconciliation_totals.py",
+            "backend/tests/unit/test_reconciliation_graph.py",
+            "backend/tests/unit/test_reconciliation_idempotency.py",
+        ],
+        "benchmark-evaluator": ["backend/tests/unit/test_benchmark_evaluator.py"],
+        "integration": ["backend/tests/integration/test_rules_only_run.py"],
+        "adversarial": ["backend/tests/adversarial/test_phase2_adversarial.py"],
+    }
+    return groups[group]
+
+
+def phase2_pytest_step(
+    report: GateReport, name: str, group: str, basetemp: Path, timeout: int = 300
+) -> StepResult:
+    args = [
+        str(VENV_PYTHON),
+        "-m",
+        "pytest",
+        *phase2_pytest_paths(group),
+        "-q",
+        "--basetemp",
+        str(basetemp / name),
+        "-p",
+        "no:cacheprovider",
+    ]
+    step = run_command(name, args, REPO_ROOT, timeout)
+    report.steps.append(step)
+    emit(
+        f"[verify_phase] {step.status}: {step.name} ({step.duration_s}s) {step.summary}"
+    )
+    return step
+
+
+def collect_phase2_metrics_and_violations() -> tuple[list[str], dict[str, object]]:
+    """Evaluator-side acceptance assertions over the benchmark reports."""
+    violations: list[str] = []
+    metrics: dict[str, object] = {}
+    expected = {
+        "dev": {
+            "eligible": 282,
+            "cases": 12,
+            "quarantine": 0,
+            "duplicates": 0,
+            "categories": {
+                "DUPLICATE_LEDGER_POSTING": 3,
+                "MISSING_REFUND_POSTING": 3,
+                "SETTLEMENT_TIMING_WINDOW_SHIFT": 3,
+                "AMBIGUOUS_EVIDENCE": 3,
+            },
+        },
+        "adversarial": {
+            "eligible": 64,
+            "cases": 3,
+            "quarantine": 2,
+            "duplicates": 1,
+            "categories": {"AMBIGUOUS_EVIDENCE": 3},
+        },
+    }
+    for profile, wants in expected.items():
+        report_path = REPO_ROOT / "artifacts" / "benchmark" / f"phase-02-{profile}.json"
+        if not report_path.is_file():
+            violations.append(f"{profile}: benchmark report missing at {report_path}")
+            continue
+        benchmark = json.loads(report_path.read_text(encoding="utf-8"))
+        evaluation = benchmark.get("evaluation", {})
+        counts = evaluation.get("counts", {})
+        metrics[profile] = {
+            "eligible_canonical_records": counts.get("eligible_canonical_records"),
+            "match_precision": evaluation.get("metrics", {}).get("match_precision"),
+            "record_match_rate": evaluation.get("metrics", {}).get("record_match_rate"),
+            "case_classification_accuracy": evaluation.get("metrics", {}).get(
+                "case_classification_accuracy"
+            ),
+            "quarantined": counts.get("quarantined"),
+            "duplicate_deliveries": counts.get("duplicate_deliveries"),
+            "throughput": evaluation.get("throughput"),
+            "graph": evaluation.get("graph", {}).get("counts"),
+            "residual_variance": evaluation.get("residual_variance"),
+            "economic_output_hash": benchmark.get("idempotency", {}).get(
+                "first_economic_output_hash"
+            ),
+            "economically_identical_rerun": benchmark.get("idempotency", {}).get(
+                "economically_identical"
+            ),
+        }
+        precision = evaluation.get("metrics", {}).get("match_precision", {})
+        if precision.get("rate") != 1.0 or precision.get("numerator") != precision.get(
+            "denominator"
+        ):
+            violations.append(f"{profile}: match precision is not 1.0")
+        if counts.get("eligible_canonical_records") != wants["eligible"]:
+            violations.append(
+                f"{profile}: eligible canonical records "
+                f"{counts.get('eligible_canonical_records')} != {wants['eligible']}"
+            )
+        accuracy = evaluation.get("metrics", {}).get("case_classification_accuracy", {})
+        if (
+            accuracy.get("numerator") != wants["cases"]
+            or accuracy.get("denominator") != wants["cases"]
+        ):
+            violations.append(
+                f"{profile}: case accuracy is not {wants['cases']}/{wants['cases']}"
+            )
+        if not counts.get("quarantined", {}).get("match"):
+            violations.append(f"{profile}: quarantine count mismatch")
+        if counts.get("quarantined", {}).get("expected") != wants["quarantine"]:
+            violations.append(
+                f"{profile}: expected quarantine != {wants['quarantine']}"
+            )
+        if not counts.get("duplicate_deliveries", {}).get("match"):
+            violations.append(f"{profile}: duplicate delivery count mismatch")
+        if (
+            counts.get("duplicate_deliveries", {}).get("expected")
+            != wants["duplicates"]
+        ):
+            violations.append(
+                f"{profile}: expected duplicates != {wants['duplicates']}"
+            )
+        if evaluation.get("case_comparison", {}).get("false_positive_cases"):
+            violations.append(f"{profile}: false-positive runtime cases present")
+        if evaluation.get("case_comparison", {}).get("missed_labels"):
+            violations.append(f"{profile}: labelled cases missed")
+        if not benchmark.get("idempotency", {}).get("economically_identical"):
+            violations.append(f"{profile}: rerun economic hash differs")
+        if not evaluation.get("graph", {}).get("referentially_valid"):
+            violations.append(f"{profile}: graph contains unresolvable references")
+        if not counts.get("row_accounting_identity_holds"):
+            violations.append(f"{profile}: row accounting identity failed")
+        if not evaluation.get("totals_comparison", {}).get("equal"):
+            violations.append(f"{profile}: control totals differ from the manifest")
+        if not evaluation.get("residual_variance", {}).get("equal"):
+            violations.append(f"{profile}: ledger-scoped residual variance differs")
+        runtime_path = report_path.with_name(report_path.name + ".runtime.json")
+        if runtime_path.is_file():
+            runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+            if runtime.get("unaccounted_record_keys"):
+                violations.append(
+                    f"{profile}: accepted records vanished from accounting"
+                )
+            if runtime.get("match_invariant_violations"):
+                violations.append(f"{profile}: match invariant violations present")
+            metrics[profile]["cases_by_category"] = {
+                category: count
+                for category, count in sorted(
+                    (runtime.get("cases_by_category") or {}).items()
+                )
+            }
+            by_category = runtime.get("cases_by_category") or {}
+            if by_category != wants["categories"]:
+                violations.append(
+                    f"{profile}: case categories {by_category} != {wants['categories']}"
+                )
+        else:
+            violations.append(f"{profile}: runtime output file missing")
+    return violations, {"phase2": metrics}
+
+
+def phase2_gate_assertions(report: GateReport) -> StepResult:
+    set_current_step("phase2-gate-assertions")
+    started = time.perf_counter()
+    try:
+        violations, metrics = collect_phase2_metrics_and_violations()
+    except Exception as exc:  # noqa: BLE001 - evaluator loading failure is a step FAIL
+        duration = round(time.perf_counter() - started, 2)
+        return StepResult(
+            "phase2-gate-assertions",
+            "evaluator-side phase 2 acceptance assertions",
+            "FAIL",
+            duration,
+            f"{type(exc).__name__}: {exc}",
+        )
+    report.counts.update(metrics)
+    duration = round(time.perf_counter() - started, 2)
+    status = "PASS" if not violations else "FAIL"
+    summary = (
+        "dev precision 1.0 (explicit denominators); 282 eligible; 12 cases 3x4 "
+        "matched one-to-one on anchors; idempotent rerun; graph valid; "
+        "adversarial 64 eligible, 2 quarantined, 1 duplicate, 3 cases"
+        if not violations
+        else "; ".join(violations[:5])
+    )
+    return StepResult(
+        "phase2-gate-assertions",
+        "evaluator-side phase 2 acceptance assertions",
+        status,
+        duration,
+        summary,
+    )
+
+
+def run_phase2_steps(report: GateReport) -> None:
+    """Phase 2 blocking steps, appended after the unchanged Phase 0/1 lists."""
+    basetemp = new_basetemp(2)
+    emit(f"[verify_phase] phase 2 pytest basetemp: {basetemp}")
+    try:
+        for name, group in (
+            ("unit-tests-migration", "migration"),
+            ("unit-tests-normalization", "normalization"),
+            ("unit-tests-reconciliation", "reconciliation"),
+            ("unit-tests-benchmark-evaluator", "benchmark-evaluator"),
+            ("integration-rules-only-run", "integration"),
+            ("adversarial-tests", "adversarial"),
+        ):
+            phase2_pytest_step(report, name, group, basetemp)
+
+        for profile in ("dev", "adversarial"):
+            benchmark = run_command(
+                f"benchmark-rules-only-{profile}",
+                [
+                    str(VENV_PYTHON),
+                    "scripts/run_benchmark.py",
+                    "--dataset",
+                    f"datasets/{profile}",
+                    "--mode",
+                    "rules-only",
+                    "--output",
+                    f"artifacts/benchmark/phase-02-{profile}.json",
+                ],
+                REPO_ROOT,
+                600,
+            )
+            report.steps.append(benchmark)
+            emit(
+                f"[verify_phase] {benchmark.status}: {benchmark.name} "
+                f"({benchmark.duration_s}s) {benchmark.summary}"
+            )
+
+        assertions = phase2_gate_assertions(report)
+        report.steps.append(assertions)
+        emit(
+            f"[verify_phase] {assertions.status}: {assertions.name} "
+            f"({assertions.duration_s}s) {assertions.summary}"
+        )
+    finally:
+        shutil.rmtree(basetemp, ignore_errors=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="ARGUS CONTROL phase acceptance gate")
-    parser.add_argument("--phase", type=int, required=True, choices=sorted(SUPPORTED_PHASES))
+    parser.add_argument(
+        "--phase", type=int, required=True, choices=sorted(SUPPORTED_PHASES)
+    )
     args = parser.parse_args()
 
     configure_console_output()

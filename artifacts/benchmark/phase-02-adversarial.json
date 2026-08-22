@@ -1,0 +1,152 @@
+{
+  "benchmark_version": "argus-benchmark-rules-only-v1",
+  "dataset": "datasets/adversarial",
+  "evaluation": {
+    "case_comparison": {
+      "false_positive_cases": [],
+      "matched_pairs": [
+        {
+          "category": "AMBIGUOUS_EVIDENCE",
+          "label_case_id": "case-adversarial-0001",
+          "runtime_case_id": "case-38653c3abc78"
+        },
+        {
+          "category": "AMBIGUOUS_EVIDENCE",
+          "label_case_id": "case-adversarial-0002",
+          "runtime_case_id": "case-2b182da32f80"
+        },
+        {
+          "category": "AMBIGUOUS_EVIDENCE",
+          "label_case_id": "case-adversarial-0003",
+          "runtime_case_id": "case-1297deaa29f5"
+        }
+      ],
+      "missed_labels": []
+    },
+    "counts": {
+      "computed_eligible_records": 64,
+      "duplicate_deliveries": {
+        "expected": 1,
+        "match": true,
+        "runtime": 1
+      },
+      "eligible_canonical_records": 64,
+      "eligible_counts_match": true,
+      "quarantined": {
+        "expected": 2,
+        "match": true,
+        "runtime": 2
+      },
+      "raw_row_count": 67,
+      "row_accounting_identity_holds": true,
+      "runtime_accepted_matches_eligible": true,
+      "runtime_accepted_records": 64
+    },
+    "dataset": "adversarial",
+    "economic_output_hash": "06218d4f30b181f08b56a99df7c3d0359dcb9ebe9cfa7456cdda4ce296b593bd",
+    "false_relationships": [],
+    "graph": {
+      "counts": {
+        "edge_count": 69,
+        "edges_by_relationship": {
+          "ADJUSTS_SETTLEMENT": 6,
+          "CASE_EVIDENCE": 12,
+          "LEDGER_SOURCE": 27,
+          "MEMBER_OF_SETTLEMENT": 18,
+          "REFUND_OF_PAYMENT": 6
+        },
+        "node_count": 67,
+        "nodes_by_type": {
+          "BANK_ENTRY": 5,
+          "CASE": 3,
+          "LEDGER_ENTRY": 29,
+          "PAYMENT": 18,
+          "REFUND": 6,
+          "SETTLEMENT": 6
+        }
+      },
+      "referentially_valid": true
+    },
+    "labels_loaded_after_runtime_output": true,
+    "metrics": {
+      "case_classification_accuracy": {
+        "denominator": 3,
+        "numerator": 3,
+        "rate": 1.0
+      },
+      "match_precision": {
+        "denominator": 42,
+        "false_relationship_count": 0,
+        "numerator": 42,
+        "rate": 1.0
+      },
+      "record_match_rate": {
+        "denominator": 64,
+        "numerator": 60,
+        "rate": 0.9375
+      }
+    },
+    "profile": "adversarial",
+    "residual_variance": {
+      "equal": true,
+      "evaluator_ledger_scope_paise": 0,
+      "ledger_scope_equal": true,
+      "note": "evaluator derives the ledger-side residual independently from clean_reference; bank-side residual (missing bank evidence) is runtime-computed and cross-checked via case anchors",
+      "runtime_abs_sum_paise": 4421042,
+      "runtime_bank_scope_paise": 4421042,
+      "runtime_ledger_scope_paise": 0
+    },
+    "throughput": {
+      "eligible_records": 64,
+      "reconcile_seconds": 0.006419,
+      "records_per_second": 1792.55
+    },
+    "totals_comparison": {
+      "equal": true,
+      "labels_manifest_totals": {
+        "bank_credit": 11916537,
+        "ledger_by_account": {
+          "1100-BANK-OPERATING": 16337579,
+          "2100-PAYMENTS-CLEARING": 16337579
+        },
+        "ledger_total": 32675158,
+        "payment_fee": 400272,
+        "payment_gross": 20013600,
+        "payment_net": 19541279,
+        "payment_tax": 72049,
+        "refund_total": 3203700,
+        "settlement_net": 16337579
+      },
+      "runtime_totals": {
+        "affected_amount_paise": 11934774,
+        "bank_credit_paise": 11916537,
+        "expected_net_settlement_paise": 16337579,
+        "ledger_by_account_paise": {
+          "1100-BANK-OPERATING": 16337579,
+          "2100-PAYMENTS-CLEARING": 16337579
+        },
+        "ledger_total_paise": 32675158,
+        "payment_fee_paise": 400272,
+        "payment_gross_paise": 20013600,
+        "payment_net_paise": 19541279,
+        "payment_tax_paise": 72049,
+        "refund_total_paise": 3203700,
+        "residual_abs_variance_paise": 4421042,
+        "scoped_ledger_accounts": [
+          "1100-BANK-OPERATING",
+          "2100-PAYMENTS-CLEARING"
+        ],
+        "settlement_net_paise": 16337579
+      }
+    },
+    "unaccounted_record_keys": []
+  },
+  "idempotency": {
+    "economically_identical": true,
+    "first_economic_output_hash": "06218d4f30b181f08b56a99df7c3d0359dcb9ebe9cfa7456cdda4ce296b593bd",
+    "second_economic_output_hash": "06218d4f30b181f08b56a99df7c3d0359dcb9ebe9cfa7456cdda4ce296b593bd"
+  },
+  "mode": "rules-only",
+  "problems": [],
+  "runtime_output_path": "D:\\Programming\\RazorPay_Buildathon\\artifacts\\benchmark\\phase-02-adversarial.json.runtime.json"
+}

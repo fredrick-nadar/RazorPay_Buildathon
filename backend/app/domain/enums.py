@@ -132,6 +132,34 @@ class EdgeConfidence(StrEnum):
     REJECTED = "REJECTED"
 
 
+class QuarantineReason(StrEnum):
+    """Row-level quarantine reasons during normalization (PRD 8.1).
+
+    A quarantined row is never dropped: it stays stored, counted, and
+    traceable to its physical source row.
+    """
+
+    UNSUPPORTED_CURRENCY = "UNSUPPORTED_CURRENCY"
+    INVALID_TIMESTAMP = "INVALID_TIMESTAMP"
+    INVALID_DATE = "INVALID_DATE"
+    INVALID_MONEY = "INVALID_MONEY"
+    MISSING_REQUIRED_FIELD = "MISSING_REQUIRED_FIELD"
+    UNKNOWN_STATUS = "UNKNOWN_STATUS"
+    INVALID_ROW_SHAPE = "INVALID_ROW_SHAPE"
+    DUPLICATE_ID_CONFLICT = "DUPLICATE_ID_CONFLICT"
+
+
+class RelationshipType(StrEnum):
+    """Deterministic match relationship types (PRD 6.7, 8.2)."""
+
+    REFUND_OF_PAYMENT = "REFUND_OF_PAYMENT"
+    MEMBER_OF_SETTLEMENT = "MEMBER_OF_SETTLEMENT"
+    ADJUSTS_SETTLEMENT = "ADJUSTS_SETTLEMENT"
+    SETTLEMENT_BANK_CREDIT = "SETTLEMENT_BANK_CREDIT"
+    LEDGER_SOURCE = "LEDGER_SOURCE"
+    CASE_EVIDENCE = "CASE_EVIDENCE"
+
+
 class NodeType(StrEnum):
     """Evidence graph node types (PRD 11)."""
 
@@ -142,6 +170,7 @@ class NodeType(StrEnum):
     LEDGER_ENTRY = "LEDGER_ENTRY"
     FEE = "FEE"
     TAX = "TAX"
+    CASE = "CASE"
     CORRECTION_PROPOSAL = "CORRECTION_PROPOSAL"
 
 
@@ -161,9 +190,11 @@ ALL_ENUMS: dict[str, type[StrEnum]] = {
     "HypothesisStatus": HypothesisStatus,
     "VerifierStatus": VerifierStatus,
     "ReasonCode": ReasonCode,
+    "QuarantineReason": QuarantineReason,
     "ApprovalDecision": ApprovalDecision,
     "CorrectionStatus": CorrectionStatus,
     "EdgeConfidence": EdgeConfidence,
+    "RelationshipType": RelationshipType,
     "NodeType": NodeType,
     "Currency": Currency,
 }

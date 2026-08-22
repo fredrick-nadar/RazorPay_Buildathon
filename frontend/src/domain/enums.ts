@@ -98,6 +98,19 @@ export const ReasonCode = frozen({
 } as const);
 export type ReasonCode = (typeof ReasonCode)[keyof typeof ReasonCode];
 
+export const QuarantineReason = frozen({
+  UNSUPPORTED_CURRENCY: "UNSUPPORTED_CURRENCY",
+  INVALID_TIMESTAMP: "INVALID_TIMESTAMP",
+  INVALID_DATE: "INVALID_DATE",
+  INVALID_MONEY: "INVALID_MONEY",
+  MISSING_REQUIRED_FIELD: "MISSING_REQUIRED_FIELD",
+  UNKNOWN_STATUS: "UNKNOWN_STATUS",
+  INVALID_ROW_SHAPE: "INVALID_ROW_SHAPE",
+  DUPLICATE_ID_CONFLICT: "DUPLICATE_ID_CONFLICT",
+} as const);
+export type QuarantineReason =
+  (typeof QuarantineReason)[keyof typeof QuarantineReason];
+
 export const ApprovalDecision = frozen({
   PENDING: "PENDING",
   APPROVED: "APPROVED",
@@ -124,6 +137,17 @@ export const EdgeConfidence = frozen({
 export type EdgeConfidence =
   (typeof EdgeConfidence)[keyof typeof EdgeConfidence];
 
+export const RelationshipType = frozen({
+  REFUND_OF_PAYMENT: "REFUND_OF_PAYMENT",
+  MEMBER_OF_SETTLEMENT: "MEMBER_OF_SETTLEMENT",
+  ADJUSTS_SETTLEMENT: "ADJUSTS_SETTLEMENT",
+  SETTLEMENT_BANK_CREDIT: "SETTLEMENT_BANK_CREDIT",
+  LEDGER_SOURCE: "LEDGER_SOURCE",
+  CASE_EVIDENCE: "CASE_EVIDENCE",
+} as const);
+export type RelationshipType =
+  (typeof RelationshipType)[keyof typeof RelationshipType];
+
 export const NodeType = frozen({
   PAYMENT: "PAYMENT",
   REFUND: "REFUND",
@@ -132,6 +156,7 @@ export const NodeType = frozen({
   LEDGER_ENTRY: "LEDGER_ENTRY",
   FEE: "FEE",
   TAX: "TAX",
+  CASE: "CASE",
   CORRECTION_PROPOSAL: "CORRECTION_PROPOSAL",
 } as const);
 export type NodeType = (typeof NodeType)[keyof typeof NodeType];
@@ -153,9 +178,11 @@ export const ENUMS: Readonly<Record<string, EnumObject>> = Object.freeze({
   HypothesisStatus,
   VerifierStatus,
   ReasonCode,
+  QuarantineReason,
   ApprovalDecision,
   CorrectionStatus,
   EdgeConfidence,
+  RelationshipType,
   NodeType,
   Currency,
 });

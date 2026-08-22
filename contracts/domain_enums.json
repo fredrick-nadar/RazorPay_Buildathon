@@ -69,6 +69,16 @@
       "UNSUPPORTED_CATEGORY",
       "INVALID_PROPOSED_DELTA"
     ],
+    "QuarantineReason": [
+      "UNSUPPORTED_CURRENCY",
+      "INVALID_TIMESTAMP",
+      "INVALID_DATE",
+      "INVALID_MONEY",
+      "MISSING_REQUIRED_FIELD",
+      "UNKNOWN_STATUS",
+      "INVALID_ROW_SHAPE",
+      "DUPLICATE_ID_CONFLICT"
+    ],
     "ApprovalDecision": [
       "PENDING",
       "APPROVED",
@@ -86,6 +96,14 @@
       "HYPOTHESIS",
       "REJECTED"
     ],
+    "RelationshipType": [
+      "REFUND_OF_PAYMENT",
+      "MEMBER_OF_SETTLEMENT",
+      "ADJUSTS_SETTLEMENT",
+      "SETTLEMENT_BANK_CREDIT",
+      "LEDGER_SOURCE",
+      "CASE_EVIDENCE"
+    ],
     "NodeType": [
       "PAYMENT",
       "REFUND",
@@ -94,6 +112,7 @@
       "LEDGER_ENTRY",
       "FEE",
       "TAX",
+      "CASE",
       "CORRECTION_PROPOSAL"
     ],
     "Currency": [

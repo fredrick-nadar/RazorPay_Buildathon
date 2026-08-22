@@ -1,0 +1,197 @@
+{
+  "benchmark_version": "argus-benchmark-rules-only-v1",
+  "dataset": "datasets/dev",
+  "evaluation": {
+    "case_comparison": {
+      "false_positive_cases": [],
+      "matched_pairs": [
+        {
+          "category": "DUPLICATE_LEDGER_POSTING",
+          "label_case_id": "case-dev-0001",
+          "runtime_case_id": "case-70823c2b850b"
+        },
+        {
+          "category": "DUPLICATE_LEDGER_POSTING",
+          "label_case_id": "case-dev-0002",
+          "runtime_case_id": "case-2264d8bb9f5c"
+        },
+        {
+          "category": "DUPLICATE_LEDGER_POSTING",
+          "label_case_id": "case-dev-0003",
+          "runtime_case_id": "case-0452b5ad6245"
+        },
+        {
+          "category": "MISSING_REFUND_POSTING",
+          "label_case_id": "case-dev-0004",
+          "runtime_case_id": "case-b89e91d2b0dc"
+        },
+        {
+          "category": "MISSING_REFUND_POSTING",
+          "label_case_id": "case-dev-0005",
+          "runtime_case_id": "case-0cd9817955c0"
+        },
+        {
+          "category": "MISSING_REFUND_POSTING",
+          "label_case_id": "case-dev-0006",
+          "runtime_case_id": "case-84ae81b6cadd"
+        },
+        {
+          "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+          "label_case_id": "case-dev-0007",
+          "runtime_case_id": "case-cf75e1adbf12"
+        },
+        {
+          "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+          "label_case_id": "case-dev-0008",
+          "runtime_case_id": "case-cc8b8467db8a"
+        },
+        {
+          "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+          "label_case_id": "case-dev-0009",
+          "runtime_case_id": "case-02f20591738a"
+        },
+        {
+          "category": "AMBIGUOUS_EVIDENCE",
+          "label_case_id": "case-dev-0010",
+          "runtime_case_id": "case-c9aa7339d62d"
+        },
+        {
+          "category": "AMBIGUOUS_EVIDENCE",
+          "label_case_id": "case-dev-0011",
+          "runtime_case_id": "case-a7b551d1b818"
+        },
+        {
+          "category": "AMBIGUOUS_EVIDENCE",
+          "label_case_id": "case-dev-0012",
+          "runtime_case_id": "case-492f56f74715"
+        }
+      ],
+      "missed_labels": []
+    },
+    "counts": {
+      "computed_eligible_records": 282,
+      "duplicate_deliveries": {
+        "expected": 0,
+        "match": true,
+        "runtime": 0
+      },
+      "eligible_canonical_records": 282,
+      "eligible_counts_match": true,
+      "quarantined": {
+        "expected": 0,
+        "match": true,
+        "runtime": 0
+      },
+      "raw_row_count": 282,
+      "row_accounting_identity_holds": true,
+      "runtime_accepted_matches_eligible": true,
+      "runtime_accepted_records": 282
+    },
+    "dataset": "dev",
+    "economic_output_hash": "e120be770bca11ff75dc1c4c85df438de90473c024d5e974414d68d32b8b8053",
+    "false_relationships": [],
+    "graph": {
+      "counts": {
+        "edge_count": 297,
+        "edges_by_relationship": {
+          "ADJUSTS_SETTLEMENT": 18,
+          "CASE_EVIDENCE": 36,
+          "LEDGER_SOURCE": 129,
+          "MEMBER_OF_SETTLEMENT": 96,
+          "REFUND_OF_PAYMENT": 18
+        },
+        "node_count": 294,
+        "nodes_by_type": {
+          "BANK_ENTRY": 18,
+          "CASE": 12,
+          "LEDGER_ENTRY": 132,
+          "PAYMENT": 96,
+          "REFUND": 18,
+          "SETTLEMENT": 18
+        }
+      },
+      "referentially_valid": true
+    },
+    "labels_loaded_after_runtime_output": true,
+    "metrics": {
+      "case_classification_accuracy": {
+        "denominator": 12,
+        "numerator": 12,
+        "rate": 1.0
+      },
+      "match_precision": {
+        "denominator": 177,
+        "false_relationship_count": 0,
+        "numerator": 177,
+        "rate": 1.0
+      },
+      "record_match_rate": {
+        "denominator": 282,
+        "numerator": 273,
+        "rate": 0.968085
+      }
+    },
+    "profile": "dev",
+    "residual_variance": {
+      "equal": true,
+      "evaluator_ledger_scope_paise": 8363395,
+      "ledger_scope_equal": true,
+      "note": "evaluator derives the ledger-side residual independently from clean_reference; bank-side residual (missing bank evidence) is runtime-computed and cross-checked via case anchors",
+      "runtime_abs_sum_paise": 8363395,
+      "runtime_bank_scope_paise": 0,
+      "runtime_ledger_scope_paise": 8363395
+    },
+    "throughput": {
+      "eligible_records": 282,
+      "reconcile_seconds": 0.010174,
+      "records_per_second": 5879.59
+    },
+    "totals_comparison": {
+      "equal": true,
+      "labels_manifest_totals": {
+        "bank_credit": 186087906,
+        "ledger_by_account": {
+          "1100-BANK-OPERATING": 186087906,
+          "2100-PAYMENTS-CLEARING": 194451301
+        },
+        "ledger_total": 380539207,
+        "payment_fee": 4340504,
+        "payment_gross": 217025200,
+        "payment_net": 211903406,
+        "payment_tax": 781290,
+        "refund_total": 25815500,
+        "settlement_net": 186087906
+      },
+      "runtime_totals": {
+        "affected_amount_paise": 60595194,
+        "bank_credit_paise": 186087906,
+        "expected_net_settlement_paise": 186087906,
+        "ledger_by_account_paise": {
+          "1100-BANK-OPERATING": 186087906,
+          "2100-PAYMENTS-CLEARING": 194451301
+        },
+        "ledger_total_paise": 380539207,
+        "payment_fee_paise": 4340504,
+        "payment_gross_paise": 217025200,
+        "payment_net_paise": 211903406,
+        "payment_tax_paise": 781290,
+        "refund_total_paise": 25815500,
+        "residual_abs_variance_paise": 8363395,
+        "scoped_ledger_accounts": [
+          "1100-BANK-OPERATING",
+          "2100-PAYMENTS-CLEARING"
+        ],
+        "settlement_net_paise": 186087906
+      }
+    },
+    "unaccounted_record_keys": []
+  },
+  "idempotency": {
+    "economically_identical": true,
+    "first_economic_output_hash": "e120be770bca11ff75dc1c4c85df438de90473c024d5e974414d68d32b8b8053",
+    "second_economic_output_hash": "e120be770bca11ff75dc1c4c85df438de90473c024d5e974414d68d32b8b8053"
+  },
+  "mode": "rules-only",
+  "problems": [],
+  "runtime_output_path": "D:\\Programming\\RazorPay_Buildathon\\artifacts\\benchmark\\phase-02-dev.json.runtime.json"
+}
