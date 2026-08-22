@@ -3,6 +3,10 @@
 Usage:
 
     .venv\\Scripts\\python scripts\\verify_phase.py --phase 0
+    .venv\\Scripts\\python scripts\\verify_phase.py --phase 1
+
+Phase 1 runs the complete, unchanged Phase 0 step list first and then appends
+the dataset steps; Phase 0 can never be weakened by a later phase gate.
 
 Portability contract (Windows cmd/PowerShell, any active code page):
 
@@ -52,7 +56,18 @@ VENV_PYTHON = (
 if not VENV_PYTHON.is_file():
     VENV_PYTHON = Path(sys.executable)
 
-SUPPORTED_PHASES = {0}
+SUPPORTED_PHASES = {0, 1}
+
+PHASE_NAMES = {
+    0: "Foundation and Frozen Contracts",
+    1: "Synthetic Data, Ground Truth, and Isolation",
+}
+
+DATASET_PROFILES = (
+    # (profile name, PRD-documented seed) for the Phase 1 dataset steps.
+    ("dev", 4104),
+    ("adversarial", 4105),
+)
 
 SKIP_DIRS = {
     ".git",
@@ -195,7 +210,7 @@ def write_artifact(report: GateReport, artifact_dir: Path) -> Path:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     artifact = {
         "phase": report.phase,
-        "phase_name": "Foundation and Frozen Contracts",
+        "phase_name": PHASE_NAMES.get(report.phase, f"Phase {report.phase}"),
         "status": report.status,
         "started_at_utc": report.started_at_utc,
         "finished_at_utc": report.finished_at_utc,
@@ -794,8 +809,16 @@ def run_gate(report: GateReport) -> None:
     collect_environment(report)
     emit(f"[verify_phase] phase {report.phase} gate started {report.started_at_utc}")
 
-    if not check_dependencies(report):
+    if not run_phase0_steps(report):
         return
+    if report.phase == 1:
+        run_phase1_steps(report)
+
+
+def run_phase0_steps(report: GateReport) -> bool:
+    """The complete Phase 0 step list, unchanged; False when dependencies are missing."""
+    if not check_dependencies(report):
+        return False
 
     # Unique per-run basetemp: created here, removed (best-effort, this exact
     # path only) no matter how the remaining steps end.
@@ -854,6 +877,253 @@ def run_gate(report: GateReport) -> None:
 
         run_optional_e2e(report)
     finally:
+        shutil.rmtree(basetemp, ignore_errors=True)
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 dataset steps (PRD 16: Synthetic Data, Ground Truth, and Isolation).
+# ---------------------------------------------------------------------------
+
+
+def compare_directory_tree(name: str, generated: Path, committed: Path) -> StepResult:
+    """Byte-compare a freshly generated dataset against the committed copy."""
+    set_current_step(name)
+    started = time.perf_counter()
+    problems: list[str] = []
+    if not committed.is_dir():
+        problems.append(f"missing committed dataset at {committed}")
+    elif not generated.is_dir():
+        problems.append(f"generation produced no dataset at {generated}")
+    else:
+        gen_files = {
+            path.relative_to(generated).as_posix()
+            for path in generated.rglob("*")
+            if path.is_file()
+        }
+        committed_files = {
+            path.relative_to(committed).as_posix()
+            for path in committed.rglob("*")
+            if path.is_file()
+        }
+        for relative in sorted(committed_files - gen_files):
+            problems.append(f"missing in regenerated output: {relative}")
+        for relative in sorted(gen_files - committed_files):
+            problems.append(f"extra in regenerated output: {relative}")
+        for relative in sorted(gen_files & committed_files):
+            if (generated / relative).read_bytes() != (committed / relative).read_bytes():
+                problems.append(f"bytes differ: {relative}")
+    duration = round(time.perf_counter() - started, 2)
+    status = "PASS" if not problems else "FAIL"
+    summary = (
+        "byte-identical regeneration of inputs, labels, and manifests"
+        if not problems
+        else "; ".join(problems[:5])
+    )
+    return StepResult(name, f"compare {generated} vs {committed}", status, duration, summary)
+
+
+def load_backend_evaluation() -> None:
+    """Make the evaluator-only backend package importable for assertions."""
+    if str(BACKEND_DIR) not in sys.path:
+        sys.path.insert(0, str(BACKEND_DIR))
+
+
+def collect_phase1_metrics_and_violations() -> tuple[list[str], dict[str, object]]:
+    """Evaluator-side acceptance assertions over the committed datasets."""
+    load_backend_evaluation()
+    from app.evaluation import control_totals as ct
+
+    violations: list[str] = []
+    dataset_metrics: dict[str, object] = {}
+    seeds_in_use: set[int] = set()
+    for profile, _seed in DATASET_PROFILES:
+        root = REPO_ROOT / "datasets" / profile
+        ds = ct.parse_dataset(root)
+        for checker in (
+            ct.settlement_conservation_violations,
+            ct.corpus_identity_violations,
+            ct.candidate_count_violations,
+            ct.referential_integrity_violations,
+            ct.variance_equation_violations,
+            ct.clean_structure_violations,
+        ):
+            violations.extend(f"{profile}: {problem}" for problem in checker(ds))
+        violations.extend(f"{profile}: {problem}" for problem in ct.root_manifest_violations(root))
+        violations.extend(
+            f"{profile}: {problem}" for problem in ct.labels_manifest_violations(root)
+        )
+        labels = json.loads((root / "labels" / "labels.json").read_text(encoding="utf-8"))
+        labels_manifest = json.loads(
+            (root / "labels" / "manifest.json").read_text(encoding="utf-8")
+        )
+        root_manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+        seeds_in_use.add(int(root_manifest["seed"]))
+        dataset_metrics[profile] = {
+            "rows_by_file": {
+                relative: info["rows"] for relative, info in root_manifest["files"].items()
+            },
+            "eligible_row_count": labels_manifest["eligible_row_count"],
+            "quarantine_expected_count": labels_manifest["quarantine_expected_count"],
+            "duplicate_delivery_count": labels_manifest["duplicate_delivery_count"],
+            "case_count": labels_manifest["case_count"],
+            "cases_by_category": labels["summary"]["by_category"],
+            "totals_paise": labels_manifest["totals_paise"],
+            "reproducibility_hash": root_manifest["reproducibility_hash"],
+            "labels_sha256": labels_manifest["labels_sha256"],
+            "seed": root_manifest["seed"],
+        }
+
+    dev_metrics = dataset_metrics["dev"]
+    if isinstance(dev_metrics, dict) and dev_metrics["eligible_row_count"] < 100:
+        violations.append("dev: fewer than 100 eligible records")
+    required_categories = {
+        "DUPLICATE_LEDGER_POSTING",
+        "MISSING_REFUND_POSTING",
+        "SETTLEMENT_TIMING_WINDOW_SHIFT",
+        "AMBIGUOUS_EVIDENCE",
+    }
+    if isinstance(dev_metrics, dict):
+        missing = required_categories - set(dev_metrics["cases_by_category"])
+        if missing:
+            violations.append(f"dev: missing exception categories {sorted(missing)}")
+
+    holdout_spec_path = REPO_ROOT / "datasets" / "holdout" / "spec.json"
+    if not holdout_spec_path.is_file():
+        violations.append("holdout: spec.json missing")
+    else:
+        holdout_spec = json.loads(holdout_spec_path.read_text(encoding="utf-8"))
+        holdout_seed = holdout_spec.get("seed")
+        if not isinstance(holdout_seed, int) or holdout_seed in seeds_in_use:
+            violations.append("holdout: seed must exist and differ from dev/adversarial")
+    return violations, {"datasets": dataset_metrics}
+
+
+def dataset_gate_assertions(report: GateReport) -> StepResult:
+    set_current_step("dataset-gate-assertions")
+    started = time.perf_counter()
+    try:
+        violations, metrics = collect_phase1_metrics_and_violations()
+    except Exception as exc:  # noqa: BLE001 - evaluator loading failure is a step FAIL
+        duration = round(time.perf_counter() - started, 2)
+        return StepResult(
+            "dataset-gate-assertions",
+            "evaluator-side dataset acceptance assertions",
+            "FAIL",
+            duration,
+            f"{type(exc).__name__}: {exc}",
+        )
+    report.counts.update(metrics)
+    duration = round(time.perf_counter() - started, 2)
+    status = "PASS" if not violations else "FAIL"
+    summary = (
+        "dev>=100 eligible; 4 categories; candidate rules; variance equation; "
+        "referential integrity; manifests hashed; holdout seed separated"
+        if not violations
+        else "; ".join(violations[:5])
+    )
+    return StepResult(
+        "dataset-gate-assertions",
+        "evaluator-side dataset acceptance assertions",
+        status,
+        duration,
+        summary,
+    )
+
+
+def dataset_pytest_args(basetemp: Path) -> list[str]:
+    return [
+        str(VENV_PYTHON),
+        "-m",
+        "pytest",
+        "backend/tests/unit/test_dataset_generation.py",
+        "backend/tests/unit/test_dataset_injectors.py",
+        "backend/tests/unit/test_label_isolation.py",
+        "-q",
+        "--basetemp",
+        str(basetemp),
+        "-p",
+        "no:cacheprovider",
+    ]
+
+
+def parse_dataset_pytest_summary(step: StepResult, report: GateReport) -> None:
+    passed = re.search(r"(\d+) passed", step.summary)
+    failed = re.search(r"(\d+) failed", step.summary)
+    skipped = re.search(r"(\d+) skipped", step.summary)
+    report.counts["dataset_tests_passed"] = int(passed.group(1)) if passed else None
+    report.counts["dataset_tests_failed"] = int(failed.group(1)) if failed else 0
+    report.counts["dataset_tests_skipped"] = int(skipped.group(1)) if skipped else 0
+
+
+def run_phase1_steps(report: GateReport) -> None:
+    """Phase 1 blocking steps, appended after the unchanged Phase 0 list."""
+    scratch = Path(tempfile.mkdtemp(prefix="verify-phase-01-datasets-", dir=str(TMP_DIR)))
+    basetemp = new_basetemp(1)
+    emit(f"[verify_phase] dataset scratch: {scratch}")
+    try:
+        for profile, seed in DATASET_PROFILES:
+            generate = run_command(
+                f"dataset-generate-{profile}",
+                [
+                    str(VENV_PYTHON),
+                    "scripts/generate_dataset.py",
+                    "--profile",
+                    profile,
+                    "--seed",
+                    str(seed),
+                    "--output-root",
+                    str(scratch),
+                ],
+                REPO_ROOT,
+                180,
+            )
+            report.steps.append(generate)
+            emit(
+                f"[verify_phase] {generate.status}: {generate.name} "
+                f"({generate.duration_s}s) {generate.summary}"
+            )
+            compare = compare_directory_tree(
+                f"dataset-reproducibility-{profile}",
+                scratch / profile,
+                REPO_ROOT / "datasets" / profile,
+            )
+            report.steps.append(compare)
+            emit(
+                f"[verify_phase] {compare.status}: {compare.name} "
+                f"({compare.duration_s}s) {compare.summary}"
+            )
+
+        isolation = run_command(
+            "check-label-isolation",
+            [str(VENV_PYTHON), "scripts/check_label_isolation.py"],
+            REPO_ROOT,
+            120,
+        )
+        report.steps.append(isolation)
+        emit(
+            f"[verify_phase] {isolation.status}: {isolation.name} "
+            f"({isolation.duration_s}s) {isolation.summary}"
+        )
+
+        dataset_tests = run_command(
+            "dataset-tests", dataset_pytest_args(basetemp), REPO_ROOT, 300
+        )
+        report.steps.append(dataset_tests)
+        parse_dataset_pytest_summary(dataset_tests, report)
+        emit(
+            f"[verify_phase] {dataset_tests.status}: {dataset_tests.name} "
+            f"({dataset_tests.duration_s}s) {dataset_tests.summary}"
+        )
+
+        assertions = dataset_gate_assertions(report)
+        report.steps.append(assertions)
+        emit(
+            f"[verify_phase] {assertions.status}: {assertions.name} "
+            f"({assertions.duration_s}s) {assertions.summary}"
+        )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
         shutil.rmtree(basetemp, ignore_errors=True)
 
 

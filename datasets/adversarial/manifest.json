@@ -1,0 +1,83 @@
+{
+  "dataset_version": "argus-datasets-v1",
+  "files": {
+    "inputs/bank_entries.csv": {
+      "columns": [
+        "bank_entry_id",
+        "posted_at_utc",
+        "value_date",
+        "currency",
+        "signed_amount",
+        "narration",
+        "utr",
+        "account_fingerprint"
+      ],
+      "rows": 5,
+      "sha256": "45632adba3f329e3bf0f110ecd208b645360f47f9a33a24e03cda126f5e557c3"
+    },
+    "inputs/ledger_entries.csv": {
+      "columns": [
+        "ledger_entry_id",
+        "account_code",
+        "accounting_date",
+        "currency",
+        "signed_amount",
+        "source_reference",
+        "source_type",
+        "description",
+        "entry_origin"
+      ],
+      "rows": 29,
+      "sha256": "d14ffd2669901b1f1432e66a46ba3b4b7fafe6a1dc0aae67982553eab3e41fc0"
+    },
+    "inputs/payments.csv": {
+      "columns": [
+        "payment_id",
+        "order_id",
+        "status",
+        "currency",
+        "gross_amount",
+        "fee_amount",
+        "tax_amount",
+        "captured_at_utc",
+        "settlement_id"
+      ],
+      "rows": 20,
+      "sha256": "764f3b9508daabd703c7c140db0dd395c8d8b03559be1cb4dc74a3437189d64e"
+    },
+    "inputs/refunds.csv": {
+      "columns": [
+        "refund_id",
+        "payment_id",
+        "status",
+        "currency",
+        "refund_amount",
+        "created_at_utc",
+        "settlement_id"
+      ],
+      "rows": 7,
+      "sha256": "ceb878e3f58ee2bc5a8d759961708b17a334901f2af9cd5e00244ac96addd101"
+    },
+    "inputs/settlements.csv": {
+      "columns": [
+        "settlement_id",
+        "settled_at_utc",
+        "window_start_utc",
+        "window_end_utc",
+        "status",
+        "currency",
+        "gross_credit",
+        "fee_amount",
+        "tax_amount",
+        "adjustment_amount",
+        "net_amount",
+        "utr"
+      ],
+      "rows": 6,
+      "sha256": "289b655342fb438a7a89418d3e6223c2df8498cdaca271cc54ac3d85c85a3c1d"
+    }
+  },
+  "profile": "adversarial",
+  "reproducibility_hash": "d5e176ddeb20ff9f508f07667656376ecb22a7f6807932f1523f3b3e85e5d62a",
+  "seed": 4105
+}

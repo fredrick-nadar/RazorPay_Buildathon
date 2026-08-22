@@ -1,0 +1,276 @@
+{
+  "phase": 1,
+  "phase_name": "Synthetic Data, Ground Truth, and Isolation",
+  "status": "PASS",
+  "started_at_utc": "2026-08-22T12:54:28+00:00",
+  "finished_at_utc": "2026-08-22T12:55:01+00:00",
+  "environment": {
+    "python": "Python 3.12.9",
+    "node": "v22.13.1",
+    "npm": "11.1.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "git": "git version 2.53.0.windows.3; HEAD 037979b9beb6cf41654e844cb50ba2a77a99abd7"
+  },
+  "commands": [
+    {
+      "name": "preflight-backend-imports",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -c import fastapi, uvicorn, pydantic_settings, pytest, ruff, mypy, httpx",
+      "status": "PASS",
+      "duration_s": 0.63,
+      "summary": "exit code 0",
+      "gate_blocking": true
+    },
+    {
+      "name": "preflight-frontend-node-modules",
+      "command": "frontend/node_modules + package-lock.json",
+      "status": "PASS",
+      "duration_s": 0.0,
+      "summary": "installed",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-ruff-check",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m ruff check backend",
+      "status": "PASS",
+      "duration_s": 0.11,
+      "summary": "All checks passed!",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-ruff-format",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m ruff format --check backend",
+      "status": "PASS",
+      "duration_s": 0.09,
+      "summary": "29 files already formatted",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-mypy",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m mypy",
+      "status": "PASS",
+      "duration_s": 0.29,
+      "summary": "Success: no issues found in 18 source files",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-pytest",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-01-vy3yc9ze -p no:cacheprovider",
+      "status": "PASS",
+      "duration_s": 3.93,
+      "summary": "123 passed, 1 warning in 3.46s",
+      "gate_blocking": true
+    },
+    {
+      "name": "frontend-lint",
+      "command": "cmd /c npm --prefix frontend run lint",
+      "status": "PASS",
+      "duration_s": 3.17,
+      "summary": "> eslint .",
+      "gate_blocking": true
+    },
+    {
+      "name": "frontend-typecheck",
+      "command": "cmd /c npm --prefix frontend run typecheck",
+      "status": "PASS",
+      "duration_s": 1.49,
+      "summary": "> tsc --noEmit",
+      "gate_blocking": true
+    },
+    {
+      "name": "frontend-test",
+      "command": "cmd /c npm --prefix frontend run test",
+      "status": "PASS",
+      "duration_s": 1.4,
+      "summary": "   Duration  501ms (transform 49ms, setup 0ms, collect 40ms, tests 4ms, environment 0ms, prepare 263ms)",
+      "gate_blocking": true
+    },
+    {
+      "name": "frontend-build",
+      "command": "cmd /c npm --prefix frontend run build",
+      "status": "PASS",
+      "duration_s": 12.56,
+      "summary": "○  (Static)  prerendered as static content",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-boot-health",
+      "command": "uvicorn boot + GET /api/v1/health,/version",
+      "status": "PASS",
+      "duration_s": 0.61,
+      "summary": "health ok, persistence sqlite ok, api v1",
+      "gate_blocking": true
+    },
+    {
+      "name": "frontend-boot-home",
+      "command": "next start boot + GET /",
+      "status": "PASS",
+      "duration_s": 1.09,
+      "summary": "home page served with ARGUS CONTROL heading",
+      "gate_blocking": true
+    },
+    {
+      "name": "secret-scan",
+      "command": "repository secret scan",
+      "status": "PASS",
+      "duration_s": 0.0,
+      "summary": "no secret-like content found",
+      "gate_blocking": true
+    },
+    {
+      "name": "gitignore-coverage",
+      "command": "check .gitignore patterns",
+      "status": "PASS",
+      "duration_s": 0.0,
+      "summary": "required ignore patterns present",
+      "gate_blocking": true
+    },
+    {
+      "name": "optional-e2e-playwright",
+      "command": "cmd /c npm --prefix frontend run test:e2e",
+      "status": "PASS",
+      "duration_s": 4.66,
+      "summary": "  1 passed (3.8s)",
+      "gate_blocking": false
+    },
+    {
+      "name": "dataset-generate-dev",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/generate_dataset.py --profile dev --seed 4104 --output-root D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-qkuacx7s",
+      "status": "PASS",
+      "duration_s": 0.12,
+      "summary": "generated in 12 ms",
+      "gate_blocking": true
+    },
+    {
+      "name": "dataset-reproducibility-dev",
+      "command": "compare D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-qkuacx7s\\dev vs D:\\Programming\\RazorPay_Buildathon\\datasets\\dev",
+      "status": "PASS",
+      "duration_s": 0.04,
+      "summary": "byte-identical regeneration of inputs, labels, and manifests",
+      "gate_blocking": true
+    },
+    {
+      "name": "dataset-generate-adversarial",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/generate_dataset.py --profile adversarial --seed 4105 --output-root D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-qkuacx7s",
+      "status": "PASS",
+      "duration_s": 0.11,
+      "summary": "generated in 8 ms",
+      "gate_blocking": true
+    },
+    {
+      "name": "dataset-reproducibility-adversarial",
+      "command": "compare D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-qkuacx7s\\adversarial vs D:\\Programming\\RazorPay_Buildathon\\datasets\\adversarial",
+      "status": "PASS",
+      "duration_s": 0.01,
+      "summary": "byte-identical regeneration of inputs, labels, and manifests",
+      "gate_blocking": true
+    },
+    {
+      "name": "check-label-isolation",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/check_label_isolation.py",
+      "status": "PASS",
+      "duration_s": 0.07,
+      "summary": "label firewall holds: runtime code cannot reach ground-truth labels",
+      "gate_blocking": true
+    },
+    {
+      "name": "dataset-tests",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_dataset_generation.py backend/tests/unit/test_dataset_injectors.py backend/tests/unit/test_label_isolation.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-01-ykfksodl -p no:cacheprovider",
+      "status": "PASS",
+      "duration_s": 0.83,
+      "summary": "55 passed in 0.42s",
+      "gate_blocking": true
+    },
+    {
+      "name": "dataset-gate-assertions",
+      "command": "evaluator-side dataset acceptance assertions",
+      "status": "PASS",
+      "duration_s": 0.02,
+      "summary": "dev>=100 eligible; 4 categories; candidate rules; variance equation; referential integrity; manifests hashed; holdout seed separated",
+      "gate_blocking": true
+    }
+  ],
+  "counts": {
+    "backend_tests_passed": 123,
+    "backend_tests_failed": 0,
+    "backend_tests_skipped": 0,
+    "dataset_tests_passed": 55,
+    "dataset_tests_failed": 0,
+    "dataset_tests_skipped": 0,
+    "datasets": {
+      "dev": {
+        "rows_by_file": {
+          "inputs/bank_entries.csv": 18,
+          "inputs/ledger_entries.csv": 132,
+          "inputs/payments.csv": 96,
+          "inputs/refunds.csv": 18,
+          "inputs/settlements.csv": 18
+        },
+        "eligible_row_count": 282,
+        "quarantine_expected_count": 0,
+        "duplicate_delivery_count": 0,
+        "case_count": 12,
+        "cases_by_category": {
+          "AMBIGUOUS_EVIDENCE": 3,
+          "DUPLICATE_LEDGER_POSTING": 3,
+          "MISSING_REFUND_POSTING": 3,
+          "SETTLEMENT_TIMING_WINDOW_SHIFT": 3
+        },
+        "totals_paise": {
+          "bank_credit": 186087906,
+          "ledger_by_account": {
+            "1100-BANK-OPERATING": 186087906,
+            "2100-PAYMENTS-CLEARING": 194451301
+          },
+          "ledger_total": 380539207,
+          "payment_fee": 4340504,
+          "payment_gross": 217025200,
+          "payment_net": 211903406,
+          "payment_tax": 781290,
+          "refund_total": 25815500,
+          "settlement_net": 186087906
+        },
+        "reproducibility_hash": "85adb7d0b919145616b672a0a267fabd405d88dccc44f774f619ac0555cfea67",
+        "labels_sha256": "1691323a86a7faffb6ff263aa6c850e18914dad8d91246c6fe6407d946bab409",
+        "seed": 4104
+      },
+      "adversarial": {
+        "rows_by_file": {
+          "inputs/bank_entries.csv": 5,
+          "inputs/ledger_entries.csv": 29,
+          "inputs/payments.csv": 20,
+          "inputs/refunds.csv": 7,
+          "inputs/settlements.csv": 6
+        },
+        "eligible_row_count": 64,
+        "quarantine_expected_count": 2,
+        "duplicate_delivery_count": 1,
+        "case_count": 3,
+        "cases_by_category": {
+          "AMBIGUOUS_EVIDENCE": 3
+        },
+        "totals_paise": {
+          "bank_credit": 11916537,
+          "ledger_by_account": {
+            "1100-BANK-OPERATING": 16337579,
+            "2100-PAYMENTS-CLEARING": 16337579
+          },
+          "ledger_total": 32675158,
+          "payment_fee": 400272,
+          "payment_gross": 20013600,
+          "payment_net": 19541279,
+          "payment_tax": 72049,
+          "refund_total": 3203700,
+          "settlement_net": 16337579
+        },
+        "reproducibility_hash": "d5e176ddeb20ff9f508f07667656376ecb22a7f6807932f1523f3b3e85e5d62a",
+        "labels_sha256": "b7b4ee7c73c025a2cf2bf50d3bf23a4ab8f3b67f665976cd699264e6c5736308",
+        "seed": 4105
+      }
+    }
+  },
+  "known_failures": [],
+  "notes": [],
+  "failed_step": null,
+  "next_phase": 2,
+  "reviewer_note": ""
+}

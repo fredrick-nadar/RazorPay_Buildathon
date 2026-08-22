@@ -1,0 +1,183 @@
+{
+  "cases": [
+    {
+      "authoring_notes": "the same payment is posted twice with compatible amounts; removing one duplicate restores the expected balance",
+      "case_id": "case-dev-0001",
+      "expected_category": "DUPLICATE_LEDGER_POSTING",
+      "expected_delta_paise": -2116738,
+      "expected_evidence_ids": [
+        "pay_Y2TUIDO4ZU",
+        "led_YPS1iYNU2M",
+        "led_4w1kiapkxU"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the same payment is posted twice with compatible amounts; removing one duplicate restores the expected balance",
+      "case_id": "case-dev-0002",
+      "expected_category": "DUPLICATE_LEDGER_POSTING",
+      "expected_delta_paise": -37298,
+      "expected_evidence_ids": [
+        "pay_j7hQ4O1y2I",
+        "led_VFDMRZFHhC",
+        "led_vkQBgAMUFF"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the same payment is posted twice with compatible amounts; removing one duplicate restores the expected balance",
+      "case_id": "case-dev-0003",
+      "expected_category": "DUPLICATE_LEDGER_POSTING",
+      "expected_delta_paise": -3050859,
+      "expected_evidence_ids": [
+        "pay_PRhZw9heV0",
+        "led_KI3VeejjfR",
+        "led_DOJo4Dvojp"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "a processed refund linked to a valid payment has no ledger posting inside the posting window; adding the signed entry restores the expected balance",
+      "case_id": "case-dev-0004",
+      "expected_category": "MISSING_REFUND_POSTING",
+      "expected_delta_paise": -597000,
+      "expected_evidence_ids": [
+        "rfd_jeKazOQa8N",
+        "pay_RRMuNQ2vNc",
+        "stl_dRUFhICCfF"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "a processed refund linked to a valid payment has no ledger posting inside the posting window; adding the signed entry restores the expected balance",
+      "case_id": "case-dev-0005",
+      "expected_category": "MISSING_REFUND_POSTING",
+      "expected_delta_paise": -1887000,
+      "expected_evidence_ids": [
+        "rfd_v56makFHy2",
+        "pay_mZUtW73x32",
+        "stl_dRUFhICCfF"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "a processed refund linked to a valid payment has no ledger posting inside the posting window; adding the signed entry restores the expected balance",
+      "case_id": "case-dev-0006",
+      "expected_category": "MISSING_REFUND_POSTING",
+      "expected_delta_paise": -674500,
+      "expected_evidence_ids": [
+        "rfd_EutSAbcX9B",
+        "pay_tuS4WyVZuv",
+        "stl_Aa3XljHPc9"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the settlement is credited inside its window but booked into the adjacent accounting period; period attribution only, total economic value unchanged (zero-delta verified explanation)",
+      "case_id": "case-dev-0007",
+      "expected_category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "expected_delta_paise": 0,
+      "expected_evidence_ids": [
+        "stl_PyGbQDZBr2",
+        "led_vStvfzI8ZI"
+      ],
+      "expected_outcome": "VERIFIED_RESOLVED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the settlement is credited inside its window but booked into the adjacent accounting period; period attribution only, total economic value unchanged (zero-delta verified explanation)",
+      "case_id": "case-dev-0008",
+      "expected_category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "expected_delta_paise": 0,
+      "expected_evidence_ids": [
+        "stl_PjWc6gEbKw",
+        "led_5Xb9nZX3sW"
+      ],
+      "expected_outcome": "VERIFIED_RESOLVED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the settlement is credited inside its window but booked into the adjacent accounting period; period attribution only, total economic value unchanged (zero-delta verified explanation)",
+      "case_id": "case-dev-0009",
+      "expected_category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "expected_delta_paise": 0,
+      "expected_evidence_ids": [
+        "stl_yyKeWz8j57",
+        "led_l5oR5BguC7"
+      ],
+      "expected_outcome": "VERIFIED_RESOLVED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "twin settlements with identical net in adjacent windows; bank credits carry no UTR and the twin credit is posted exactly on the shared window boundary; the missing UTR is the absent discriminator",
+      "case_id": "case-dev-0010",
+      "expected_category": "AMBIGUOUS_EVIDENCE",
+      "expected_delta_paise": null,
+      "expected_evidence_ids": [
+        "stl_yBLDcczHwC",
+        "stl_zfw6B0SGzS",
+        "bnk_8eWR1QisHm",
+        "bnk_gP0RGyf6ym"
+      ],
+      "expected_outcome": "UNRESOLVED",
+      "must_escalate": true
+    },
+    {
+      "authoring_notes": "twin settlements with identical net in adjacent windows; bank credits carry no UTR and the twin credit is posted exactly on the shared window boundary; the missing UTR is the absent discriminator",
+      "case_id": "case-dev-0011",
+      "expected_category": "AMBIGUOUS_EVIDENCE",
+      "expected_delta_paise": null,
+      "expected_evidence_ids": [
+        "stl_kBRsEk0DX3",
+        "stl_iXvcO1KBhB",
+        "bnk_QuxIHCizUb",
+        "bnk_spL8oBoU4U"
+      ],
+      "expected_outcome": "UNRESOLVED",
+      "must_escalate": true
+    },
+    {
+      "authoring_notes": "twin settlements with identical net in adjacent windows; bank credits carry no UTR and the twin credit is posted exactly on the shared window boundary; the missing UTR is the absent discriminator",
+      "case_id": "case-dev-0012",
+      "expected_category": "AMBIGUOUS_EVIDENCE",
+      "expected_delta_paise": null,
+      "expected_evidence_ids": [
+        "stl_twFxIlUeyu",
+        "stl_yf6yuFEd7j",
+        "bnk_lw1FQe4O1Q",
+        "bnk_hNZK7iiUx5"
+      ],
+      "expected_outcome": "UNRESOLVED",
+      "must_escalate": true
+    }
+  ],
+  "clean_reference": {
+    "derivation": "ledger state immediately before exception injection",
+    "ledger_by_account_paise": {
+      "1100-BANK-OPERATING": 186087906,
+      "2100-PAYMENTS-CLEARING": 186087906
+    },
+    "ledger_total_paise": 372175812
+  },
+  "dataset_version": "argus-datasets-v1",
+  "label_schema_version": "argus-labels-v1",
+  "profile": "dev",
+  "row_expectations": [],
+  "seed": 4104,
+  "summary": {
+    "by_category": {
+      "AMBIGUOUS_EVIDENCE": 3,
+      "DUPLICATE_LEDGER_POSTING": 3,
+      "MISSING_REFUND_POSTING": 3,
+      "SETTLEMENT_TIMING_WINDOW_SHIFT": 3
+    },
+    "case_count": 12,
+    "row_expectation_count": 0
+  }
+}

@@ -162,3 +162,31 @@ class TestCappedOptionalStepTimeout:
         assert artifact["status"] == "PASS", "non-blocking timeout must not fail the gate"
         assert "non-blocking failure: sleeper-step" in artifact["known_failures"]
         assert artifact["failed_step"] is None
+
+
+class TestPhase1Dispatch:
+    """Phase 1 extends the gate without weakening Phase 0 (PRD 16)."""
+
+    def test_supported_phases_are_zero_and_one(self, verify_phase: ModuleType) -> None:
+        phases = verify_phase.SUPPORTED_PHASES
+        assert len(phases) == 2 and 0 in phases and 1 in phases
+
+    def test_phase_names_cover_both_phases(self, verify_phase: ModuleType) -> None:
+        assert verify_phase.PHASE_NAMES[0] == "Foundation and Frozen Contracts"
+        assert verify_phase.PHASE_NAMES[1] == "Synthetic Data, Ground Truth, and Isolation"
+
+    def test_phase1_artifact_uses_phase_name_and_zero_padded_name(
+        self, verify_phase: ModuleType, tmp_path: Path
+    ) -> None:
+        report = verify_phase.GateReport(phase=1)
+        report.started_at_utc = "2026-08-22T00:00:00+00:00"
+        report.steps.append(
+            verify_phase.StepResult("dataset-gate-assertions", "assertions", "PASS", 0.1, "ok")
+        )
+        verify_phase.finalize_run(report, artifact_dir=tmp_path)
+
+        artifact = json.loads((tmp_path / "phase-01.json").read_text(encoding="utf-8"))
+        assert artifact["phase"] == 1
+        assert artifact["phase_name"] == "Synthetic Data, Ground Truth, and Isolation"
+        assert artifact["status"] == "PASS"
+        assert artifact["next_phase"] == 2

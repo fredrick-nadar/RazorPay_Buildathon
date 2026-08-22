@@ -1,0 +1,166 @@
+{
+  "cases": [
+    {
+      "authoring_notes": "two aggregate refund-deduction rows of equal amount with no per-refund references; refund composition candidates {r1, r2} and {r3} are non-unique because r3 = r1 + r2",
+      "case_id": "case-adversarial-0001",
+      "expected_category": "AMBIGUOUS_EVIDENCE",
+      "expected_delta_paise": null,
+      "expected_evidence_ids": [
+        "rfd_dVNnWYBvrx",
+        "rfd_OiRtpaZnEQ",
+        "rfd_lmxlaO0H8K",
+        "pay_3UjY6a0SVK",
+        "led_uyc1AjzE6v",
+        "led_eUFD6klYWL"
+      ],
+      "expected_outcome": "UNRESOLVED",
+      "must_escalate": true
+    },
+    {
+      "authoring_notes": "twin settlements with identical net in adjacent windows; bank credits carry no UTR and the twin credit is posted exactly on the shared window boundary; the missing UTR is the absent discriminator",
+      "case_id": "case-adversarial-0002",
+      "expected_category": "AMBIGUOUS_EVIDENCE",
+      "expected_delta_paise": null,
+      "expected_evidence_ids": [
+        "stl_1IIuTNux5X",
+        "stl_bMu31h7e7H",
+        "bnk_Sa65QydOjL",
+        "bnk_DFAbwJAcxm"
+      ],
+      "expected_outcome": "UNRESOLVED",
+      "must_escalate": true
+    },
+    {
+      "authoring_notes": "settlement has no corresponding bank credit inside the matching window; required evidence is missing and cannot be fabricated",
+      "case_id": "case-adversarial-0003",
+      "expected_category": "AMBIGUOUS_EVIDENCE",
+      "expected_delta_paise": null,
+      "expected_evidence_ids": [
+        "stl_G5NU6VCxep",
+        "led_Blv5CfRrMD"
+      ],
+      "expected_outcome": "UNRESOLVED",
+      "must_escalate": true
+    }
+  ],
+  "clean_reference": {
+    "derivation": "ledger state immediately before exception injection",
+    "ledger_by_account_paise": {
+      "1100-BANK-OPERATING": 16337579,
+      "2100-PAYMENTS-CLEARING": 16337579
+    },
+    "ledger_total_paise": 32675158
+  },
+  "dataset_version": "argus-datasets-v1",
+  "label_schema_version": "argus-labels-v1",
+  "profile": "adversarial",
+  "row_expectations": [
+    {
+      "duplicate_of_row": 4,
+      "expectation": "DUPLICATE_DELIVERY",
+      "file": "payments.csv",
+      "note": "exact duplicate delivery of an identical row; must deduplicate to one economic event",
+      "row_number": 5,
+      "source_record_id": "pay_NZ3xBYxQFL"
+    },
+    {
+      "expectation": "DISTINCT_EVENTS",
+      "file": "payments.csv",
+      "note": "identical amount to another payment by design; distinct order and payment ids must remain separate eligible records",
+      "row_number": 15,
+      "source_record_id": "pay_FiCqJLNNfR"
+    },
+    {
+      "expectation": "DISTINCT_EVENTS",
+      "file": "payments.csv",
+      "note": "identical amount to another payment by design; distinct order and payment ids must remain separate eligible records",
+      "row_number": 10,
+      "source_record_id": "pay_Yzxp7ldPf0"
+    },
+    {
+      "expectation": "REORDERED_FILE",
+      "file": "payments.csv",
+      "note": "rows are shuffled non-chronologically; processing must be order-independent",
+      "row_number": null,
+      "source_record_id": null
+    },
+    {
+      "expectation": "MATCHABLE_WITHOUT_UTR",
+      "file": "settlements.csv",
+      "note": "optional UTR absent; the unique amount within the window still identifies exactly one candidate match",
+      "row_number": 5,
+      "source_record_id": "stl_TZxuIWVs5C"
+    },
+    {
+      "expectation": "QUARANTINE_CURRENCY",
+      "file": "payments.csv",
+      "note": "currency USD conflicts with the INR dataset; the row must be quarantined, never silently dropped",
+      "row_number": 13,
+      "source_record_id": "pay_LSH3xlGWQ0"
+    },
+    {
+      "expectation": "QUARANTINE_INVALID_DATE",
+      "file": "refunds.csv",
+      "note": "created_at_utc is not a valid timestamp; the row must be quarantined",
+      "row_number": 2,
+      "source_record_id": "rfd_SJ007V2FCc"
+    },
+    {
+      "expectation": "INERT_UNTRUSTED_TEXT",
+      "file": "bank_entries.csv",
+      "note": "narration contains a prompt-injection sentence (PRD 10.4); it must remain inert evidence and can never become an instruction",
+      "row_number": 1,
+      "source_record_id": "bnk_sYqE4Wxuci"
+    },
+    {
+      "expectation": "OUT_OF_ORDER",
+      "file": "refunds.csv",
+      "note": "refund timestamped before its parent payment was captured",
+      "row_number": 1,
+      "source_record_id": "rfd_Nc5rje9Ikp"
+    },
+    {
+      "expectation": "OUT_OF_ORDER",
+      "file": "settlements.csv",
+      "note": "settlement settled before member payments were captured; totals still conserve",
+      "row_number": 1,
+      "source_record_id": "stl_w8mVmojlgN"
+    },
+    {
+      "expectation": "OUT_OF_ORDER",
+      "file": "payments.csv",
+      "note": "payment captured after its settlement was settled",
+      "row_number": 12,
+      "source_record_id": "pay_cisLxeIJNh"
+    },
+    {
+      "expectation": "BOUNDARY_TIME",
+      "file": "payments.csv",
+      "note": "captured exactly at the 00:00:00Z window start",
+      "row_number": 15,
+      "source_record_id": "pay_FiCqJLNNfR"
+    },
+    {
+      "expectation": "BOUNDARY_TIME",
+      "file": "payments.csv",
+      "note": "captured exactly at 23:59:59Z, one second before the window end",
+      "row_number": 10,
+      "source_record_id": "pay_Yzxp7ldPf0"
+    },
+    {
+      "expectation": "BOUNDARY_TIME",
+      "file": "bank_entries.csv",
+      "note": "twin credit posted exactly on the 2026-04-01T00:00:00Z month boundary shared by the twin windows",
+      "row_number": 3,
+      "source_record_id": "bnk_DFAbwJAcxm"
+    }
+  ],
+  "seed": 4105,
+  "summary": {
+    "by_category": {
+      "AMBIGUOUS_EVIDENCE": 3
+    },
+    "case_count": 3,
+    "row_expectation_count": 14
+  }
+}

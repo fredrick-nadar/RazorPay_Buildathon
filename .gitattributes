@@ -1,0 +1,5 @@
+# Byte-hashed evaluation artifacts must check out exactly as committed:
+# dataset manifests and phase artifacts carry sha256 hashes over LF bytes,
+# and the Phase 1 gate byte-compares committed files against regeneration.
+datasets/** text eol=lf
+artifacts/evaluation/** text eol=lf

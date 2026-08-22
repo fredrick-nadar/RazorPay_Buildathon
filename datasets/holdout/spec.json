@@ -1,0 +1,22 @@
+{
+  "dataset_version": "argus-datasets-v1",
+  "generation_guard": "scripts/generate_dataset.py --profile holdout requires --unfreeze-holdout to generate inputs and labels",
+  "note": "Inputs and labels will be generated through the evaluator-only path at the Phase 7 freeze and hashed. No tuning against holdout labels before that.",
+  "planned_freeze_phase": 7,
+  "profile": "holdout",
+  "seed": 9107,
+  "seed_separation": {
+    "adversarial": 4105,
+    "dev": 4104,
+    "holdout": 9107
+  },
+  "status": "SPEC_ONLY_GENERATION_FROZEN_UNTIL_PHASE_7",
+  "target_eligible_records": 500,
+  "target_min_eligible_records": 100,
+  "variation_plan": [
+    "row-order variation across all input files",
+    "optional-field presence variation (for example empty UTR)",
+    "date-format variation inside the documented envelope",
+    "harmless column-name variation handled by explicit schema adapters"
+  ]
+}
