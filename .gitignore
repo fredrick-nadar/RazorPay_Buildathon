@@ -1,0 +1,46 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Node and frontend builds
+node_modules/
+.next/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Local persistence and transient data
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+tmp/
+.cache/
+
+# Local benchmark/model output that may contain prompts or large traces
+artifacts/raw/
+artifacts/traces/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.zcode/
+.DS_Store
+Thumbs.db

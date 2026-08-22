@@ -1,0 +1,103 @@
+{
+  "contract": "domain_enums",
+  "version": "domain-contracts-v0",
+  "description": "Canonical serialization of ARGUS CONTROL domain enums. Generated ONLY by scripts/generate_domain_contracts.py; treat as read-only everywhere else.",
+  "enums": {
+    "SourceType": [
+      "PAYMENT",
+      "REFUND",
+      "SETTLEMENT",
+      "BANK_ENTRY",
+      "LEDGER_ENTRY"
+    ],
+    "ExceptionCategory": [
+      "DUPLICATE_LEDGER_POSTING",
+      "MISSING_REFUND_POSTING",
+      "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "AMBIGUOUS_EVIDENCE"
+    ],
+    "CaseStatus": [
+      "OPEN",
+      "INVESTIGATING",
+      "VERIFICATION_FAILED",
+      "VERIFIED_RESOLVED",
+      "APPROVAL_REQUIRED",
+      "SIMULATED_APPLIED",
+      "UNRESOLVED",
+      "INVESTIGATION_FAILED"
+    ],
+    "BatchStatus": [
+      "CREATED",
+      "VALIDATING",
+      "NORMALIZED",
+      "RECONCILING",
+      "INVESTIGATING",
+      "REVIEW_READY",
+      "COMPLETED",
+      "FAILED"
+    ],
+    "ActorType": [
+      "SYSTEM",
+      "USER",
+      "MODEL"
+    ],
+    "EntryOrigin": [
+      "IMPORTED",
+      "SIMULATED_CORRECTION"
+    ],
+    "HypothesisStatus": [
+      "PROPOSED",
+      "SUPPORTED",
+      "REJECTED",
+      "INCONCLUSIVE"
+    ],
+    "VerifierStatus": [
+      "PASS",
+      "FAIL",
+      "INCONCLUSIVE"
+    ],
+    "ReasonCode": [
+      "MISSING_EVIDENCE",
+      "UNKNOWN_EVIDENCE_ID",
+      "CURRENCY_MISMATCH",
+      "AMOUNT_MISMATCH",
+      "NON_UNIQUE_EVIDENCE",
+      "REFERENCE_CONFLICT",
+      "OUTSIDE_ALLOWED_WINDOW",
+      "RECORD_ALREADY_CONSUMED",
+      "CONTROL_TOTAL_VIOLATION",
+      "UNSUPPORTED_CATEGORY",
+      "INVALID_PROPOSED_DELTA"
+    ],
+    "ApprovalDecision": [
+      "PENDING",
+      "APPROVED",
+      "REJECTED"
+    ],
+    "CorrectionStatus": [
+      "DRAFT",
+      "APPROVED",
+      "SIMULATED_APPLIED",
+      "REJECTED"
+    ],
+    "EdgeConfidence": [
+      "EXACT",
+      "RULE",
+      "HYPOTHESIS",
+      "REJECTED"
+    ],
+    "NodeType": [
+      "PAYMENT",
+      "REFUND",
+      "SETTLEMENT",
+      "BANK_ENTRY",
+      "LEDGER_ENTRY",
+      "FEE",
+      "TAX",
+      "CORRECTION_PROPOSAL"
+    ],
+    "Currency": [
+      "INR"
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+[project]
+name = "argus-backend"
+version = "0.1.0"
+description = "ARGUS CONTROL backend - financial flight recorder (Buildathon prototype)"
+requires-python = ">=3.12"
+
+# Dependency source of truth is requirements.lock.txt (exact pins, frozen via
+# pip freeze). Install with:
+#   python -m pip install -r backend/requirements.lock.txt
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["app"]

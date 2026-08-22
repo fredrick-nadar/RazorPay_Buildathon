@@ -1,1188 +1,562 @@
 # ARGUS CONTROL
 
-> **Razorpay Buildathon — Track 04: AI Finance Controller**  
-> **Vision:** A voice-supervised, policy-aware AI finance controller that reconciles multi-source financial records, investigates the exceptions deterministic systems cannot resolve, remembers merchant-specific operating context, and escalates only the cases that genuinely require human judgment.
+> **Razorpay AI Buildathon 2026 — Track 04: AI Finance Controller**
+>
+> **Product:** A financial flight recorder for merchant reconciliation.
+>
+> **Promise:** ARGUS reconstructs the evidence path behind recorded amounts, investigates broken links, produces proof-carrying correction proposals, and refuses to close cases it cannot verify.
 
----
+## 1. Repository Status
 
-## 1. Buildathon Track
+This repository is currently in the specification stage. The documents describe the product that must be implemented; they do not claim that the application, integrations, benchmark results, or performance numbers already exist.
 
-### Track 04 — AI Finance Controller
+The specification is intentionally scoped for a Buildathon submission. The mandatory build is a narrow, measurable vertical slice. Enterprise features such as broad ERP integrations, realtime voice, vector memory, distributed workers, and unrestricted autonomous posting are not part of the required MVP.
 
-**Track objective provided by Razorpay:**
+The three governing documents are:
 
-> Run the books and the cash position.
+- `README_ARGUS_CONTROL.md` — product description, scope, demo, and success definition.
+- `ARGUS_CONTROL_PRD.md` — authoritative functional, engineering, data, safety, and evaluation requirements.
+- `ARGUS_CONTROL_MASTER_PROMPT.md` — execution rules for a coding agent working phase by phase.
 
-The track requires an agent that closes one finance-operations loop across a **50+ record batch of synthetic data**, reports its **match rate**, and provides an **honest exception list** for the cases it could not resolve.
+If the documents disagree, use this precedence:
 
-The example directions given for the track include:
+1. Safety and financial integrity rules in the PRD.
+2. Frozen MVP contract in the PRD.
+3. Phase acceptance gate in the PRD.
+4. Master prompt implementation guidance.
+5. README narrative.
 
-- Multi-source reconciliation
-- Settlement Q&A agent
-- Forward cash forecaster
-- Tax-line matcher
+## 2. The Product in One Sentence
 
-The evaluation bar explicitly emphasizes:
+> **ARGUS CONTROL is an evaluation-first financial exception investigator that deterministically reconciles merchant payment records, uses AI to investigate only the remaining exceptions, verifies every proposed explanation with structured rules, previews the ledger effect, and escalates ambiguity with a complete evidence package.**
 
-- Throughput
-- Measured accuracy
-- Match rate
-- Exceptions that remain unresolved
-- Verification over cherry-picked demonstrations
+## 3. Why This Exists
 
-ARGUS CONTROL is being designed specifically for this track.
+Merchants commonly need to connect several representations of the same financial activity:
 
----
+- payment-gateway payments;
+- refunds and adjustments;
+- settlement records;
+- bank credits;
+- merchant-ledger entries;
+- fees and taxes;
+- accounting-period boundaries.
 
-## 2. What We Are Building
+Straightforward cases should be matched with identifiers and arithmetic. They do not need an LLM.
 
-ARGUS CONTROL is intended to be an **AI Finance Controller for Razorpay merchants**.
+The expensive work begins when the records disagree:
 
-The end user is the merchant's finance team, such as:
+```text
+Expected net settlement:  ₹78,640
+Observed bank credit:      ₹72,240
+Unexplained variance:       ₹6,400
+```
 
-- Finance Controller
-- CFO / Finance Lead
-- Accounts team
-- Reconciliation team
-- Treasury / settlement operations team
+A finance operator must determine whether the difference is caused by a missing refund posting, a duplicate ledger entry, a settlement-window shift, or incomplete evidence. The operator must inspect multiple files, test competing explanations, document the conclusion, and decide whether a correction is safe.
 
-The product is envisioned as a Razorpay-native finance operations layer that could eventually sit inside the Razorpay/RazorpayX ecosystem and help merchants understand and close their financial operations around payments, settlements, refunds, fees, taxes, bank credits, and ledger entries.
+ARGUS automates that bounded investigation loop. It is not a general bookkeeping replacement and it does not move real money.
 
-For the Buildathon prototype, we will **not assume private or privileged access to Razorpay's internal backend**.
+## 4. Track Alignment
 
-The prototype will work only with:
+Track 04 asks builders to run one finance-operations loop across at least 50 synthetic records, report the match rate, report measured accuracy and throughput, and provide an honest exception list.
 
-- Publicly available or test/sandbox Razorpay capabilities where applicable
-- Synthetic Razorpay-like payment and settlement data
-- Synthetic merchant bank statement data
-- Synthetic merchant ledger/accounting data
-- Synthetic refund, fee, tax, and settlement records
-- Merchant-defined finance policies created specifically for the prototype
+ARGUS closes this loop:
 
-The Buildathon implementation will therefore demonstrate the product vision without claiming access to production Razorpay systems.
+```text
+Payments + refunds + settlements + bank entries + merchant ledger
+                              ↓
+                    normalize and validate
+                              ↓
+                 deterministic reconciliation
+                              ↓
+                   matched records + cases
+                              ↓
+                   evidence-driven investigation
+                              ↓
+                    deterministic verification
+                              ↓
+        resolved | approval required | unresolved
+                              ↓
+              ledger dry-run + append-only audit
+                              ↓
+             measured benchmark and exception list
+```
 
----
+## 5. Finalized Product Positioning
 
-## 3. Core Problem
+ARGUS must not be presented as the first AI reconciliation product. Reconciliation tools, settlement reports, and finance automation products already exist.
 
-Finance operations often contain a large number of records that are straightforward to reconcile and a smaller number of records that remain unresolved because the expected and actual financial states do not line up cleanly.
+The Buildathon differentiation is narrower:
 
-A normal reconciliation system can match records when identifiers and amounts line up directly.
+### 5.1 Financial flight recorder
+
+ARGUS renders an evidence graph connecting payment, refund, settlement, bank, and ledger events. It shows which connections are proven, which are broken, and which are merely hypotheses.
+
+### 5.2 Proof-carrying corrections
+
+Every proposed correction carries a machine-readable proof package containing:
+
+- the claim;
+- the affected records;
+- the exact financial equation;
+- the hypotheses tested;
+- the hypotheses rejected and why;
+- the deterministic verifier result;
+- the proposed ledger delta;
+- the authority decision;
+- remaining uncertainty;
+- audit-event identifiers.
+
+### 5.3 Falsification before acceptance
+
+The investigator does not search only for a plausible answer. It must enumerate competing hypotheses. Deterministic code attempts to disprove them. A plausible narrative without a passing verifier cannot resolve a case.
+
+### 5.4 Ledger dry-run
+
+Before approval, ARGUS shows the internal ledger state before and after a proposed correction. This is a simulation against the prototype ledger. It is not a prediction of external bank, gateway, tax, or ERP state.
+
+### 5.5 Honest quarantine
+
+If evidence does not uniquely identify one valid explanation, the case remains unresolved. ARGUS must state what evidence is missing and what a human should inspect next.
+
+### 5.6 ARGUS Voice Control Layer
+
+Voice is an optional supervision surface, not an accounting engine or an identity mechanism. After the mandatory benchmark passes, a finance controller may use push-to-talk commands to start a safe workflow, navigate cases, request an explanation, or prepare already-verified corrections.
+
+Voice MUST NOT approve or apply a correction. A spoken request such as “approve everything” must be refused and redirected to the visible approval screen. This refusal is part of the winning demo because it proves bounded authority rather than merely adding speech to a chatbot.
+
+Recommended commands:
+
+```text
+“ARGUS, close today’s batch.”
+“ARGUS, open presentation mode.”
+“Show me the highest-value unresolved case.”
+“Why is case 42 unresolved?”
+“Prepare previews for verified corrections below ₹10,000.”
+“What evidence is missing?”
+```
+
+`OPEN_PRESENTATION_MODE` should navigate to a known in-app presentation route. It should not grant arbitrary access to local files or desktop applications.
+
+### 5.7 Multilingual Bharat Mode
+
+The Voice Control Layer should understand and respond in the language selected by the user while converting every command into the same canonical intent schema. Language changes presentation, transcription, and explanation; it never changes tool authority or financial rules.
+
+Evaluated MVP languages:
+
+- English (`en-IN`);
+- Hindi and Hinglish (`hi-IN` plus code-mixed speech);
+- Kannada (`kn-IN`);
+- Tamil (`ta-IN`);
+- Telugu (`te-IN`).
+
+Stretch languages use the same provider interface and may include Marathi, Bengali, Gujarati, Malayalam, Punjabi, and other scheduled Indian languages. The project must not claim support for a language until its intent, entity, refusal, and spoken-output test pack passes.
 
 Example:
 
 ```text
-Payment Amount        ₹10,000
-Fees                     ₹200
-GST                       ₹36
-Expected Settlement    ₹9,764
+User: “ARGUS, aaj ka reconciliation chalao.”
+Canonical intent: RUN_RECONCILIATION
+Canonical arguments: {"dataset_scope": "loaded_demo_batch"}
 
-Actual Settlement      ₹9,764
+User: “Case bayālīs unresolved kyun hai?”
+Canonical intent: EXPLAIN_CASE
+Canonical arguments: {"case_id": "CASE-0042"}
 
-Result: MATCH
+User: “ಹತ್ತು ಸಾವಿರ ರೂಪಾಯಿಗಿಂತ ಕಡಿಮೆ ಇರುವ verified corrections ತಯಾರಿಸು.”
+Canonical intent: PREPARE_VERIFIED_CORRECTION_PREVIEWS
+Canonical arguments: {"maximum_amount_paise": 1000000}
 ```
 
-This does not require an LLM.
+Before any action with an amount or case identifier, the UI displays the original transcript, detected language, normalized value, and canonical intent. Low-confidence or conflicting entity extraction must ask for clarification rather than execute.
 
-The harder problem begins after deterministic matching has finished.
+## 6. What ARGUS Can and Cannot Prove
 
-Example:
+ARGUS can prove that a proposed explanation is consistent with:
+
+- the input records available to the run;
+- the configured financial equations;
+- the configured matching windows;
+- the prototype merchant policy;
+- the frozen verifier implementation.
+
+ARGUS cannot prove:
+
+- that all source records are complete or truthful;
+- that a reconciled transaction is legitimate rather than fraudulent;
+- that a zero variance means every accounting treatment is correct;
+- that an external ERP, bank, or payment gateway will accept a correction;
+- compliance with every accounting, tax, or regulatory requirement;
+- the physical path of an individual rupee.
+
+Use the phrase **evidence path behind a recorded amount**. Do not claim to trace an individual physical rupee.
+
+## 7. Primary User and Economic Boundary
+
+The intended user is a finance controller or reconciliation analyst at a merchant with enough transaction volume and source-system complexity to create repeated exceptions.
+
+Most plausible initial segment:
+
+- Indian D2C, marketplace, education, travel, or subscription business;
+- multiple payment/refund channels;
+- tens of thousands of monthly transactions rather than a few hundred;
+- a small finance team using spreadsheets, Tally, Zoho Books, NetSuite, or another ledger;
+- recurring settlement, refund, or cutoff mismatches.
+
+ARGUS is unlikely to create enough value for a very small merchant using one payment gateway and a simple settlement report.
+
+The business hypothesis is not considered validated by the Buildathon. Commercial validation later requires interviews, real anonymized exception samples, measured hours saved, and evidence of willingness to pay.
+
+## 8. Frozen MVP
+
+The mandatory MVP contains exactly one finance-operations loop and four exception classes.
+
+### 8.1 Inputs
+
+- payment records;
+- refund records;
+- settlement records;
+- bank-statement entries;
+- merchant-ledger entries;
+- merchant authority configuration;
+- labelled synthetic ground truth used only by evaluation.
+
+### 8.2 Exception classes
+
+1. `DUPLICATE_LEDGER_POSTING`
+   - The same source-side financial event is posted more than once in the ledger.
+
+2. `MISSING_REFUND_POSTING`
+   - A verified refund or refund adjustment is absent from the merchant ledger.
+
+3. `SETTLEMENT_TIMING_WINDOW_SHIFT`
+   - A valid transaction belongs to a different settlement or accounting window.
+
+4. `AMBIGUOUS_EVIDENCE`
+   - Two or more explanations remain consistent with the available records. The only valid final state is unresolved.
+
+Fee and tax calculations remain part of deterministic normalization and reconciliation. A separate fee/tax exception class may be added only after the four mandatory classes pass the frozen holdout.
+
+### 8.3 Required outcomes
+
+Every case ends in exactly one of these outcomes:
+
+- `VERIFIED_RESOLVED`
+- `APPROVAL_REQUIRED`
+- `SIMULATED_APPLIED`
+- `UNRESOLVED`
+- `INVESTIGATION_FAILED`
+
+No case may be marked resolved directly by the model.
+
+### 8.4 Required dataset sizes
+
+- unit fixtures: minimal records needed for each rule;
+- development batch: at least 100 eligible records;
+- submission benchmark: at least 500 eligible records if performance permits, never fewer than the track minimum of 50;
+- frozen holdout: generated or authored independently from the tuning fixtures and never exposed to the investigator.
+
+## 9. Core Safety Invariants
+
+1. Use integer paise for all INR amounts.
+2. Do not use binary floating-point arithmetic for money.
+3. Every imported source row receives a stable source identifier and content hash.
+4. Every run is idempotent for the same tenant, dataset, and configuration.
+5. The model cannot write directly to financial tables.
+6. The model cannot mark a case resolved.
+7. Every resolution requires a deterministic verifier `PASS`.
+8. Every resolution must cite source record identifiers.
+9. A ledger correction is first represented as a dry-run delta.
+10. A simulated application requires explicit authority or human approval.
+11. An ambiguous case must remain unresolved.
+12. Missing evidence is never invented.
+13. Ground-truth labels are unavailable to runtime services.
+14. Policy values used in the demo are labelled synthetic merchant policy, not Razorpay policy.
+15. The prototype does not move real money.
+16. Razorpay integrations use documented Test Mode or public read APIs only.
+17. Model errors, timeouts, or malformed outputs become controlled failure states.
+18. Uploaded text and narrations are treated as untrusted data, not instructions.
+19. No benchmark number is published until produced by the benchmark runner.
+20. Reconciliation proves record consistency, not fraud absence or regulatory compliance.
+
+## 10. Minimal Architecture
+
+The required architecture should remain boring where boring improves trust.
 
 ```text
-Merchant Ledger Expected: ₹78,640
-Bank Credit:              ₹72,240
-
-Unexplained Difference:    ₹6,400
-```
-
-At this point, the finance team has to investigate the exception.
-
-Possible explanations may include:
-
-- Refund adjustment
-- Partial refund
-- Settlement timing difference
-- Fee or GST treatment
-- Duplicate ledger entry
-- Missing ledger entry
-- A transaction belonging to another settlement batch
-- Incorrect mapping between records
-- Multiple payments grouped into one settlement
-- Unresolved or incomplete financial evidence
-
-ARGUS CONTROL is intended to automate this **exception-investigation layer** while keeping all final financial checks deterministic and auditable.
-
----
-
-## 4. Central Design Principle
-
-ARGUS CONTROL is **not**:
-
-> "Let an LLM calculate the books."
-
-The intended architecture is:
-
-> **Deterministic finance logic calculates and verifies. AI agents investigate, reason, orchestrate, explain, and propose or execute bounded actions. Voice supervises the system.**
-
-This separation is fundamental to the project.
-
----
-
-## 5. End-to-End Finance Operations Loop
-
-```text
-Financial Data Sources
+Next.js control-room UI
+        ↓ HTTP/SSE
+FastAPI application
+        ├── import and normalization
+        ├── deterministic reconciliation
+        ├── evidence graph builder
+        ├── exception case service
+        ├── structured investigator tools
+        ├── deterministic verifier
+        ├── policy/approval service
+        ├── ledger dry-run service
+        ├── append-only audit service
+        └── benchmark runner
         ↓
-Normalization
-        ↓
-Deterministic Reconciliation
-        ↓
-Matched Records + Exceptions
-        ↓
-ARGUS Agent Orchestrator
-        ↓
-Specialist Exception Investigation
-        ↓
-Policy + Persistent Merchant Context
-        ↓
-Evidence-Based Resolution
-        ↓
-Deterministic Verification
-        ↓
-Auto-Close / Prepare Correction / Escalate
-        ↓
-Audit Trail
-        ↓
-Finance Controller Summary
+SQLite for default local demo or PostgreSQL when configured
 ```
 
----
+One investigator is sufficient. A second model agent is not required. The deterministic verifier is code, not another conversational agent.
 
-## 6. Data Sources in the Prototype
+### 10.1 Suggested stack
 
-### 6.1 Razorpay-side synthetic records
+- frontend: Next.js, React, TypeScript, Tailwind CSS;
+- evidence graph: React Flow, Cytoscape.js, or another lightweight graph renderer;
+- backend: Python, FastAPI, Pydantic;
+- persistence: SQLite for zero-friction local use with a clean repository interface; optional PostgreSQL deployment adapter;
+- tests: pytest, Hypothesis where financial invariants benefit from generated inputs;
+- frontend tests: Vitest and Playwright;
+- AI: a configurable structured-output model behind a provider interface;
+- optional voice: push-to-talk transcription mapped to a constrained intent schema, with browser or provider speech output;
+- multilingual speech default: Sarvam AI for evaluated Indic STT/TTS and code-mixed speech;
+- multilingual speech fallback: OpenAI transcription and speech APIs behind the same interface;
+- optional self-hosted translation: AI4Bharat IndicTrans2;
+- optional public-language-platform adapter: BHASHINI, only when access is available;
+- updates: polling first, SSE only if it remains simple;
+- packaging: Docker Compose only if it improves reproducibility rather than adding setup risk.
 
-Planned record types include:
+Redis, pgvector, full RAG, always-on realtime voice, and distributed workers are not mandatory dependencies.
 
-- Payments
-- Orders
-- Captures
-- Refunds
-- Settlement records
-- Settlement IDs
-- Fees
-- GST / tax on fees
-- Payment IDs
-- Refund IDs
-- Settlement UTRs
-- Timestamps
-- Payment method metadata where useful for reconciliation
+## 11. Evidence Graph
 
-### 6.2 Merchant-side synthetic records
+The graph contains typed nodes:
 
-Planned record types include:
+- `PAYMENT`
+- `REFUND`
+- `SETTLEMENT`
+- `BANK_ENTRY`
+- `LEDGER_ENTRY`
+- `FEE`
+- `TAX`
+- `CORRECTION_PROPOSAL`
 
-- Bank statement entries
-- Merchant accounting ledger entries
-- Journal entries
-- Internal transaction references
-- Accounting dates
-- Expected settlement amounts
-- Recorded fees
-- Recorded tax
-- Recorded refunds
+Edges contain:
 
-### 6.3 Ground-truth dataset
+- relationship type;
+- confidence source: `EXACT`, `RULE`, `HYPOTHESIS`, or `REJECTED`;
+- evidence identifiers;
+- amount contribution;
+- verifier status;
+- explanation.
 
-The project will include a labelled synthetic dataset so that ARGUS can be measured objectively.
+Visual semantics:
 
-Each exception case will have a known expected explanation and expected resolution status.
+- green: deterministically proven;
+- amber: proposed hypothesis;
+- red: broken, rejected, or inconsistent;
+- grey: unexamined or out of scope;
+- purple: proposed ledger correction.
 
-The ground truth will allow us to calculate actual metrics instead of manually selecting successful examples.
+The graph is a user interface over explicit data. It must not imply certainty beyond the stored edge status.
 
----
+## 12. Proof Package
 
-## 7. Stage One — Deterministic Reconciliation Engine
+Canonical example:
 
-The first stage is intentionally non-agentic.
+```json
+{
+  "case_id": "CASE-0042",
+  "claim": "A duplicate merchant-ledger posting explains the variance.",
+  "category": "DUPLICATE_LEDGER_POSTING",
+  "evidence_ids": ["PAY-0188", "SET-0017", "BANK-0039", "LEDGER-0811", "LEDGER-0812"],
+  "equations": [
+    {
+      "expression": "expected_net_paise - observed_bank_credit_paise",
+      "inputs": {"expected_net_paise": 7864000, "observed_bank_credit_paise": 7224000},
+      "result_paise": 640000
+    }
+  ],
+  "hypotheses_tested": [
+    {"type": "DUPLICATE_LEDGER_POSTING", "result": "SUPPORTED"},
+    {"type": "SETTLEMENT_TIMING_WINDOW_SHIFT", "result": "REJECTED", "reason_code": "NO_VALID_ADJACENT_WINDOW"}
+  ],
+  "verifier": {"status": "PASS", "rule_version": "duplicate-ledger-v1"},
+  "proposed_delta": {"ledger_entry_id": "LEDGER-0812", "amount_paise": -640000},
+  "dry_run": {"variance_before_paise": 640000, "variance_after_paise": 0},
+  "authority": {"decision": "APPROVAL_REQUIRED", "policy_version": "demo-policy-v1"},
+  "uncertainty": [],
+  "audit_event_ids": ["AUD-0901", "AUD-0902"]
+}
+```
 
-Its job is to resolve everything that can be proven directly.
+The model may propose the claim and select tools. Code calculates equations, validates identifiers, determines verifier status, computes the dry-run, and applies authority rules.
 
-Possible matching keys include:
+## 13. Evaluation Philosophy
 
-- `payment_id`
-- `order_id`
-- `refund_id`
-- `settlement_id`
-- `UTR`
-- Amount
-- Fee
-- Tax
-- Timestamp / settlement window
-- Merchant reference
-- Bank narration where appropriate
+ARGUS is an evaluation-first project. A feature is incomplete until its failure behaviour is tested.
 
-The deterministic engine will classify records into:
+### 13.1 Mandatory metrics
+
+- deterministic match rate;
+- deterministic match precision;
+- exception-classification accuracy;
+- resolved-exception precision;
+- false-resolution count and rate;
+- correct escalation rate for ambiguous cases;
+- money-weighted residual error;
+- records processed per second;
+- median and P95 investigation latency;
+- audit completeness;
+- model calls and estimated cost per investigated case;
+- unresolved exception list.
+
+### 13.2 Metric priority
+
+The ranking is:
+
+1. zero or minimal false financial resolutions;
+2. correct escalation of ambiguous evidence;
+3. financial-total accuracy;
+4. audit completeness;
+5. exception-resolution coverage;
+6. throughput and latency;
+7. model cost;
+
+High automation with incorrect closures is worse than lower automation with honest escalation.
+
+### 13.3 Anti-overfitting rules
+
+- Runtime code cannot read ground-truth labels.
+- Development and holdout seeds are different.
+- Holdout labels are frozen before final prompt tuning.
+- At least one holdout fixture must be authored or transformed independently of the main generator.
+- Holdout files vary ordering, optional fields, date formats, and harmless column names.
+- After the benchmark is frozen, fixes caused by holdout failures require a documented regression test and a new benchmark version.
+- The final report states the dataset construction limitations.
+
+## 14. Nine-Phase Build Plan
+
+Each phase has a detailed evaluation gate in the PRD. A phase is not complete because code exists; it is complete only when its commands pass and its evidence artifacts are recorded.
+
+| Phase | Deliverable | Required gate |
+|---|---|---|
+| 0 | Repository foundation and frozen contracts | clean install, lint, unit-test smoke, no secret leaks |
+| 1 | Synthetic data and ground truth | deterministic generation, accounting conservation, isolated labels |
+| 2 | Deterministic reconciliation and evidence graph | exact expected matches, idempotency, no silent row loss |
+| 3 | Exception verifier and proof packages | every valid proof passes; adversarial and ambiguous proofs fail safely |
+| 4 | AI investigator with structured tools | model cannot bypass tools or verifier; controlled timeout/malformed output |
+| 5 | Control-room UI, ledger dry-run, approval, audit | full golden path and unresolved path pass end to end |
+| 6 | Failure laboratory and optional Razorpay Test Mode adapter | duplicate/out-of-order events recover without financial duplication |
+| 7 | Frozen holdout benchmark and hardening | reproducible report, zero hidden labels, honest limitations |
+| 8 | Submission release | fresh-clone rehearsal, five-minute demo, public documentation |
+
+## 15. Golden Vertical Slice
+
+Build this before optional integrations or visual polish:
 
 ```text
-MATCHED
-PARTIALLY MATCHED
-UNRESOLVED EXCEPTION
+Load 100 labelled development records
+→ validate and normalize
+→ deterministically reconcile clean records
+→ create one duplicate-ledger case
+→ investigator inspects structured evidence
+→ investigator proposes competing hypotheses
+→ verifier rejects unsupported alternatives
+→ verifier passes the duplicate-ledger proof
+→ dry-run reduces the internal variance to zero
+→ authority requires human approval
+→ user approves simulated application
+→ case changes to SIMULATED_APPLIED
+→ audit trail contains the complete proof package
+→ a second ambiguous case remains UNRESOLVED
 ```
 
-Only unresolved or ambiguous records are sent to the AI investigation layer.
+If this flow does not work through backend APIs, do not build voice, animation, or additional agents.
 
-This keeps the probabilistic reasoning layer focused on the cases where reasoning is actually useful.
+## 16. Five-Minute Demo
 
----
+### 0:00–0:30 — Establish the pain
 
-## 8. Stage Two — ARGUS Agent Orchestration
+Show a ₹6,400 mismatch across payment, refund, settlement, bank, and ledger records.
 
-The planned system uses an orchestrator that assigns unresolved finance exceptions to specialized agents.
+### 0:30–1:00 — Run the batch by voice
 
-The intention is not to create multiple agents simply for presentation value.
+Say “ARGUS, close today’s batch.” Display the transcript and the exact parsed intent before the existing run action executes. Show measured match rate, unresolved cases, financial variance, and throughput. If voice fails, use the identical typed command without changing the workflow.
 
-Each specialist exists because it has a distinct responsibility and toolset.
+### 1:00–2:15 — Replay the evidence
 
-### 8.1 ARGUS Orchestrator
+Open one case. Animate or step through the evidence graph. Show competing hypotheses and why unsupported explanations fail.
 
-Responsibilities:
+### 2:15–3:00 — Preview and approve
 
-- Receive unresolved exceptions
-- Build an investigation plan
-- Decide which specialist is needed
-- Coordinate agent execution
-- Prevent conflicting actions
-- Track investigation state
-- Produce the final controller-level summary
+Say “Prepare previews for verified corrections below ₹10,000.” Show variance before and after the ledger dry-run. Then say “Approve everything.” ARGUS must refuse because voice is not an approval channel. Approve the exact simulated correction through the visible control-room confirmation.
 
-### 8.2 Settlement Agent
+### 3:00–3:35 — Break the system deliberately
 
-Planned responsibilities:
+Inject a duplicate or out-of-order event. Show idempotency and recovery without a duplicate financial effect.
 
-- Reconstruct settlement composition
-- Compare expected and actual settlement values
-- Examine timing windows
-- Analyse grouped payments
-- Examine settlement identifiers and UTR mapping
-- Identify whether a difference can be explained by legitimate settlement constituents
+### 3:35–4:10 — Refuse to guess
 
-### 8.3 Refund Agent
+Open an ambiguous case. ARGUS must state that two candidates remain valid, identify the missing unique reference, and escalate.
 
-Planned responsibilities:
+### 4:10–4:45 — Show the benchmark
 
-- Identify full and partial refunds
-- Detect duplicate merchant-side refund postings
-- Identify refund timing mismatches
-- Map refunds to payments and settlements
-- Determine whether a refund explains an outstanding variance
+Display real metrics, false resolutions, correct escalations, cost, and the unresolved list.
 
-### 8.4 Ledger Agent
+### 4:45–5:00 — Close
 
-Planned responsibilities:
+> “ARGUS does not ask AI to calculate the books. It asks AI where to investigate, and demands proof before changing anything.”
 
-- Compare bank / Razorpay-side events against merchant ledger records
-- Detect possible duplicate postings
-- Detect missing entries
-- Detect incorrect debit/credit treatment
-- Identify amount or reference inconsistencies
-- Prepare evidence for a proposed journal correction
+## 17. Explicit Non-Goals
 
-### 8.5 Exception Reasoning Agent
+The submission does not:
 
-Handles difficult cases that cannot be resolved by one direct specialist rule.
+- move live money;
+- write to a production ERP;
+- replace an accountant or auditor;
+- perform fraud detection;
+- guarantee tax or regulatory compliance;
+- trace physical currency units;
+- predict external-system state;
+- solve accounts payable, cash forecasting, disputes, or revenue recovery;
+- support every file format or ERP;
+- claim commercial validation;
+- claim production readiness inside Razorpay;
+- require voice, RAG, vector memory, or multi-agent orchestration.
 
-Example investigation:
+## 18. Optional Features, in Strict Order
 
-```text
-Exception:
-₹6,400 unexplained difference
+Optional work is allowed only after Phase 7 passes:
 
-Hypotheses:
-1. Refund adjustment
-2. Settlement timing difference
-3. Fee or tax discrepancy
-4. Duplicate ledger entry
-5. Missing ledger transaction
-6. Transaction belongs to another batch
-```
+1. polished evidence-graph transitions;
+2. typed natural-language controller commands;
+3. the ARGUS Voice Control Layer using the same constrained typed-command contract;
+4. a second independently authored holdout pack;
+5. one additional exception class;
+6. a real Razorpay Test Mode import path if credentials and API coverage permit;
+7. deployment hardening;
+8. persistent merchant preferences;
+9. policy-document retrieval;
+10. specialist agents only if an evaluation proves measurable benefit.
 
-The agent must use available tools and records to prove or disprove these hypotheses.
+## 19. Submission Definition of Done
 
-A hypothesis is not accepted merely because the language model considers it plausible.
+- [ ] A fresh clone can be installed from documented commands.
+- [ ] The default demo runs without private production data.
+- [ ] At least 50 eligible records are processed; target 500.
+- [ ] All four mandatory exception classes exist in the benchmark.
+- [ ] Clean matches are deterministic and idempotent.
+- [ ] Runtime services cannot access ground-truth labels.
+- [ ] An investigator uses only structured read/calculation/proposal tools.
+- [ ] A model cannot directly resolve a case or mutate the ledger.
+- [ ] Every resolution has a verifier `PASS` and evidence identifiers.
+- [ ] A ledger correction is shown as a dry-run before approval.
+- [ ] Approval and simulated application are auditable.
+- [ ] At least one ambiguous case remains unresolved for the correct reason.
+- [ ] A duplicate or out-of-order event is recovered safely.
+- [ ] The final holdout benchmark is frozen and reproducible.
+- [ ] False-resolution count is prominently reported.
+- [ ] The unresolved exception list is downloadable or visible.
+- [ ] No placeholder metric is presented as measured.
+- [ ] No API, policy, partnership, or platform access is invented.
+- [ ] The five-minute pitch has a rehearsed backup recording.
+- [ ] Limitations and unvalidated business assumptions are explicit.
 
-### 8.6 Policy / Authority Agent
+## 20. Final Product Statement
 
-Checks whether a proposed action is allowed.
-
-Example prototype policy:
-
-```text
-Auto-close evidence-backed informational exception:
-Allowed
-
-Prepare journal correction:
-Allowed
-
-Post correction under ₹5,000:
-Allowed only if merchant policy permits
-
-Correction above ₹5,000:
-Human approval required
-
-High-value exception above ₹50,000:
-Mandatory escalation
-```
-
-The exact thresholds used in the Buildathon prototype will be defined explicitly in the synthetic merchant policy configuration.
-
-They will not be presented as Razorpay policies.
-
-### 8.7 Verification Layer
-
-Before an exception is marked as resolved, the result must pass deterministic checks.
-
-If the AI proposes:
-
-> "The ₹6,400 difference is explained by refund RFND-102."
-
-the verification layer must prove that:
-
-- The refund exists
-- The amount is correct
-- It belongs to the correct payment
-- It belongs to the relevant accounting / settlement context
-- Applying the explanation removes the variance
-- The same refund has not already been counted elsewhere
-
-Only after successful verification can the system classify the exception as resolved.
-
----
-
-## 9. Persistent Memory
-
-ARGUS CONTROL is intended to have persistent merchant-specific memory.
-
-Persistent memory will **not** be treated as the source of legal or financial truth.
-
-### 9.1 Merchant operating memory
-
-Examples:
-
-- Preferred reporting style
-- ERP/accounting convention
-- Settlement accounting convention
-- Finance approval limits
-- Escalation preferences
-- Previously approved operating preferences
-- Recurring merchant-specific patterns
-
-Example:
-
-```text
-Merchant preference:
-Never auto-prepare corrections above ₹15,000
-without finance-controller approval.
-```
-
-### 9.2 Operational memory
-
-Examples:
-
-- Previous finance-close runs
-- Previously investigated exception patterns
-- Repeated settlement timing patterns
-- Previous human resolutions
-- Unresolved cases carried forward
-- Historical exception frequency
-
-Operational memory can help the agent prioritize investigation hypotheses.
-
-It does not automatically become policy.
-
-### 9.3 Current-case memory
-
-Contains:
-
-- Records
-- Tool results
-- Active hypotheses
-- Agent decisions
-- Evidence
-- Pending approvals
-- Current exception state
-
-### 9.4 Policies and laws are not conversational memory
-
-Accounting policies, merchant SOPs, regulatory rules, and authoritative instructions must live in a **versioned policy knowledge store**.
-
-Each stored policy should be identifiable by fields such as:
-
-```text
-Policy ID
-Version
-Effective date
-Jurisdiction
-Source
-Status
-Document hash
-Relevant section
-```
-
-Memory tells ARGUS what happened before.
-
-Policy tells ARGUS what it is allowed to do now.
-
-These two concepts must remain separate.
-
----
-
-## 10. Voice Interface
-
-Voice is planned as the human supervision layer.
-
-Voice is **not** the financial reasoning engine.
-
-The finance controller should be able to give high-level instructions such as:
-
-> "ARGUS, reconcile today's batch."
-
-> "Show me the exceptions above ₹10,000."
-
-> "Why could you not resolve exception 37?"
-
-> "Show me the evidence."
-
-> "Prepare corrections below ₹5,000 but do not post them."
-
-> "Escalate everything with insufficient evidence."
-
-The system translates those instructions into bounded tasks for the orchestrator.
-
-Only one outward-facing voice controller is planned.
-
-The internal specialist agents will communicate using structured data rather than having several voice agents talking to one another.
-
----
-
-## 11. Bounded Autonomy
-
-ARGUS CONTROL is not intended to have unrestricted financial authority.
-
-### Safe autonomous actions
-
-Potential examples:
-
-- Run reconciliation
-- Investigate exceptions
-- Query records
-- Classify exceptions
-- Generate explanations
-- Generate reports
-- Prepare evidence
-- Prepare proposed corrections
-- Flag missing information
-- Escalate cases
-
-### Approval-gated actions
-
-Potential examples:
-
-- Posting accounting adjustments
-- Closing high-value exceptions
-- Changing ledger state
-- Executing merchant-authorized corrections
-
-For the Buildathon prototype, actions may be simulated where direct external financial write APIs are not available.
-
-The UI must clearly distinguish:
-
-```text
-EXECUTED
-PREPARED
-WAITING FOR APPROVAL
-ESCALATED
-```
-
----
-
-## 12. Honest Exception Handling
-
-A central requirement is that ARGUS must be able to say:
-
-> **"I cannot resolve this safely."**
-
-An unresolved case is not considered a failure of the demo if the available evidence is genuinely insufficient.
-
-The project will explicitly track:
-
-- Resolved exceptions
-- Incorrectly resolved exceptions
-- Correctly escalated exceptions
-- Incorrect escalations
-- Cases lacking sufficient evidence
-
-The Buildathon result will include an honest exception list.
-
----
-
-## 13. Auditability
-
-Every significant finance decision should be reproducible.
-
-For each resolution, ARGUS is intended to record:
-
-```text
-Run ID
-Exception ID
-Records examined
-Evidence used
-Hypotheses tested
-Agent/tool actions
-Calculation performed
-Policy applied
-Persistent-memory context used
-Confidence / uncertainty indicators
-Verification result
-Human approval if required
-Final outcome
-Timestamp
-```
-
-Example:
-
-```text
-Exception:
-EXC-041
-
-Finding:
-Duplicate merchant-ledger refund posting
-
-Evidence:
-Refund RFND-8392 occurs once in payment/refund records
-but twice in merchant ledger.
-
-Proposed action:
-Reverse duplicate journal entry.
-
-Authority:
-Human approval required because value > configured threshold.
-
-Status:
-WAITING_FOR_APPROVAL
-```
-
----
-
-## 14. Example End-to-End Scenario
-
-A synthetic batch contains 500 financial records.
-
-Deterministic reconciliation runs first.
-
-Illustrative flow:
-
-```text
-500 records processed
-
-438 matched deterministically
-62 unresolved exceptions
-```
-
-One exception contains:
-
-```text
-Merchant Ledger Expected: ₹86,000
-Observed Bank Credit:     ₹84,620
-Difference:                ₹1,380
-```
-
-The exception agent investigates.
-
-Possible hypothesis:
-
-```text
-Fee / tax treatment mismatch
-```
-
-Suppose the structured data proves:
-
-```text
-Gross Amount: ₹86,000
-Fee:           ₹1,169
-GST:             ₹211
-
-Net:          ₹84,620
-```
-
-The deterministic verifier confirms:
-
-```text
-₹86,000 - ₹1,169 - ₹211 = ₹84,620
-```
-
-Result:
-
-```text
-Exception classification:
-MERCHANT_LEDGER_GROSS_NET_TREATMENT
-
-Resolution:
-Explained successfully
-
-Financial variance after explanation:
-₹0
-
-Status:
-RESOLVED
-```
-
-No AI-generated amount is trusted without structured verification.
-
----
-
-## 15. Example Difficult Scenario
-
-Another exception:
-
-```text
-Ledger contains:
-Refund RFND-901: -₹48,500
-Refund RFND-901: -₹48,500
-
-Razorpay-like refund data:
-RFND-901: ₹48,500 COMPLETED
-Occurrence count: 1
-```
-
-ARGUS investigates and proposes:
-
-```text
-Likely issue:
-Duplicate merchant-ledger refund entry
-
-Evidence:
-1 refund in source transaction data
-2 journal occurrences in merchant ledger
-
-Proposed correction:
-Reverse one duplicate ledger posting
-```
-
-If the amount exceeds the permitted autonomous authority:
-
-```text
-Status:
-HUMAN APPROVAL REQUIRED
-```
-
-ARGUS prepares the correction but does not execute it.
-
----
-
-## 16. Evaluation Plan
-
-We will not claim performance metrics until the system has actually been run against the labelled dataset.
-
-Planned metrics:
-
-### Initial deterministic match rate
-
-```text
-Deterministically matched records
----------------------------------
-Total eligible records
-```
-
-### Exception resolution rate
-
-```text
-Exceptions resolved by ARGUS
-----------------------------
-Total exceptions investigated
-```
-
-### Exception resolution accuracy
-
-```text
-Correct ARGUS resolutions
--------------------------
-All ARGUS resolutions
-```
-
-### False-resolution rate
-
-Measures cases where ARGUS closed an exception incorrectly.
-
-### Human escalation rate
-
-```text
-Cases escalated
----------------
-Total exceptions
-```
-
-### Correct escalation rate
-
-Measures whether cases that genuinely lacked sufficient evidence were escalated rather than hallucinated into a resolution.
-
-### Automated coverage
-
-Percentage of the complete batch successfully handled without human intervention.
-
-### Financial reconciliation accuracy
-
-Whether final reconciled values match the labelled ground truth.
-
-### Throughput
-
-Potential measurements:
-
-- Records processed per second
-- Total batch-processing time
-- Average exception-investigation time
-- Median exception-investigation time
-
-### Audit traceability
-
-Percentage of resolved cases where the exact records and calculations supporting the outcome are available.
-
----
-
-## 17. Benchmark Dataset
-
-The repository is intended to include a synthetic benchmark dataset.
-
-Planned exception categories include:
-
-- Exact match
-- Timing difference
-- Partial refund
-- Full refund
-- Duplicate ledger posting
-- Missing ledger posting
-- Fee treatment difference
-- GST treatment difference
-- Settlement grouping mismatch
-- Incorrect settlement mapping
-- Incorrect transaction reference
-- Transaction appearing in another settlement window
-- Ambiguous bank narration
-- Insufficient evidence
-- High-value mandatory escalation
-- Policy-bound approval case
-
-The final dataset size will be at least the required 50+ records.
-
-A larger batch will be used if implementation time permits.
-
----
-
-## 18. What Makes ARGUS Different
-
-ARGUS is not intended to compete by adding a chatbot to reconciliation.
-
-Its intended differentiation is:
-
-1. **Deterministic finance core** — easy financial matches use explicit rules and calculations.
-2. **AI exception investigation** — agents focus only on unresolved cases.
-3. **Multi-agent orchestration** — specialist responsibilities are coordinated by one controller.
-4. **Persistent merchant memory** — operating context survives across runs.
-5. **Versioned policy reasoning** — policies come from a controlled knowledge layer.
-6. **Bounded autonomy** — agents operate only inside configured authority.
-7. **Voice supervision** — the finance professional manages at controller level.
-8. **Deterministic verification** — LLM plausibility is never enough to close an exception.
-9. **Honest escalation** — unresolved cases remain unresolved when evidence is insufficient.
-10. **Full audit trail** — conclusions remain traceable to records, calculations, policies, and actions.
-
----
-
-## 19. Product Experience
-
-The intended dashboard should feel like a finance operations control room rather than a traditional chatbot.
-
-Example:
-
-```text
-ARGUS CONTROL
-Finance Close · Batch AUG-20
-
---------------------------------------------------
-
-ORCHESTRATOR
-● Running
-
-RECONCILIATION
-✓ 438 records matched
-
-SETTLEMENT AGENT
-● Investigating 21 exceptions
-
-REFUND AGENT
-● Investigating 14 exceptions
-
-LEDGER AGENT
-✓ 18 exceptions resolved
-
-POLICY ENGINE
-◌ 6 cases waiting for approval
-
---------------------------------------------------
-
-Records processed:       500
-Matched:                 438
-Exceptions:               62
-Resolved by ARGUS:        --
-Escalated:                --
-Measured accuracy:        --
-```
-
-All final values shown in the actual product must come from the benchmark run.
-
-No placeholder performance number will be presented as a measured result.
-
----
-
-## 20. Intended Voice Demo
-
-Possible Buildathon interaction:
-
-### Finance Controller
-
-> "ARGUS, close today's batch and tell me what actually needs my attention."
-
-ARGUS runs reconciliation and exception investigation.
-
-### Finance Controller
-
-> "Show me the highest-value unresolved exception."
-
-ARGUS retrieves the relevant case.
-
-### Finance Controller
-
-> "Why could you not resolve it?"
-
-ARGUS shows:
-
-- Financial records
-- Evidence
-- Hypotheses tested
-- Policy
-- Missing information
-
-### Finance Controller
-
-> "Prepare corrections for all verified exceptions below my approval threshold. Do not post anything above it."
-
-ARGUS prepares only the permitted actions.
-
-The demo then shows the complete audit trail.
-
----
-
-## 21. Five-Minute Pitch Vision
-
-### 0:00–0:40 — Problem
-
-Show a finance team facing a large reconciliation batch.
-
-Explain that straightforward records can be matched mechanically, but exceptions create manual investigative work.
-
-### 0:40–1:10 — ARGUS CONTROL
-
-Introduce:
-
-```text
-Deterministic matching
-+
-AI exception investigation
-+
-Policy-aware bounded actions
-+
-Persistent memory
-+
-Voice supervision
-```
-
-### 1:10–3:40 — Live Demo
-
-- Load a 50+ record synthetic batch
-- Run reconciliation
-- Show measured match rate
-- Show agent orchestration
-- Investigate at least one difficult exception
-- Demonstrate voice supervision
-- Demonstrate an approval boundary
-- Show one unresolved exception where ARGUS refuses to guess
-
-### 3:40–4:30 — Benchmark
-
-Show:
-
-- Match rate
-- Resolution accuracy
-- False-resolution rate
-- Throughput
-- Escalation rate
-- Honest unresolved exception list
-
-### 4:30–5:00 — Architecture and Vision
-
-Show:
-
-- Finance engine
-- Agent orchestration
-- Persistent memory
-- Policy store
-- Verification
-- Auditability
-
-End with the long-term product vision:
-
-> A Razorpay-native AI Finance Controller that lets merchant finance teams supervise financial operations rather than manually inspect every transaction.
-
----
-
-## 22. Planned Repository Structure
-
-```text
-argus-control/
-│
-├── README.md
-├── ARCHITECTURE.md
-├── EVALUATION.md
-├── BUILD_CHALLENGES.md
-│
-├── apps/
-│   ├── web/
-│   └── api/
-│
-├── services/
-│   ├── reconciliation/
-│   ├── orchestrator/
-│   ├── settlement-agent/
-│   ├── refund-agent/
-│   ├── ledger-agent/
-│   ├── exception-agent/
-│   ├── policy-engine/
-│   ├── memory/
-│   ├── verification/
-│   └── voice/
-│
-├── packages/
-│   ├── financial-types/
-│   ├── agent-tools/
-│   └── audit/
-│
-├── data/
-│   ├── synthetic/
-│   ├── ground-truth/
-│   └── policies/
-│
-├── evaluation/
-│   ├── benchmark/
-│   └── results/
-│
-├── tests/
-│
-├── .env.example
-└── docker-compose.yml
-```
-
-This is the intended architecture, not a claim that every component already exists.
-
----
-
-## 23. Technical Decisions Still To Be Finalized
-
-The project vision and architecture are defined.
-
-The exact implementation stack is **not yet frozen**.
-
-Before development, we still need to finalize:
-
-- Web framework
-- Backend framework
-- Agent orchestration framework
-- LLM provider/model
-- Voice provider
-- Database
-- Retrieval layer if required
-- Persistent-memory implementation
-- Exact Razorpay sandbox/tool integrations available for the prototype
-- Exact accounting data format
-- Exact benchmark size
-- Deployment platform
-
-These choices will be made based on Buildathon constraints, available APIs, implementation time, reliability, and reproducibility.
-
-They should not be treated as decided until they are committed to the repository.
-
----
-
-## 24. Build Challenges We Intend to Solve
-
-### Hybrid deterministic + agentic architecture
-Keeping arithmetic and record matching deterministic while using LLM agents only where reasoning adds value.
-
-### Financial hallucination prevention
-Ensuring that a plausible AI explanation cannot close an exception unless structured evidence verifies it.
-
-### Agent coordination
-Preventing multiple agents from producing contradictory conclusions or duplicate actions.
-
-### Persistent memory boundaries
-Remembering merchant context without allowing historical conversational memory to override current policy.
-
-### Policy precedence
-Applying merchant preferences, internal policies, and approval boundaries predictably.
-
-### Reproducible evaluation
-Building a labelled synthetic dataset with enough diversity to objectively measure the system.
-
-### Honest uncertainty
-Escalating cases when the evidence is insufficient instead of forcing a resolution.
-
-### Voice-to-action safety
-Translating natural-language instructions into structured, permission-checked financial operations.
-
-### Auditability
-Recording enough information to reconstruct why every action or decision occurred.
-
-These are intended engineering challenges.
-
-The final submission should describe only the challenges that were actually encountered during implementation.
-
----
-
-## 25. Safety Philosophy
-
-ARGUS CONTROL will follow five core rules.
-
-1. **LLMs do not perform final financial arithmetic.**
-2. **No exception is resolved without structured evidence.**
-3. **No financial action exceeds the merchant-defined authority boundary.**
-4. **Insufficient evidence results in escalation, not invention.**
-5. **Every material decision is auditable.**
-
----
-
-## 26. What We Are Not Claiming
-
-At the planning stage, we are explicitly **not** claiming:
-
-- Access to Razorpay production systems
-- Access to Razorpay private internal APIs
-- Access to real merchant financial data
-- Production deployment inside Razorpay
-- Measured reconciliation accuracy
-- Measured agent accuracy
-- Measured throughput
-- Real money recovered
-- Real financial corrections executed
-- Regulatory compliance certification
-- Accounting certification
-- Support for every ERP/accounting platform
-- Fully autonomous production money movement
-
-Any performance number included later must come from the actual benchmark implementation.
-
----
-
-## 27. Buildathon Success Criteria
-
-The project will be considered successfully implemented when it can demonstrate the following end to end:
-
-1. Load a batch containing at least 50 synthetic financial records.
-2. Normalize the input data.
-3. Deterministically reconcile straightforward records.
-4. Calculate and display the actual initial match rate.
-5. Create an honest unresolved exception list.
-6. Send unresolved exceptions into the agent investigation layer.
-7. Allow agents to investigate using structured tools and evidence.
-8. Verify proposed explanations deterministically.
-9. Correctly classify cases as resolved, approval-required, or unresolved.
-10. Respect merchant-defined authority policies.
-11. Persist merchant operating context across sessions.
-12. Allow finance-controller supervision through voice or UI.
-13. Maintain an auditable history of agent actions and decisions.
-14. Run the same system against labelled ground truth.
-15. Report actual measured accuracy and throughput.
-16. Demonstrate at least one case that ARGUS intentionally refuses to resolve because the evidence is insufficient.
-
----
-
-## 28. Long-Term Product Vision
-
-If a system like ARGUS CONTROL were ever integrated natively into Razorpay, the intended relationship would be:
-
-```text
-RAZORPAY
-Payments
-Refunds
-Settlements
-Fees
-Taxes
-Disputes
-Payouts
-        ↓
-ARGUS CONTROL
-Autonomous Finance Operations Layer
-        ↓
-MERCHANT FINANCE TEAM
-```
-
-A Razorpay-native version could potentially have richer authorized access to payment and settlement context than an external reconciliation tool.
-
-The merchant could connect its accounting and banking systems and supervise the finance-close process through one controller.
-
-This is a future product vision only.
-
-It is not a claim about the Buildathon prototype.
-
----
-
-## 29. One-Line Project Definition
-
-> **ARGUS CONTROL is a voice-supervised AI Finance Controller that deterministically reconciles multi-source financial data, autonomously investigates the exceptions that remain, reasons with persistent merchant context and versioned policies, verifies every proposed resolution against structured evidence, and escalates only the cases it cannot safely resolve.**
-
----
-
-## 30. Buildathon Vision
-
-The goal of this project is not to build another finance chatbot.
-
-The goal is to demonstrate a finance agent that can be given a real operational objective:
-
-> **"Close this batch."**
-
-ARGUS should then:
-
-```text
-Understand the job
-        ↓
-Run deterministic reconciliation
-        ↓
-Identify exceptions
-        ↓
-Investigate difficult cases
-        ↓
-Use policies and merchant context
-        ↓
-Test financial hypotheses
-        ↓
-Verify every conclusion
-        ↓
-Act only within delegated authority
-        ↓
-Escalate ambiguity
-        ↓
-Report measurable results
-        ↓
-Preserve a complete audit trail
-```
-
-The intended experience is that the finance controller supervises the operation instead of manually working every row.
-
-That is the vision for **ARGUS CONTROL in Razorpay Buildathon Track 04**.
+> **ARGUS CONTROL is a financial flight recorder for merchant reconciliation. It builds a typed evidence graph across payments, refunds, settlements, bank credits, and ledger entries; reconciles straightforward records with deterministic code; uses one bounded AI investigator to test competing explanations for the residual cases; requires a deterministic proof package before any resolution; previews corrections against a sandbox ledger; enforces authority and approval; recovers from duplicate or disordered events; and leaves cases unresolved when the evidence cannot support a unique conclusion.**
