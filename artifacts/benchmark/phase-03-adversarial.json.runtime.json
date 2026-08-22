@@ -2285,11 +2285,11 @@
     "numerator": 60
   },
   "timing_metrics": {
-    "ingest_seconds": 0.006591,
-    "reconcile_seconds": 0.008647,
-    "records_per_second": 1593.32,
-    "total_seconds": 0.040168,
-    "verify_seconds": 0.000342
+    "ingest_seconds": 0.006548,
+    "reconcile_seconds": 0.008879,
+    "records_per_second": 1489.94,
+    "total_seconds": 0.042955,
+    "verify_seconds": 0.000302
   },
   "unaccounted_record_keys": [],
   "verification": {
@@ -2304,9 +2304,9 @@
     "dry_run_abs_variance_after_paise": 0,
     "dry_run_count": 0,
     "latency_ms": {
-      "max_case_ms": 0.051,
-      "median_case_ms": 0.037,
-      "verify_total_ms": 0.342
+      "max_case_ms": 0.035,
+      "median_case_ms": 0.02,
+      "verify_total_ms": 0.302
     },
     "passing_proof_completeness": {
       "denominator": 0,

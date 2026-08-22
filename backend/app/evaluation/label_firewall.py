@@ -32,6 +32,8 @@ RUNTIME_PY_ROOTS = (
     "backend/app/importers",
     "backend/app/reconciliation",
     "backend/app/graph",
+    "backend/app/verifier",
+    "backend/app/corrections",
     "backend/app/runs.py",
 )
 

@@ -153,7 +153,13 @@ class TestPostCreationFailureSemantics:
     ) -> None:
         import app.runs as runs_module
 
-        def explode(database: object, run_id: str, result: object, created_at: str) -> None:
+        def explode(
+            database: object,
+            run_id: str,
+            result: object,
+            verification: object,
+            created_at: str,
+        ) -> None:
             raise RuntimeError("unexpected persistence crash")
 
         monkeypatch.setattr(runs_module, "_persist_reconciliation", explode)
@@ -208,7 +214,13 @@ class TestForceReplacementIsFailureSafe:
             cases_before = len(database.query_all("SELECT * FROM cases"))
             rows_before = len(database.query_all("SELECT * FROM source_rows"))
 
-            def explode(database: object, run_id: str, result: object, created_at: str) -> None:
+            def explode(
+                database: object,
+                run_id: str,
+                result: object,
+                verification: object,
+                created_at: str,
+            ) -> None:
                 raise RuntimeError("swap crashed after delete")
 
             # The failure lands INSIDE the swap transaction, after the old

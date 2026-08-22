@@ -14,7 +14,7 @@ observed minus expected over the case's reference scope):
   and refund-composition ambiguity keep aggregate variance 0 with a non-zero
   affected amount.
 
-``proposed_delta_paise`` is always ``None`` in Phase 2: only a Phase 3
+``proposed_delta_paise`` is always ``None`` at detection time: only a Phase 3
 verifier PASS may derive a correction delta, and runtime code never reads
 label deltas. Evidence sets are exactly the anchors of each phenomenon.
 """
@@ -61,7 +61,7 @@ class CaseRecord:
     status: CaseStatus
     variance_paise: int
     affected_amount_paise: int
-    proposed_delta_paise: None
+    proposed_delta_paise: int | None
     currency: str
     summary: str
     reason_codes: tuple[str, ...]

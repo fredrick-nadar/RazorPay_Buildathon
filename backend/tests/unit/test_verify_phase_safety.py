@@ -164,22 +164,25 @@ class TestCappedOptionalStepTimeout:
         assert artifact["failed_step"] is None
 
 
-class TestPhase1Dispatch:
-    """Phase 1 extends the gate without weakening Phase 0 (PRD 16).
+class TestPhaseDispatch:
+    """Later phases extend the gate without weakening earlier phases (PRD 16).
 
-    The supported-phase set grows with each implemented phase (Phase 2 added
-    reconciliation); the assertion pins the exact known set so accidental
+    The supported-phase set grows with each implemented phase (Phase 3 added
+    verification/proof/dry-run); the assertion pins the exact known set so accidental
     removal of an earlier phase still fails loudly.
     """
 
-    def test_supported_phases_are_exactly_zero_one_two(self, verify_phase: ModuleType) -> None:
+    def test_supported_phases_are_exactly_zero_one_two_three(
+        self, verify_phase: ModuleType
+    ) -> None:
         phases = verify_phase.SUPPORTED_PHASES
-        assert phases == {0, 1, 2}
+        assert phases == {0, 1, 2, 3}
 
     def test_phase_names_cover_all_phases(self, verify_phase: ModuleType) -> None:
         assert verify_phase.PHASE_NAMES[0] == "Foundation and Frozen Contracts"
         assert verify_phase.PHASE_NAMES[1] == "Synthetic Data, Ground Truth, and Isolation"
         assert verify_phase.PHASE_NAMES[2] == "Normalization, Reconciliation, and Evidence Graph"
+        assert verify_phase.PHASE_NAMES[3] == "Verifier, Proof Packages, and Dry-Run Core"
 
     def test_phase1_artifact_uses_phase_name_and_zero_padded_name(
         self, verify_phase: ModuleType, tmp_path: Path

@@ -1,9 +1,9 @@
-"""Phase 2 migration tests: transactional v1->v2 upgrade and typed failure.
+"""Migration tests: transactional v1->v2->v3 upgrade and typed failure.
 
-A failed migration happens before any Phase 2 table exists, so no run row
-can be created or marked FAILED; the caller receives
-``PersistenceMigrationError``, the stored schema version remains 1, no v2
-table survives, and pre-existing metadata stays intact.
+A failed migration rolls back the active version step completely; the caller
+receives ``PersistenceMigrationError``, the stored schema version remains at
+the prior durable version, no partially-created target tables survive, and
+pre-existing metadata stays intact.
 """
 
 from __future__ import annotations
@@ -31,6 +31,14 @@ V2_TABLES = (
     "case_evidence",
 )
 
+V3_TABLES = (
+    "hypotheses",
+    "proofs",
+    "corrections",
+)
+
+ALL_RUNTIME_TABLES = (*V2_TABLES, *V3_TABLES)
+
 
 def _table_names(path: Path) -> set[str]:
     conn = sqlite3.connect(str(path))
@@ -53,13 +61,13 @@ def _create_v1_database(path: Path) -> None:
 
 
 class TestFreshDatabase:
-    def test_fresh_database_migrates_to_v2(self, tmp_path: Path) -> None:
+    def test_fresh_database_migrates_to_v3(self, tmp_path: Path) -> None:
         database = Database(tmp_path / "fresh.sqlite3")
         try:
-            assert database.schema_version == 2
+            assert database.schema_version == 3
             assert database.healthcheck() is True
             tables = _table_names(database.path)
-            assert set(V2_TABLES) <= tables
+            assert set(ALL_RUNTIME_TABLES) <= tables
             assert "app_meta" in tables
         finally:
             database.close()
@@ -79,11 +87,11 @@ class TestUpgradeFromV1:
         _create_v1_database(path)
         database = Database(path)
         try:
-            assert database.schema_version == 2
+            assert database.schema_version == 3
             assert database.get_meta("tenant_note") == "phase0-metadata"
-            assert database.get_meta("schema_version") == "2"
+            assert database.get_meta("schema_version") == "3"
             assert database.healthcheck() is True
-            assert set(V2_TABLES) <= _table_names(path)
+            assert set(ALL_RUNTIME_TABLES) <= _table_names(path)
             # No run row exists; none is claimed.
             assert database.query_all("SELECT * FROM runs") == []
         finally:
@@ -96,10 +104,52 @@ class TestUpgradeFromV1:
         first.close()
         second = Database(path)
         try:
-            assert second.schema_version == 2
+            assert second.schema_version == 3
             assert second.get_meta("tenant_note") == "phase0-metadata"
         finally:
             second.close()
+
+    def test_v2_database_upgrades_to_v3_preserving_rows(self, tmp_path: Path) -> None:
+        path = tmp_path / "phase2.sqlite3"
+        _create_v1_database(path)
+        original_chain = migrations._MIGRATION_CHAIN
+        try:
+            migrations._MIGRATION_CHAIN = original_chain[:1]
+            phase2 = Database(path)
+            try:
+                phase2.execute(
+                    "INSERT INTO runs (run_id, idempotency_key, tenant_id, inputs_path,"
+                    " inputs_fingerprint, status, economic_output_hash, rule_manifest_json,"
+                    " started_at_utc, finished_at_utc, summary_json)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        "run-existing",
+                        "key-existing",
+                        "tenant",
+                        "inputs",
+                        "fingerprint",
+                        "COMPLETED",
+                        "hash",
+                        "{}",
+                        "2026-01-01T00:00:00Z",
+                        "2026-01-01T00:00:01Z",
+                        "{}",
+                    ),
+                )
+                assert phase2.schema_version == 2
+            finally:
+                phase2.close()
+        finally:
+            migrations._MIGRATION_CHAIN = original_chain
+
+        upgraded = Database(path)
+        try:
+            assert upgraded.schema_version == 3
+            assert set(V3_TABLES) <= _table_names(path)
+            rows = upgraded.query_all("SELECT run_id FROM runs")
+            assert [row["run_id"] for row in rows] == ["run-existing"]
+        finally:
+            upgraded.close()
 
 
 class TestMigrationFailure:
@@ -124,7 +174,7 @@ class TestMigrationFailure:
 
         tables = _table_names(path)
         assert "runs" not in tables
-        assert not (set(V2_TABLES) & tables)
+        assert not (set(ALL_RUNTIME_TABLES) & tables)
         conn = sqlite3.connect(str(path))
         try:
             version = conn.execute(
@@ -154,7 +204,42 @@ class TestMigrationFailure:
 
         database = Database(path)
         try:
-            assert database.schema_version == 2
+            assert database.schema_version == 3
             assert database.get_meta("tenant_note") == "phase0-metadata"
         finally:
             database.close()
+
+    def test_failed_v3_migration_rolls_back_to_v2(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        path = tmp_path / "phase2.sqlite3"
+        _create_v1_database(path)
+        original_chain = migrations._MIGRATION_CHAIN
+        try:
+            migrations._MIGRATION_CHAIN = original_chain[:1]
+            phase2 = Database(path)
+            phase2.close()
+        finally:
+            migrations._MIGRATION_CHAIN = original_chain
+
+        def broken_v3() -> tuple[str, ...]:
+            return (
+                "CREATE TABLE hypotheses (hypothesis_id TEXT PRIMARY KEY)",
+                "CREATE TABLE broken_v3 (",
+            )
+
+        monkeypatch.setattr(migrations, "_migration_2_to_3_statements", broken_v3)
+        with pytest.raises(PersistenceMigrationError):
+            Database(path)
+
+        tables = _table_names(path)
+        assert "hypotheses" not in tables
+        assert not (set(V3_TABLES) & tables)
+        conn = sqlite3.connect(str(path))
+        try:
+            version = conn.execute(
+                "SELECT value FROM app_meta WHERE key = 'schema_version'"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        assert version == "2"

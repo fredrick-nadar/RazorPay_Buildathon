@@ -176,6 +176,25 @@ def main() -> int:
         problems.append("graph contains references that do not resolve")
     if evaluation.get("false_relationships"):
         problems.append(f"{len(evaluation['false_relationships'])} false relationships")
+    verification = evaluation.get("verification", {})
+    if verification:
+        if verification.get("false_verifier_pass_count"):
+            problems.append(
+                f"{verification['false_verifier_pass_count']} false verifier passes"
+            )
+        escalation = verification.get("ambiguous_escalation", {})
+        if escalation.get("numerator") != escalation.get("denominator"):
+            problems.append("ambiguous escalation does not match labels")
+        outcome = verification.get("outcome_agreement", {})
+        if outcome.get("numerator") != outcome.get("denominator"):
+            problems.append("case verification outcomes differ from labels")
+        delta = verification.get("delta_agreement", {})
+        if delta.get("numerator") != delta.get("denominator"):
+            problems.append("case proposed deltas differ from labels")
+        if not verification.get("proof_completeness", {}).get("complete"):
+            problems.append("passing proof completeness check failed")
+        if verification.get("money_weighted_dry_run_error_paise") != 0:
+            problems.append("money-weighted dry-run error is nonzero")
     false_positives = evaluation.get("case_comparison", {}).get(
         "false_positive_cases", []
     )

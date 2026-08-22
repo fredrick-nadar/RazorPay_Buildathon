@@ -240,6 +240,96 @@ def _match_cases_one_to_one(
     return pairs, false_positives, misses
 
 
+def _verification_metrics(
+    runtime_cases: list[dict[str, Any]],
+    labelled_cases: list[dict[str, Any]],
+    matched_pairs: list[dict[str, Any]],
+    runtime_output: dict[str, Any],
+) -> dict[str, Any]:
+    """Evaluator-only Phase 3 verification metrics.
+
+    Labels are loaded only in this module. Runtime output is judged on final
+    status and code-derived delta, never given label fields during execution.
+    """
+    runtime_by_id = {str(case.get("case_id")): case for case in runtime_cases}
+    labels_by_id = {str(label.get("case_id")): label for label in labelled_cases}
+    label_by_runtime = {
+        str(pair["runtime_case_id"]): labels_by_id[str(pair["label_case_id"])]
+        for pair in matched_pairs
+        if str(pair.get("label_case_id")) in labels_by_id
+    }
+
+    outcome_ok = 0
+    delta_ok = 0
+    false_passes: list[dict[str, Any]] = []
+    escalation_expected = 0
+    escalation_actual = 0
+    money_weighted_error = 0
+    for runtime_id, label in sorted(label_by_runtime.items()):
+        runtime = runtime_by_id[runtime_id]
+        expected_outcome = label.get("expected_outcome")
+        expected_delta = label.get("expected_delta_paise")
+        actual_status = runtime.get("status")
+        actual_delta = runtime.get("proposed_delta_paise")
+        if actual_status == expected_outcome:
+            outcome_ok += 1
+        if actual_delta == expected_delta:
+            delta_ok += 1
+        if actual_status in {"APPROVAL_REQUIRED", "VERIFIED_RESOLVED"} and (
+            actual_status != expected_outcome or actual_delta != expected_delta
+        ):
+            false_passes.append(
+                {
+                    "runtime_case_id": runtime_id,
+                    "expected_outcome": expected_outcome,
+                    "actual_status": actual_status,
+                    "expected_delta_paise": expected_delta,
+                    "actual_delta_paise": actual_delta,
+                }
+            )
+        if label.get("must_escalate") is True:
+            escalation_expected += 1
+            if actual_status == "UNRESOLVED":
+                escalation_actual += 1
+        if expected_delta is not None or actual_delta is not None:
+            money_weighted_error += abs(int(actual_delta or 0) - int(expected_delta or 0))
+
+    verification = runtime_output.get("verification", {})
+    completeness = verification.get("passing_proof_completeness", {})
+    proof_numerator = int(completeness.get("numerator") or 0)
+    proof_denominator = int(completeness.get("denominator") or 0)
+    dry_run_error = int(verification.get("dry_run_abs_variance_after_paise") or 0)
+    denominator = len(labelled_cases)
+    return {
+        "outcome_agreement": {
+            "numerator": outcome_ok,
+            "denominator": denominator,
+            "rate": round(outcome_ok / denominator, 6) if denominator else 0.0,
+        },
+        "delta_agreement": {
+            "numerator": delta_ok,
+            "denominator": denominator,
+            "rate": round(delta_ok / denominator, 6) if denominator else 0.0,
+        },
+        "ambiguous_escalation": {
+            "numerator": escalation_actual,
+            "denominator": escalation_expected,
+            "rate": (
+                round(escalation_actual / escalation_expected, 6) if escalation_expected else 0.0
+            ),
+        },
+        "false_verifier_passes": false_passes,
+        "false_verifier_pass_count": len(false_passes),
+        "proof_completeness": {
+            "numerator": proof_numerator,
+            "denominator": proof_denominator,
+            "complete": proof_numerator == proof_denominator,
+        },
+        "money_weighted_dry_run_error_paise": money_weighted_error + dry_run_error,
+        "runtime_verification_summary": verification,
+    }
+
+
 def evaluate_dataset(dataset_root: Path, runtime_output: dict[str, Any]) -> dict[str, Any]:
     """Compare a finalized runtime output against ground truth (evaluator-only)."""
     dataset_root = Path(dataset_root)
@@ -280,6 +370,9 @@ def evaluate_dataset(dataset_root: Path, runtime_output: dict[str, Any]) -> dict
     runtime_cases = runtime_output.get("cases", [])
     labelled_cases = list(labels.get("cases", []))
     pairs, false_positives, misses = _match_cases_one_to_one(runtime_cases, labelled_cases)
+    verification_metrics = _verification_metrics(
+        runtime_cases, labelled_cases, pairs, runtime_output
+    )
 
     totals = runtime_output.get("financial_control_totals", {})
     labels_totals = labels_manifest.get("totals_paise", {})
@@ -394,6 +487,7 @@ def evaluate_dataset(dataset_root: Path, runtime_output: dict[str, Any]) -> dict
             "false_positive_cases": false_positives,
             "missed_labels": misses,
         },
+        "verification": verification_metrics,
         "false_relationships": false_relationships,
         "totals_comparison": {
             "runtime_totals": totals,

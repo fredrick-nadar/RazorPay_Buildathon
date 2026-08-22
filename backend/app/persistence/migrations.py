@@ -197,6 +197,88 @@ def _migration_1_to_2_statements() -> tuple[str, ...]:
     )
 
 
+def _migration_2_to_3_statements() -> tuple[str, ...]:
+    """Phase 3 verifier artifacts (PRD 6.9, 6.10, 6.11).
+
+    ``hypotheses``, ``proofs``, and ``corrections`` are run outputs only: a
+    ``corrections`` row is a DRAFT preview of a verified correction, never an
+    applied one. Applied simulated entries (a later phase) would be new
+    ledger rows, never edits here.
+    """
+    return (
+        """
+        CREATE TABLE hypotheses (
+            hypothesis_id TEXT PRIMARY KEY,
+            case_id TEXT NOT NULL REFERENCES cases(case_id),
+            category TEXT NOT NULL,
+            claim TEXT NOT NULL,
+            evidence_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            reason_codes_json TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE proofs (
+            proof_id TEXT PRIMARY KEY,
+            case_id TEXT NOT NULL REFERENCES cases(case_id),
+            hypothesis_id TEXT NOT NULL,
+            claim TEXT NOT NULL,
+            category TEXT NOT NULL,
+            evidence_json TEXT NOT NULL,
+            supported_evidence_json TEXT NOT NULL,
+            conflicting_evidence_json TEXT NOT NULL,
+            equations_json TEXT NOT NULL,
+            rejected_alternatives_json TEXT NOT NULL,
+            verifier_status TEXT NOT NULL,
+            verifier_rule_id TEXT NOT NULL,
+            verifier_rule_version TEXT NOT NULL,
+            recon_manifest_fingerprint TEXT NOT NULL,
+            verifier_manifest_fingerprint TEXT NOT NULL,
+            proposed_delta_paise INTEGER,
+            dry_run_json TEXT,
+            authority_decision TEXT NOT NULL,
+            requires_approval INTEGER NOT NULL,
+            uncertainty_json TEXT NOT NULL,
+            competing_candidates_json TEXT NOT NULL,
+            missing_discriminator TEXT,
+            recommended_next_step TEXT,
+            canonical_hash TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE corrections (
+            correction_id TEXT PRIMARY KEY,
+            case_id TEXT NOT NULL REFERENCES cases(case_id),
+            proof_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            proposed_entry_json TEXT,
+            target_ledger_entry_id TEXT,
+            account_code TEXT,
+            proposed_delta_paise INTEGER NOT NULL,
+            variance_before_paise INTEGER NOT NULL,
+            variance_after_paise INTEGER NOT NULL,
+            totals_before_json TEXT NOT NULL,
+            totals_after_json TEXT NOT NULL,
+            warnings_json TEXT NOT NULL,
+            uncertainty_json TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX idx_proofs_case ON proofs(case_id)",
+        "CREATE INDEX idx_corrections_case ON corrections(case_id)",
+    )
+
+
+# The chain stores statement-function NAMES resolved at call time so that
+# tests can monkeypatch a broken migration into any step.
+_MIGRATION_CHAIN: tuple[tuple[int, int, str], ...] = (
+    (1, 2, "_migration_1_to_2_statements"),
+    (2, 3, "_migration_2_to_3_statements"),
+)
+
+
 def apply_migrations(conn: sqlite3.Connection) -> int:
     """Walk the migration chain to the latest version and return it.
 
@@ -205,30 +287,30 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
     migration back and raises :class:`PersistenceMigrationError` with the
     stored schema version unchanged.
     """
-    from_version = 1
-    to_version = 2
-    statements = _migration_1_to_2_statements()
     version = _read_schema_version(conn)
-    if version >= to_version:
-        return version
-    if version != from_version:
-        raise PersistenceMigrationError(f"cannot migrate from unknown schema version {version}")
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        for statement in statements:
-            conn.execute(statement)
-        conn.execute(
-            "UPDATE app_meta SET value = ? WHERE key = 'schema_version'",
-            (str(to_version),),
-        )
-        conn.commit()
-    except sqlite3.Error as exc:
-        conn.rollback()
-        raise PersistenceMigrationError(
-            f"migration v{from_version}->v{to_version} failed and was rolled "
-            f"back; schema version remains {version}: {exc}"
-        ) from exc
-    return to_version
+    for from_version, to_version, function_name in _MIGRATION_CHAIN:
+        if version < from_version:
+            raise PersistenceMigrationError(f"cannot migrate from unknown schema version {version}")
+        if version >= to_version:
+            continue
+        statements = globals()[function_name]()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for statement in statements:
+                conn.execute(statement)
+            conn.execute(
+                "UPDATE app_meta SET value = ? WHERE key = 'schema_version'",
+                (str(to_version),),
+            )
+            conn.commit()
+        except sqlite3.Error as exc:
+            conn.rollback()
+            raise PersistenceMigrationError(
+                f"migration v{from_version}->v{to_version} failed and was rolled "
+                f"back; schema version remains {version}: {exc}"
+            ) from exc
+        version = to_version
+    return version
 
 
 def _read_schema_version(conn: sqlite3.Connection) -> int:
@@ -244,4 +326,4 @@ def _read_schema_version(conn: sqlite3.Connection) -> int:
 
 
 def latest_schema_version() -> int:
-    return 2
+    return _MIGRATION_CHAIN[-1][1]
