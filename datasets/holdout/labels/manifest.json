@@ -1,0 +1,26 @@
+{
+  "case_count": 23,
+  "dataset_version": "argus-datasets-v1",
+  "duplicate_delivery_count": 0,
+  "eligible_row_count": 1880,
+  "label_schema_version": "argus-labels-v1",
+  "labels_sha256": "b5090067252d3ed9994ea0bd0b7081f17ef24b5b7af20533a86c30a61d6e9728",
+  "profile": "holdout",
+  "quarantine_expected_count": 0,
+  "row_expectation_count": 0,
+  "seed": 9107,
+  "totals_paise": {
+    "bank_credit": 1753032412,
+    "ledger_by_account": {
+      "1100-BANK-OPERATING": 1753032412,
+      "2100-PAYMENTS-CLEARING": 1781229409
+    },
+    "ledger_total": 3534261821,
+    "payment_fee": 37289068,
+    "payment_gross": 1864453400,
+    "payment_net": 1820452312,
+    "payment_tax": 6712020,
+    "refund_total": 67419900,
+    "settlement_net": 1753032412
+  }
+}

@@ -98,8 +98,8 @@
     },
     "throughput": {
       "eligible_records": 64,
-      "reconcile_seconds": 0.007473,
-      "records_per_second": 1870.41
+      "reconcile_seconds": 0.007568,
+      "records_per_second": 1765.45
     },
     "totals_comparison": {
       "equal": true,
@@ -176,9 +176,9 @@
         "dry_run_abs_variance_after_paise": 0,
         "dry_run_count": 0,
         "latency_ms": {
-          "max_case_ms": 0.036,
-          "median_case_ms": 0.018,
-          "verify_total_ms": 0.251
+          "max_case_ms": 0.033,
+          "median_case_ms": 0.015,
+          "verify_total_ms": 0.233
         },
         "passing_proof_completeness": {
           "denominator": 0,
@@ -281,5 +281,6 @@
   "mode": "rules-only",
   "problems": [],
   "provider": "none",
+  "replay_diagnostics": null,
   "runtime_output_path": "D:\\Programming\\RazorPay_Buildathon\\artifacts\\benchmark\\phase-03-adversarial.json.runtime.json"
 }

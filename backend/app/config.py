@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     investigator_tool_budget: int = Field(default=12, ge=1, le=100)
     investigator_max_retries: int = Field(default=2, ge=1, le=10)
     investigator_timeout_s: float = Field(default=30.0, gt=0)
+    razorpay_key_id: str | None = None
+    razorpay_key_secret: SecretStr | None = None
+    razorpay_webhook_secret: SecretStr | None = None
 
     @property
     def rules_only(self) -> bool:
@@ -56,6 +59,8 @@ class Settings(BaseSettings):
             "host": self.host,
             "port": self.port,
             "log_level": self.log_level,
+            "razorpay_test_mode_configured": self.razorpay_key_id is not None
+            and self.razorpay_key_secret is not None,
         }
 
 

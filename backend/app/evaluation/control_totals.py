@@ -82,9 +82,16 @@ def rows_to_dataset_rows(rows: dict[str, list[Row]], labels: dict[str, Any] | No
 
 
 def _read_csv(path: Path) -> list[Row]:
+    from app.importers.ingest import HEADER_ALIASES
+
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
-        return [dict(row) for row in reader]
+        # Resolve the documented harmless header aliases (PRD 13.3 holdout
+        # variation) so evaluator arithmetic always sees canonical keys -
+        # mirroring runtime ingestion behavior.
+        return [
+            {HEADER_ALIASES.get(key, key): value for key, value in row.items()} for row in reader
+        ]
 
 
 def parse_dataset(root: Path) -> DatasetRows:

@@ -1,0 +1,2404 @@
+{
+  "batch_status": "COMPLETED",
+  "cases": [
+    {
+      "affected_amount_paise": 4586932,
+      "case_id": "case-2b182da32f80",
+      "category": "AMBIGUOUS_EVIDENCE",
+      "evidence": [
+        {
+          "record_id": "bnk_DFAbwJAcxm",
+          "record_type": "BANK_ENTRY"
+        },
+        {
+          "record_id": "bnk_Sa65QydOjL",
+          "record_type": "BANK_ENTRY"
+        },
+        {
+          "record_id": "stl_1IIuTNux5X",
+          "record_type": "SETTLEMENT"
+        },
+        {
+          "record_id": "stl_bMu31h7e7H",
+          "record_type": "SETTLEMENT"
+        }
+      ],
+      "proposed_delta_paise": null,
+      "reason_codes": [
+        "NON_UNIQUE_EVIDENCE"
+      ],
+      "status": "UNRESOLVED",
+      "variance_paise": 0,
+      "variance_scope": "LEDGER"
+    },
+    {
+      "affected_amount_paise": 4421042,
+      "case_id": "case-1297deaa29f5",
+      "category": "AMBIGUOUS_EVIDENCE",
+      "evidence": [
+        {
+          "record_id": "led_Blv5CfRrMD",
+          "record_type": "LEDGER_ENTRY"
+        },
+        {
+          "record_id": "stl_G5NU6VCxep",
+          "record_type": "SETTLEMENT"
+        }
+      ],
+      "proposed_delta_paise": null,
+      "reason_codes": [
+        "MISSING_EVIDENCE"
+      ],
+      "status": "UNRESOLVED",
+      "variance_paise": -4421042,
+      "variance_scope": "BANK"
+    },
+    {
+      "affected_amount_paise": 2926800,
+      "case_id": "case-38653c3abc78",
+      "category": "AMBIGUOUS_EVIDENCE",
+      "evidence": [
+        {
+          "record_id": "led_eUFD6klYWL",
+          "record_type": "LEDGER_ENTRY"
+        },
+        {
+          "record_id": "led_uyc1AjzE6v",
+          "record_type": "LEDGER_ENTRY"
+        },
+        {
+          "record_id": "pay_3UjY6a0SVK",
+          "record_type": "PAYMENT"
+        },
+        {
+          "record_id": "rfd_OiRtpaZnEQ",
+          "record_type": "REFUND"
+        },
+        {
+          "record_id": "rfd_dVNnWYBvrx",
+          "record_type": "REFUND"
+        },
+        {
+          "record_id": "rfd_lmxlaO0H8K",
+          "record_type": "REFUND"
+        }
+      ],
+      "proposed_delta_paise": null,
+      "reason_codes": [
+        "NON_UNIQUE_EVIDENCE"
+      ],
+      "status": "UNRESOLVED",
+      "variance_paise": 0,
+      "variance_scope": "LEDGER"
+    }
+  ],
+  "cases_by_category": {
+    "AMBIGUOUS_EVIDENCE": 3
+  },
+  "cases_count": 3,
+  "duplicate_delivery_count": 1,
+  "economic_output_hash": "9787355f41947e9c6f77ed144ca044effa12cc5a1a19058d8fb500c50c590e78",
+  "eligible_record_count": 64,
+  "file_stats": [
+    {
+      "accepted": 18,
+      "duplicate_delivery": 1,
+      "file": "payments",
+      "quarantined": 1,
+      "raw_rows": 20
+    },
+    {
+      "accepted": 6,
+      "duplicate_delivery": 0,
+      "file": "refunds",
+      "quarantined": 1,
+      "raw_rows": 7
+    },
+    {
+      "accepted": 6,
+      "duplicate_delivery": 0,
+      "file": "settlements",
+      "quarantined": 0,
+      "raw_rows": 6
+    },
+    {
+      "accepted": 5,
+      "duplicate_delivery": 0,
+      "file": "bank_entries",
+      "quarantined": 0,
+      "raw_rows": 5
+    },
+    {
+      "accepted": 29,
+      "duplicate_delivery": 0,
+      "file": "ledger_entries",
+      "quarantined": 0,
+      "raw_rows": 29
+    }
+  ],
+  "financial_control_totals": {
+    "affected_amount_paise": 11934774,
+    "bank_credit_paise": 11916537,
+    "expected_net_settlement_paise": 16337579,
+    "ledger_by_account_paise": {
+      "1100-BANK-OPERATING": 16337579,
+      "2100-PAYMENTS-CLEARING": 16337579
+    },
+    "ledger_total_paise": 32675158,
+    "payment_fee_paise": 400272,
+    "payment_gross_paise": 20013600,
+    "payment_net_paise": 19541279,
+    "payment_tax_paise": 72049,
+    "refund_total_paise": 3203700,
+    "residual_abs_variance_paise": 4421042,
+    "scoped_ledger_accounts": [
+      "1100-BANK-OPERATING",
+      "2100-PAYMENTS-CLEARING"
+    ],
+    "settlement_net_paise": 16337579
+  },
+  "graph": {
+    "counts": {
+      "edge_count": 69,
+      "edges_by_relationship": {
+        "ADJUSTS_SETTLEMENT": 6,
+        "CASE_EVIDENCE": 12,
+        "LEDGER_SOURCE": 27,
+        "MEMBER_OF_SETTLEMENT": 18,
+        "REFUND_OF_PAYMENT": 6
+      },
+      "node_count": 67,
+      "nodes_by_type": {
+        "BANK_ENTRY": 5,
+        "CASE": 3,
+        "LEDGER_ENTRY": 29,
+        "PAYMENT": 18,
+        "REFUND": 6,
+        "SETTLEMENT": 6
+      }
+    },
+    "edges": [
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-f03e1f608bee:REFUND:rfd_Nc5rje9Ikp",
+        "relationship_type": "REFUND_OF_PAYMENT",
+        "rule_id": "R-EXACT-REFUND-PAYMENT",
+        "rule_version": "1",
+        "source_node_id": "REFUND:rfd_Nc5rje9Ikp",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_NZ3xBYxQFL"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-0865a0905cf3:REFUND:rfd_OiRtpaZnEQ",
+        "relationship_type": "REFUND_OF_PAYMENT",
+        "rule_id": "R-EXACT-REFUND-PAYMENT",
+        "rule_version": "1",
+        "source_node_id": "REFUND:rfd_OiRtpaZnEQ",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_3UjY6a0SVK"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-041affeaaafd:REFUND:rfd_dVNnWYBvrx",
+        "relationship_type": "REFUND_OF_PAYMENT",
+        "rule_id": "R-EXACT-REFUND-PAYMENT",
+        "rule_version": "1",
+        "source_node_id": "REFUND:rfd_dVNnWYBvrx",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_3UjY6a0SVK"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-a746817b8b25:REFUND:rfd_ed41xVA5cQ",
+        "relationship_type": "REFUND_OF_PAYMENT",
+        "rule_id": "R-EXACT-REFUND-PAYMENT",
+        "rule_version": "1",
+        "source_node_id": "REFUND:rfd_ed41xVA5cQ",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_NctLa3Vnmv"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-6a370e7bddf6:REFUND:rfd_iYba9VQGbf",
+        "relationship_type": "REFUND_OF_PAYMENT",
+        "rule_id": "R-EXACT-REFUND-PAYMENT",
+        "rule_version": "1",
+        "source_node_id": "REFUND:rfd_iYba9VQGbf",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_QECEUbuQGQ"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-6d2f013ec53b:REFUND:rfd_lmxlaO0H8K",
+        "relationship_type": "REFUND_OF_PAYMENT",
+        "rule_id": "R-EXACT-REFUND-PAYMENT",
+        "rule_version": "1",
+        "source_node_id": "REFUND:rfd_lmxlaO0H8K",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_3UjY6a0SVK"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-7b3c28ef52b0:PAYMENT:pay_8OhO7FM3sK",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_8OhO7FM3sK",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_1IIuTNux5X"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-7b3c28ef52b0:PAYMENT:pay_Q8KJNEBrUR",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_Q8KJNEBrUR",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_1IIuTNux5X"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-e28ff9f56114:PAYMENT:pay_DzUbtJgMdS",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_DzUbtJgMdS",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_G5NU6VCxep"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-e28ff9f56114:PAYMENT:pay_K4WanPAQZK",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_K4WanPAQZK",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_G5NU6VCxep"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-e28ff9f56114:PAYMENT:pay_lhlFqxelKU",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_lhlFqxelKU",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_G5NU6VCxep"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-e92ab4301982:PAYMENT:pay_NctLa3Vnmv",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_NctLa3Vnmv",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_TZxuIWVs5C"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-e92ab4301982:PAYMENT:pay_QECEUbuQGQ",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_QECEUbuQGQ",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_TZxuIWVs5C"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-e92ab4301982:PAYMENT:pay_gjgCGzmMAJ",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_gjgCGzmMAJ",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_TZxuIWVs5C"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-e92ab4301982:REFUND:rfd_ed41xVA5cQ",
+        "relationship_type": "ADJUSTS_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "REFUND:rfd_ed41xVA5cQ",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_TZxuIWVs5C"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-e92ab4301982:REFUND:rfd_iYba9VQGbf",
+        "relationship_type": "ADJUSTS_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "REFUND:rfd_iYba9VQGbf",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_TZxuIWVs5C"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-926d809c9278:PAYMENT:pay_3UjY6a0SVK",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_3UjY6a0SVK",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_aIVAg4y4AP"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-926d809c9278:PAYMENT:pay_H7R68MGAIM",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_H7R68MGAIM",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_aIVAg4y4AP"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-926d809c9278:PAYMENT:pay_M4Cix0RsKu",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_M4Cix0RsKu",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_aIVAg4y4AP"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-926d809c9278:PAYMENT:pay_gSLSgH3rdY",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_gSLSgH3rdY",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_aIVAg4y4AP"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-926d809c9278:REFUND:rfd_OiRtpaZnEQ",
+        "relationship_type": "ADJUSTS_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "REFUND:rfd_OiRtpaZnEQ",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_aIVAg4y4AP"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-926d809c9278:REFUND:rfd_dVNnWYBvrx",
+        "relationship_type": "ADJUSTS_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "REFUND:rfd_dVNnWYBvrx",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_aIVAg4y4AP"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-926d809c9278:REFUND:rfd_lmxlaO0H8K",
+        "relationship_type": "ADJUSTS_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "REFUND:rfd_lmxlaO0H8K",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_aIVAg4y4AP"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-814c9feaa662:PAYMENT:pay_W60FpMyUW6",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_W60FpMyUW6",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_bMu31h7e7H"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-814c9feaa662:PAYMENT:pay_bUb0YOpJZx",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_bUb0YOpJZx",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_bMu31h7e7H"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-c1753a443771:PAYMENT:pay_FiCqJLNNfR",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_FiCqJLNNfR",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_w8mVmojlgN"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-c1753a443771:PAYMENT:pay_NZ3xBYxQFL",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_NZ3xBYxQFL",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_w8mVmojlgN"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-c1753a443771:PAYMENT:pay_Yzxp7ldPf0",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_Yzxp7ldPf0",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_w8mVmojlgN"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-c1753a443771:PAYMENT:pay_cisLxeIJNh",
+        "relationship_type": "MEMBER_OF_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "PAYMENT:pay_cisLxeIJNh",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_w8mVmojlgN"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-c1753a443771:REFUND:rfd_Nc5rje9Ikp",
+        "relationship_type": "ADJUSTS_SETTLEMENT",
+        "rule_id": "R-EXACT-PAYMENT-SETTLEMENT",
+        "rule_version": "1",
+        "source_node_id": "REFUND:rfd_Nc5rje9Ikp",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_w8mVmojlgN"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-9978ff16f3ff:LEDGER_ENTRY:led_0S15Oww8EO",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_0S15Oww8EO",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_Q8KJNEBrUR"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-f198f5751c82:LEDGER_ENTRY:led_1xbkvNqiz3",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_1xbkvNqiz3",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_gjgCGzmMAJ"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-af1152242636:LEDGER_ENTRY:led_3sqdjDAfcY",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_3sqdjDAfcY",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_bUb0YOpJZx"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-30bd98454a24:LEDGER_ENTRY:led_9qbKrsGa28",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_9qbKrsGa28",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_QECEUbuQGQ"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-30017a96cd43:LEDGER_ENTRY:led_AF3CnxgDc1",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_AF3CnxgDc1",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_lhlFqxelKU"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-cd3ee6600a69:LEDGER_ENTRY:led_Blv5CfRrMD",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_Blv5CfRrMD",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_G5NU6VCxep"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-e5618d5e8f60:LEDGER_ENTRY:led_DOoMombgcT",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_DOoMombgcT",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_M4Cix0RsKu"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-a49e91bf03bf:LEDGER_ENTRY:led_FSYfJZGUWx",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_FSYfJZGUWx",
+        "status": "MATCHED",
+        "target_node_id": "REFUND:rfd_ed41xVA5cQ"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-dc226be34a92:LEDGER_ENTRY:led_GW406w6Sai",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_GW406w6Sai",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_w8mVmojlgN"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-349ee5d0c8fe:LEDGER_ENTRY:led_JTuHg720QH",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_JTuHg720QH",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_1IIuTNux5X"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-f06bf7700edd:LEDGER_ENTRY:led_N9jcx71Uei",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_N9jcx71Uei",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_aIVAg4y4AP"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-0174c1a1610f:LEDGER_ENTRY:led_NFA8VPswYU",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_NFA8VPswYU",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_3UjY6a0SVK"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-ebb06b069cbd:LEDGER_ENTRY:led_NSa3SjJFZT",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_NSa3SjJFZT",
+        "status": "MATCHED",
+        "target_node_id": "REFUND:rfd_iYba9VQGbf"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-6084c168141d:LEDGER_ENTRY:led_SWiV1s6JNR",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_SWiV1s6JNR",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_gSLSgH3rdY"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-cdba7072611e:LEDGER_ENTRY:led_Wwt9UN9uwG",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_Wwt9UN9uwG",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_cisLxeIJNh"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-1522ce0478bb:LEDGER_ENTRY:led_XDAyPJQsaU",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_XDAyPJQsaU",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_DzUbtJgMdS"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-95481465cb37:LEDGER_ENTRY:led_ZRSZUH8teH",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_ZRSZUH8teH",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_8OhO7FM3sK"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-6b2273b285a8:LEDGER_ENTRY:led_dFe83Gbug7",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_dFe83Gbug7",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_FiCqJLNNfR"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-2874b3add02e:LEDGER_ENTRY:led_dYKbWp3eNn",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_dYKbWp3eNn",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_bMu31h7e7H"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-bfbab9048b66:LEDGER_ENTRY:led_eS2KLNIgiD",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_eS2KLNIgiD",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_NZ3xBYxQFL"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-4be6a698d952:LEDGER_ENTRY:led_f1SRdg4p65",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_f1SRdg4p65",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_W60FpMyUW6"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-07c6768b9b5a:LEDGER_ENTRY:led_fDOKvUZrRm",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_fDOKvUZrRm",
+        "status": "MATCHED",
+        "target_node_id": "SETTLEMENT:stl_TZxuIWVs5C"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-dbc00f88d339:LEDGER_ENTRY:led_hQopSYRmpQ",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_hQopSYRmpQ",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_Yzxp7ldPf0"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-b60ce84501a6:LEDGER_ENTRY:led_m8BGOdskSY",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_m8BGOdskSY",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_K4WanPAQZK"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-2e69eadf28fc:LEDGER_ENTRY:led_meDj6C5ZaW",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_meDj6C5ZaW",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_NctLa3Vnmv"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-14b6fa09ce12:LEDGER_ENTRY:led_ranBrurbY9",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_ranBrurbY9",
+        "status": "MATCHED",
+        "target_node_id": "PAYMENT:pay_H7R68MGAIM"
+      },
+      {
+        "confidence": "EXACT",
+        "edge_id": "edge:match-5c2688b0a626:LEDGER_ENTRY:led_ymBhQCNgUp",
+        "relationship_type": "LEDGER_SOURCE",
+        "rule_id": "R-EXACT-LEDGER-SOURCE",
+        "rule_version": "1",
+        "source_node_id": "LEDGER_ENTRY:led_ymBhQCNgUp",
+        "status": "MATCHED",
+        "target_node_id": "REFUND:rfd_Nc5rje9Ikp"
+      },
+      {
+        "confidence": "RULE",
+        "edge_id": "edge:case-2b182da32f80:BANK_ENTRY:bnk_DFAbwJAcxm",
+        "relationship_type": "CASE_EVIDENCE",
+        "rule_id": "case-evidence",
+        "rule_version": "1",
+        "source_node_id": "CASE:case-2b182da32f80",
+        "status": "UNRESOLVED",
+        "target_node_id": "BANK_ENTRY:bnk_DFAbwJAcxm"
+      },
+      {
+        "confidence": "RULE",
+        "edge_id": "edge:case-2b182da32f80:BANK_ENTRY:bnk_Sa65QydOjL",
+        "relationship_type": "CASE_EVIDENCE",
+        "rule_id": "case-evidence",
+        "rule_version": "1",
+        "source_node_id": "CASE:case-2b182da32f80",
+        "status": "UNRESOLVED",
+        "target_node_id": "BANK_ENTRY:bnk_Sa65QydOjL"
+      },
+      {
+        "confidence": "RULE",
+        "edge_id": "edge:case-2b182da32f80:SETTLEMENT:stl_1IIuTNux5X",
+        "relationship_type": "CASE_EVIDENCE",
+        "rule_id": "case-evidence",
+        "rule_version": "1",
+        "source_node_id": "CASE:case-2b182da32f80",
+        "status": "UNRESOLVED",
+        "target_node_id": "SETTLEMENT:stl_1IIuTNux5X"
+      },
+      {
+        "confidence": "RULE",
+        "edge_id": "edge:case-2b182da32f80:SETTLEMENT:stl_bMu31h7e7H",
+        "relationship_type": "CASE_EVIDENCE",
+        "rule_id": "case-evidence",
+        "rule_version": "1",
+        "source_node_id": "CASE:case-2b182da32f80",
+        "status": "UNRESOLVED",
+        "target_node_id": "SETTLEMENT:stl_bMu31h7e7H"
+      },
+      {
+        "confidence": "RULE",
+        "edge_id": "edge:case-1297deaa29f5:LEDGER_ENTRY:led_Blv5CfRrMD",
+        "relationship_type": "CASE_EVIDENCE",
+        "rule_id": "case-evidence",
+        "rule_version": "1",
+        "source_node_id": "CASE:case-1297deaa29f5",
+        "status": "UNRESOLVED",
+        "target_node_id": "LEDGER_ENTRY:led_Blv5CfRrMD"
+      },
+      {
+        "confidence": "RULE",
+        "edge_id": "edge:case-1297deaa29f5:SETTLEMENT:stl_G5NU6VCxep",
+        "relationship_type": "CASE_EVIDENCE",
+        "rule_id": "case-evidence",
+        "rule_version": "1",
+        "source_node_id": "CASE:case-1297deaa29f5",
+        "status": "UNRESOLVED",
+        "target_node_id": "SETTLEMENT:stl_G5NU6VCxep"
+      },
+      {
+        "confidence": "RULE",
+        "edge_id": "edge:case-38653c3abc78:LEDGER_ENTRY:led_eUFD6klYWL",
+        "relationship_type": "CASE_EVIDENCE",
+        "rule_id": "case-evidence",
+        "rule_version": "1",
+        "source_node_id": "CASE:case-38653c3abc78",
+        "status": "UNRESOLVED",
+        "target_node_id": "LEDGER_ENTRY:led_eUFD6klYWL"
+      },
+      {
+        "confidence": "RULE",
+        "edge_id": "edge:case-38653c3abc78:LEDGER_ENTRY:led_uyc1AjzE6v",
+        "relationship_type": "CASE_EVIDENCE",
+        "rule_id": "case-evidence",
+        "rule_version": "1",
+        "source_node_id": "CASE:case-38653c3abc78",
+        "status": "UNRESOLVED",
+        "target_node_id": "LEDGER_ENTRY:led_uyc1AjzE6v"
+      },
+      {
+        "confidence": "RULE",
+        "edge_id": "edge:case-38653c3abc78:PAYMENT:pay_3UjY6a0SVK",
+        "relationship_type": "CASE_EVIDENCE",
+        "rule_id": "case-evidence",
+        "rule_version": "1",
+        "source_node_id": "CASE:case-38653c3abc78",
+        "status": "UNRESOLVED",
+        "target_node_id": "PAYMENT:pay_3UjY6a0SVK"
+      },
+      {
+        "confidence": "RULE",
+        "edge_id": "edge:case-38653c3abc78:REFUND:rfd_OiRtpaZnEQ",
+        "relationship_type": "CASE_EVIDENCE",
+        "rule_id": "case-evidence",
+        "rule_version": "1",
+        "source_node_id": "CASE:case-38653c3abc78",
+        "status": "UNRESOLVED",
+        "target_node_id": "REFUND:rfd_OiRtpaZnEQ"
+      },
+      {
+        "confidence": "RULE",
+        "edge_id": "edge:case-38653c3abc78:REFUND:rfd_dVNnWYBvrx",
+        "relationship_type": "CASE_EVIDENCE",
+        "rule_id": "case-evidence",
+        "rule_version": "1",
+        "source_node_id": "CASE:case-38653c3abc78",
+        "status": "UNRESOLVED",
+        "target_node_id": "REFUND:rfd_dVNnWYBvrx"
+      },
+      {
+        "confidence": "RULE",
+        "edge_id": "edge:case-38653c3abc78:REFUND:rfd_lmxlaO0H8K",
+        "relationship_type": "CASE_EVIDENCE",
+        "rule_id": "case-evidence",
+        "rule_version": "1",
+        "source_node_id": "CASE:case-38653c3abc78",
+        "status": "UNRESOLVED",
+        "target_node_id": "REFUND:rfd_lmxlaO0H8K"
+      }
+    ],
+    "nodes": [
+      {
+        "label": "pay_3UjY6a0SVK",
+        "node_id": "PAYMENT:pay_3UjY6a0SVK",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_8OhO7FM3sK",
+        "node_id": "PAYMENT:pay_8OhO7FM3sK",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_DzUbtJgMdS",
+        "node_id": "PAYMENT:pay_DzUbtJgMdS",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_FiCqJLNNfR",
+        "node_id": "PAYMENT:pay_FiCqJLNNfR",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_H7R68MGAIM",
+        "node_id": "PAYMENT:pay_H7R68MGAIM",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_K4WanPAQZK",
+        "node_id": "PAYMENT:pay_K4WanPAQZK",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_M4Cix0RsKu",
+        "node_id": "PAYMENT:pay_M4Cix0RsKu",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_NZ3xBYxQFL",
+        "node_id": "PAYMENT:pay_NZ3xBYxQFL",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_NctLa3Vnmv",
+        "node_id": "PAYMENT:pay_NctLa3Vnmv",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_Q8KJNEBrUR",
+        "node_id": "PAYMENT:pay_Q8KJNEBrUR",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_QECEUbuQGQ",
+        "node_id": "PAYMENT:pay_QECEUbuQGQ",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_W60FpMyUW6",
+        "node_id": "PAYMENT:pay_W60FpMyUW6",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_Yzxp7ldPf0",
+        "node_id": "PAYMENT:pay_Yzxp7ldPf0",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_bUb0YOpJZx",
+        "node_id": "PAYMENT:pay_bUb0YOpJZx",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_cisLxeIJNh",
+        "node_id": "PAYMENT:pay_cisLxeIJNh",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_gSLSgH3rdY",
+        "node_id": "PAYMENT:pay_gSLSgH3rdY",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_gjgCGzmMAJ",
+        "node_id": "PAYMENT:pay_gjgCGzmMAJ",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "pay_lhlFqxelKU",
+        "node_id": "PAYMENT:pay_lhlFqxelKU",
+        "node_type": "PAYMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "rfd_Nc5rje9Ikp",
+        "node_id": "REFUND:rfd_Nc5rje9Ikp",
+        "node_type": "REFUND",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "rfd_OiRtpaZnEQ",
+        "node_id": "REFUND:rfd_OiRtpaZnEQ",
+        "node_type": "REFUND",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "rfd_dVNnWYBvrx",
+        "node_id": "REFUND:rfd_dVNnWYBvrx",
+        "node_type": "REFUND",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "rfd_ed41xVA5cQ",
+        "node_id": "REFUND:rfd_ed41xVA5cQ",
+        "node_type": "REFUND",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "rfd_iYba9VQGbf",
+        "node_id": "REFUND:rfd_iYba9VQGbf",
+        "node_type": "REFUND",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "rfd_lmxlaO0H8K",
+        "node_id": "REFUND:rfd_lmxlaO0H8K",
+        "node_type": "REFUND",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "stl_1IIuTNux5X",
+        "node_id": "SETTLEMENT:stl_1IIuTNux5X",
+        "node_type": "SETTLEMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "stl_G5NU6VCxep",
+        "node_id": "SETTLEMENT:stl_G5NU6VCxep",
+        "node_type": "SETTLEMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "stl_TZxuIWVs5C",
+        "node_id": "SETTLEMENT:stl_TZxuIWVs5C",
+        "node_type": "SETTLEMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "stl_aIVAg4y4AP",
+        "node_id": "SETTLEMENT:stl_aIVAg4y4AP",
+        "node_type": "SETTLEMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "stl_bMu31h7e7H",
+        "node_id": "SETTLEMENT:stl_bMu31h7e7H",
+        "node_type": "SETTLEMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "stl_w8mVmojlgN",
+        "node_id": "SETTLEMENT:stl_w8mVmojlgN",
+        "node_type": "SETTLEMENT",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "bnk_DFAbwJAcxm",
+        "node_id": "BANK_ENTRY:bnk_DFAbwJAcxm",
+        "node_type": "BANK_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "bnk_Sa65QydOjL",
+        "node_id": "BANK_ENTRY:bnk_Sa65QydOjL",
+        "node_type": "BANK_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "bnk_UL6WVH06kC",
+        "node_id": "BANK_ENTRY:bnk_UL6WVH06kC",
+        "node_type": "BANK_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "bnk_bQq37ZeDRP",
+        "node_id": "BANK_ENTRY:bnk_bQq37ZeDRP",
+        "node_type": "BANK_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "bnk_sYqE4Wxuci",
+        "node_id": "BANK_ENTRY:bnk_sYqE4Wxuci",
+        "node_type": "BANK_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_0S15Oww8EO",
+        "node_id": "LEDGER_ENTRY:led_0S15Oww8EO",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_1xbkvNqiz3",
+        "node_id": "LEDGER_ENTRY:led_1xbkvNqiz3",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_3sqdjDAfcY",
+        "node_id": "LEDGER_ENTRY:led_3sqdjDAfcY",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_9qbKrsGa28",
+        "node_id": "LEDGER_ENTRY:led_9qbKrsGa28",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_AF3CnxgDc1",
+        "node_id": "LEDGER_ENTRY:led_AF3CnxgDc1",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_Blv5CfRrMD",
+        "node_id": "LEDGER_ENTRY:led_Blv5CfRrMD",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_DOoMombgcT",
+        "node_id": "LEDGER_ENTRY:led_DOoMombgcT",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_FSYfJZGUWx",
+        "node_id": "LEDGER_ENTRY:led_FSYfJZGUWx",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_GW406w6Sai",
+        "node_id": "LEDGER_ENTRY:led_GW406w6Sai",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_JTuHg720QH",
+        "node_id": "LEDGER_ENTRY:led_JTuHg720QH",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_N9jcx71Uei",
+        "node_id": "LEDGER_ENTRY:led_N9jcx71Uei",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_NFA8VPswYU",
+        "node_id": "LEDGER_ENTRY:led_NFA8VPswYU",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_NSa3SjJFZT",
+        "node_id": "LEDGER_ENTRY:led_NSa3SjJFZT",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_SWiV1s6JNR",
+        "node_id": "LEDGER_ENTRY:led_SWiV1s6JNR",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_Wwt9UN9uwG",
+        "node_id": "LEDGER_ENTRY:led_Wwt9UN9uwG",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_XDAyPJQsaU",
+        "node_id": "LEDGER_ENTRY:led_XDAyPJQsaU",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_ZRSZUH8teH",
+        "node_id": "LEDGER_ENTRY:led_ZRSZUH8teH",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_dFe83Gbug7",
+        "node_id": "LEDGER_ENTRY:led_dFe83Gbug7",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_dYKbWp3eNn",
+        "node_id": "LEDGER_ENTRY:led_dYKbWp3eNn",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_eS2KLNIgiD",
+        "node_id": "LEDGER_ENTRY:led_eS2KLNIgiD",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_eUFD6klYWL",
+        "node_id": "LEDGER_ENTRY:led_eUFD6klYWL",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_f1SRdg4p65",
+        "node_id": "LEDGER_ENTRY:led_f1SRdg4p65",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_fDOKvUZrRm",
+        "node_id": "LEDGER_ENTRY:led_fDOKvUZrRm",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_hQopSYRmpQ",
+        "node_id": "LEDGER_ENTRY:led_hQopSYRmpQ",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_m8BGOdskSY",
+        "node_id": "LEDGER_ENTRY:led_m8BGOdskSY",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_meDj6C5ZaW",
+        "node_id": "LEDGER_ENTRY:led_meDj6C5ZaW",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_ranBrurbY9",
+        "node_id": "LEDGER_ENTRY:led_ranBrurbY9",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_uyc1AjzE6v",
+        "node_id": "LEDGER_ENTRY:led_uyc1AjzE6v",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "led_ymBhQCNgUp",
+        "node_id": "LEDGER_ENTRY:led_ymBhQCNgUp",
+        "node_type": "LEDGER_ENTRY",
+        "state": "ACCEPTED"
+      },
+      {
+        "label": "case-2b182da32f80",
+        "node_id": "CASE:case-2b182da32f80",
+        "node_type": "CASE",
+        "state": "UNRESOLVED"
+      },
+      {
+        "label": "case-1297deaa29f5",
+        "node_id": "CASE:case-1297deaa29f5",
+        "node_type": "CASE",
+        "state": "UNRESOLVED"
+      },
+      {
+        "label": "case-38653c3abc78",
+        "node_id": "CASE:case-38653c3abc78",
+        "node_type": "CASE",
+        "state": "UNRESOLVED"
+      }
+    ]
+  },
+  "idempotency_key": "51cdb878d927efb7d04985a7c2078a2e41c9b95b2a1d63b3dd88cd94b30eafb5",
+  "inputs_fingerprint": "c251474ace6e7c55aa4fbcd19d85f2bf016b6910818d573f0dde55344d8823fa",
+  "match_groups_count": 42,
+  "match_invariant_violations": [],
+  "matched_record_count": 60,
+  "matches": [
+    {
+      "amount_paise": 58300,
+      "match_id": "match-f03e1f608bee",
+      "members": [
+        {
+          "record_id": "rfd_Nc5rje9Ikp",
+          "record_type": "REFUND",
+          "role": "CHILD",
+          "signed_contribution_paise": -58300
+        },
+        {
+          "record_id": "pay_NZ3xBYxQFL",
+          "record_type": "PAYMENT",
+          "role": "PARENT",
+          "signed_contribution_paise": 58300
+        }
+      ],
+      "relationship_type": "REFUND_OF_PAYMENT",
+      "rule_id": "R-EXACT-REFUND-PAYMENT"
+    },
+    {
+      "amount_paise": 813000,
+      "match_id": "match-0865a0905cf3",
+      "members": [
+        {
+          "record_id": "rfd_OiRtpaZnEQ",
+          "record_type": "REFUND",
+          "role": "CHILD",
+          "signed_contribution_paise": -813000
+        },
+        {
+          "record_id": "pay_3UjY6a0SVK",
+          "record_type": "PAYMENT",
+          "role": "PARENT",
+          "signed_contribution_paise": 813000
+        }
+      ],
+      "relationship_type": "REFUND_OF_PAYMENT",
+      "rule_id": "R-EXACT-REFUND-PAYMENT"
+    },
+    {
+      "amount_paise": 650400,
+      "match_id": "match-041affeaaafd",
+      "members": [
+        {
+          "record_id": "rfd_dVNnWYBvrx",
+          "record_type": "REFUND",
+          "role": "CHILD",
+          "signed_contribution_paise": -650400
+        },
+        {
+          "record_id": "pay_3UjY6a0SVK",
+          "record_type": "PAYMENT",
+          "role": "PARENT",
+          "signed_contribution_paise": 650400
+        }
+      ],
+      "relationship_type": "REFUND_OF_PAYMENT",
+      "rule_id": "R-EXACT-REFUND-PAYMENT"
+    },
+    {
+      "amount_paise": 7600,
+      "match_id": "match-a746817b8b25",
+      "members": [
+        {
+          "record_id": "rfd_ed41xVA5cQ",
+          "record_type": "REFUND",
+          "role": "CHILD",
+          "signed_contribution_paise": -7600
+        },
+        {
+          "record_id": "pay_NctLa3Vnmv",
+          "record_type": "PAYMENT",
+          "role": "PARENT",
+          "signed_contribution_paise": 7600
+        }
+      ],
+      "relationship_type": "REFUND_OF_PAYMENT",
+      "rule_id": "R-EXACT-REFUND-PAYMENT"
+    },
+    {
+      "amount_paise": 211000,
+      "match_id": "match-6a370e7bddf6",
+      "members": [
+        {
+          "record_id": "rfd_iYba9VQGbf",
+          "record_type": "REFUND",
+          "role": "CHILD",
+          "signed_contribution_paise": -211000
+        },
+        {
+          "record_id": "pay_QECEUbuQGQ",
+          "record_type": "PAYMENT",
+          "role": "PARENT",
+          "signed_contribution_paise": 211000
+        }
+      ],
+      "relationship_type": "REFUND_OF_PAYMENT",
+      "rule_id": "R-EXACT-REFUND-PAYMENT"
+    },
+    {
+      "amount_paise": 1463400,
+      "match_id": "match-6d2f013ec53b",
+      "members": [
+        {
+          "record_id": "rfd_lmxlaO0H8K",
+          "record_type": "REFUND",
+          "role": "CHILD",
+          "signed_contribution_paise": -1463400
+        },
+        {
+          "record_id": "pay_3UjY6a0SVK",
+          "record_type": "PAYMENT",
+          "role": "PARENT",
+          "signed_contribution_paise": 1463400
+        }
+      ],
+      "relationship_type": "REFUND_OF_PAYMENT",
+      "rule_id": "R-EXACT-REFUND-PAYMENT"
+    },
+    {
+      "amount_paise": 2293466,
+      "match_id": "match-7b3c28ef52b0",
+      "members": [
+        {
+          "record_id": "pay_8OhO7FM3sK",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 1376919
+        },
+        {
+          "record_id": "pay_Q8KJNEBrUR",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 916547
+        },
+        {
+          "record_id": "stl_1IIuTNux5X",
+          "record_type": "SETTLEMENT",
+          "role": "TARGET",
+          "signed_contribution_paise": 0
+        }
+      ],
+      "relationship_type": "MEMBER_OF_SETTLEMENT",
+      "rule_id": "R-EXACT-PAYMENT-SETTLEMENT"
+    },
+    {
+      "amount_paise": 4421042,
+      "match_id": "match-e28ff9f56114",
+      "members": [
+        {
+          "record_id": "pay_DzUbtJgMdS",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 1755860
+        },
+        {
+          "record_id": "pay_K4WanPAQZK",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 1691125
+        },
+        {
+          "record_id": "pay_lhlFqxelKU",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 974057
+        },
+        {
+          "record_id": "stl_G5NU6VCxep",
+          "record_type": "SETTLEMENT",
+          "role": "TARGET",
+          "signed_contribution_paise": 0
+        }
+      ],
+      "relationship_type": "MEMBER_OF_SETTLEMENT",
+      "rule_id": "R-EXACT-PAYMENT-SETTLEMENT"
+    },
+    {
+      "amount_paise": 257199,
+      "match_id": "match-e92ab4301982",
+      "members": [
+        {
+          "record_id": "pay_NctLa3Vnmv",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 26753
+        },
+        {
+          "record_id": "pay_QECEUbuQGQ",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 396223
+        },
+        {
+          "record_id": "pay_gjgCGzmMAJ",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 52823
+        },
+        {
+          "record_id": "rfd_ed41xVA5cQ",
+          "record_type": "REFUND",
+          "role": "ADJUSTMENT",
+          "signed_contribution_paise": -7600
+        },
+        {
+          "record_id": "rfd_iYba9VQGbf",
+          "record_type": "REFUND",
+          "role": "ADJUSTMENT",
+          "signed_contribution_paise": -211000
+        },
+        {
+          "record_id": "stl_TZxuIWVs5C",
+          "record_type": "SETTLEMENT",
+          "role": "TARGET",
+          "signed_contribution_paise": 0
+        }
+      ],
+      "relationship_type": "MEMBER_OF_SETTLEMENT",
+      "rule_id": "R-EXACT-PAYMENT-SETTLEMENT"
+    },
+    {
+      "amount_paise": 4414264,
+      "match_id": "match-926d809c9278",
+      "members": [
+        {
+          "record_id": "pay_3UjY6a0SVK",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 3175448
+        },
+        {
+          "record_id": "pay_H7R68MGAIM",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 1681556
+        },
+        {
+          "record_id": "pay_M4Cix0RsKu",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 1017995
+        },
+        {
+          "record_id": "pay_gSLSgH3rdY",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 1466065
+        },
+        {
+          "record_id": "rfd_OiRtpaZnEQ",
+          "record_type": "REFUND",
+          "role": "ADJUSTMENT",
+          "signed_contribution_paise": -813000
+        },
+        {
+          "record_id": "rfd_dVNnWYBvrx",
+          "record_type": "REFUND",
+          "role": "ADJUSTMENT",
+          "signed_contribution_paise": -650400
+        },
+        {
+          "record_id": "rfd_lmxlaO0H8K",
+          "record_type": "REFUND",
+          "role": "ADJUSTMENT",
+          "signed_contribution_paise": -1463400
+        },
+        {
+          "record_id": "stl_aIVAg4y4AP",
+          "record_type": "SETTLEMENT",
+          "role": "TARGET",
+          "signed_contribution_paise": 0
+        }
+      ],
+      "relationship_type": "MEMBER_OF_SETTLEMENT",
+      "rule_id": "R-EXACT-PAYMENT-SETTLEMENT"
+    },
+    {
+      "amount_paise": 2293466,
+      "match_id": "match-814c9feaa662",
+      "members": [
+        {
+          "record_id": "pay_W60FpMyUW6",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 916547
+        },
+        {
+          "record_id": "pay_bUb0YOpJZx",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 1376919
+        },
+        {
+          "record_id": "stl_bMu31h7e7H",
+          "record_type": "SETTLEMENT",
+          "role": "TARGET",
+          "signed_contribution_paise": 0
+        }
+      ],
+      "relationship_type": "MEMBER_OF_SETTLEMENT",
+      "rule_id": "R-EXACT-PAYMENT-SETTLEMENT"
+    },
+    {
+      "amount_paise": 2658142,
+      "match_id": "match-c1753a443771",
+      "members": [
+        {
+          "record_id": "pay_FiCqJLNNfR",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 750461
+        },
+        {
+          "record_id": "pay_NZ3xBYxQFL",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 190007
+        },
+        {
+          "record_id": "pay_Yzxp7ldPf0",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 750461
+        },
+        {
+          "record_id": "pay_cisLxeIJNh",
+          "record_type": "PAYMENT",
+          "role": "CONTRIBUTOR",
+          "signed_contribution_paise": 1025513
+        },
+        {
+          "record_id": "rfd_Nc5rje9Ikp",
+          "record_type": "REFUND",
+          "role": "ADJUSTMENT",
+          "signed_contribution_paise": -58300
+        },
+        {
+          "record_id": "stl_w8mVmojlgN",
+          "record_type": "SETTLEMENT",
+          "role": "TARGET",
+          "signed_contribution_paise": 0
+        }
+      ],
+      "relationship_type": "MEMBER_OF_SETTLEMENT",
+      "rule_id": "R-EXACT-PAYMENT-SETTLEMENT"
+    },
+    {
+      "amount_paise": 916547,
+      "match_id": "match-9978ff16f3ff",
+      "members": [
+        {
+          "record_id": "pay_Q8KJNEBrUR",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -916547
+        },
+        {
+          "record_id": "led_0S15Oww8EO",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 916547
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 52823,
+      "match_id": "match-f198f5751c82",
+      "members": [
+        {
+          "record_id": "pay_gjgCGzmMAJ",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -52823
+        },
+        {
+          "record_id": "led_1xbkvNqiz3",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 52823
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 1376919,
+      "match_id": "match-af1152242636",
+      "members": [
+        {
+          "record_id": "pay_bUb0YOpJZx",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -1376919
+        },
+        {
+          "record_id": "led_3sqdjDAfcY",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 1376919
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 396223,
+      "match_id": "match-30bd98454a24",
+      "members": [
+        {
+          "record_id": "pay_QECEUbuQGQ",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -396223
+        },
+        {
+          "record_id": "led_9qbKrsGa28",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 396223
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 974057,
+      "match_id": "match-30017a96cd43",
+      "members": [
+        {
+          "record_id": "pay_lhlFqxelKU",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -974057
+        },
+        {
+          "record_id": "led_AF3CnxgDc1",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 974057
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 4421042,
+      "match_id": "match-cd3ee6600a69",
+      "members": [
+        {
+          "record_id": "stl_G5NU6VCxep",
+          "record_type": "SETTLEMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -4421042
+        },
+        {
+          "record_id": "led_Blv5CfRrMD",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 4421042
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 1017995,
+      "match_id": "match-e5618d5e8f60",
+      "members": [
+        {
+          "record_id": "pay_M4Cix0RsKu",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -1017995
+        },
+        {
+          "record_id": "led_DOoMombgcT",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 1017995
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 7600,
+      "match_id": "match-a49e91bf03bf",
+      "members": [
+        {
+          "record_id": "rfd_ed41xVA5cQ",
+          "record_type": "REFUND",
+          "role": "SOURCE",
+          "signed_contribution_paise": 7600
+        },
+        {
+          "record_id": "led_FSYfJZGUWx",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": -7600
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 2658142,
+      "match_id": "match-dc226be34a92",
+      "members": [
+        {
+          "record_id": "stl_w8mVmojlgN",
+          "record_type": "SETTLEMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -2658142
+        },
+        {
+          "record_id": "led_GW406w6Sai",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 2658142
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 2293466,
+      "match_id": "match-349ee5d0c8fe",
+      "members": [
+        {
+          "record_id": "stl_1IIuTNux5X",
+          "record_type": "SETTLEMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -2293466
+        },
+        {
+          "record_id": "led_JTuHg720QH",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 2293466
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 4414264,
+      "match_id": "match-f06bf7700edd",
+      "members": [
+        {
+          "record_id": "stl_aIVAg4y4AP",
+          "record_type": "SETTLEMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -4414264
+        },
+        {
+          "record_id": "led_N9jcx71Uei",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 4414264
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 3175448,
+      "match_id": "match-0174c1a1610f",
+      "members": [
+        {
+          "record_id": "pay_3UjY6a0SVK",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -3175448
+        },
+        {
+          "record_id": "led_NFA8VPswYU",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 3175448
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 211000,
+      "match_id": "match-ebb06b069cbd",
+      "members": [
+        {
+          "record_id": "rfd_iYba9VQGbf",
+          "record_type": "REFUND",
+          "role": "SOURCE",
+          "signed_contribution_paise": 211000
+        },
+        {
+          "record_id": "led_NSa3SjJFZT",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": -211000
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 1466065,
+      "match_id": "match-6084c168141d",
+      "members": [
+        {
+          "record_id": "pay_gSLSgH3rdY",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -1466065
+        },
+        {
+          "record_id": "led_SWiV1s6JNR",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 1466065
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 1025513,
+      "match_id": "match-cdba7072611e",
+      "members": [
+        {
+          "record_id": "pay_cisLxeIJNh",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -1025513
+        },
+        {
+          "record_id": "led_Wwt9UN9uwG",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 1025513
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 1755860,
+      "match_id": "match-1522ce0478bb",
+      "members": [
+        {
+          "record_id": "pay_DzUbtJgMdS",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -1755860
+        },
+        {
+          "record_id": "led_XDAyPJQsaU",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 1755860
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 1376919,
+      "match_id": "match-95481465cb37",
+      "members": [
+        {
+          "record_id": "pay_8OhO7FM3sK",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -1376919
+        },
+        {
+          "record_id": "led_ZRSZUH8teH",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 1376919
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 750461,
+      "match_id": "match-6b2273b285a8",
+      "members": [
+        {
+          "record_id": "pay_FiCqJLNNfR",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -750461
+        },
+        {
+          "record_id": "led_dFe83Gbug7",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 750461
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 2293466,
+      "match_id": "match-2874b3add02e",
+      "members": [
+        {
+          "record_id": "stl_bMu31h7e7H",
+          "record_type": "SETTLEMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -2293466
+        },
+        {
+          "record_id": "led_dYKbWp3eNn",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 2293466
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 190007,
+      "match_id": "match-bfbab9048b66",
+      "members": [
+        {
+          "record_id": "pay_NZ3xBYxQFL",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -190007
+        },
+        {
+          "record_id": "led_eS2KLNIgiD",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 190007
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 916547,
+      "match_id": "match-4be6a698d952",
+      "members": [
+        {
+          "record_id": "pay_W60FpMyUW6",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -916547
+        },
+        {
+          "record_id": "led_f1SRdg4p65",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 916547
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 257199,
+      "match_id": "match-07c6768b9b5a",
+      "members": [
+        {
+          "record_id": "stl_TZxuIWVs5C",
+          "record_type": "SETTLEMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -257199
+        },
+        {
+          "record_id": "led_fDOKvUZrRm",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 257199
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 750461,
+      "match_id": "match-dbc00f88d339",
+      "members": [
+        {
+          "record_id": "pay_Yzxp7ldPf0",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -750461
+        },
+        {
+          "record_id": "led_hQopSYRmpQ",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 750461
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 1691125,
+      "match_id": "match-b60ce84501a6",
+      "members": [
+        {
+          "record_id": "pay_K4WanPAQZK",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -1691125
+        },
+        {
+          "record_id": "led_m8BGOdskSY",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 1691125
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 26753,
+      "match_id": "match-2e69eadf28fc",
+      "members": [
+        {
+          "record_id": "pay_NctLa3Vnmv",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -26753
+        },
+        {
+          "record_id": "led_meDj6C5ZaW",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 26753
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 1681556,
+      "match_id": "match-14b6fa09ce12",
+      "members": [
+        {
+          "record_id": "pay_H7R68MGAIM",
+          "record_type": "PAYMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -1681556
+        },
+        {
+          "record_id": "led_ranBrurbY9",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": 1681556
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 58300,
+      "match_id": "match-5c2688b0a626",
+      "members": [
+        {
+          "record_id": "rfd_Nc5rje9Ikp",
+          "record_type": "REFUND",
+          "role": "SOURCE",
+          "signed_contribution_paise": 58300
+        },
+        {
+          "record_id": "led_ymBhQCNgUp",
+          "record_type": "LEDGER_ENTRY",
+          "role": "BOOKING",
+          "signed_contribution_paise": -58300
+        }
+      ],
+      "relationship_type": "LEDGER_SOURCE",
+      "rule_id": "R-EXACT-LEDGER-SOURCE"
+    },
+    {
+      "amount_paise": 4414264,
+      "match_id": "match-2c1e407aafbf",
+      "members": [
+        {
+          "record_id": "stl_aIVAg4y4AP",
+          "record_type": "SETTLEMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -4414264
+        },
+        {
+          "record_id": "bnk_UL6WVH06kC",
+          "record_type": "BANK_ENTRY",
+          "role": "CREDIT",
+          "signed_contribution_paise": 4414264
+        }
+      ],
+      "relationship_type": "SETTLEMENT_BANK_CREDIT",
+      "rule_id": "R-UTR-AMOUNT-BANK"
+    },
+    {
+      "amount_paise": 2658142,
+      "match_id": "match-0b4b9897daba",
+      "members": [
+        {
+          "record_id": "stl_w8mVmojlgN",
+          "record_type": "SETTLEMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -2658142
+        },
+        {
+          "record_id": "bnk_sYqE4Wxuci",
+          "record_type": "BANK_ENTRY",
+          "role": "CREDIT",
+          "signed_contribution_paise": 2658142
+        }
+      ],
+      "relationship_type": "SETTLEMENT_BANK_CREDIT",
+      "rule_id": "R-UTR-AMOUNT-BANK"
+    },
+    {
+      "amount_paise": 257199,
+      "match_id": "match-604761b4775c",
+      "members": [
+        {
+          "record_id": "stl_TZxuIWVs5C",
+          "record_type": "SETTLEMENT",
+          "role": "SOURCE",
+          "signed_contribution_paise": -257199
+        },
+        {
+          "record_id": "bnk_bQq37ZeDRP",
+          "record_type": "BANK_ENTRY",
+          "role": "CREDIT",
+          "signed_contribution_paise": 257199
+        }
+      ],
+      "relationship_type": "SETTLEMENT_BANK_CREDIT",
+      "rule_id": "R-UNIQUE-AMOUNT-WINDOW-BANK"
+    }
+  ],
+  "mode": "rules-only",
+  "normalizer_version": "normalizer-v1",
+  "provider_id": "none",
+  "quarantined_row_count": 2,
+  "quarantined_rows": [
+    {
+      "detail": "invalid UTC timestamp '2026-13-45T99:00:00Z'",
+      "reason": "INVALID_TIMESTAMP",
+      "source_record_id": "rfd_SJ007V2FCc",
+      "source_row_number": 2,
+      "source_type": "REFUND"
+    },
+    {
+      "detail": "unsupported currency 'USD'",
+      "reason": "UNSUPPORTED_CURRENCY",
+      "source_record_id": "pay_LSH3xlGWQ0",
+      "source_row_number": 13,
+      "source_type": "PAYMENT"
+    }
+  ],
+  "raw_row_count": 67,
+  "row_accounting": {
+    "accepted": 64,
+    "duplicate_delivery": 1,
+    "identity_holds": true,
+    "quarantined": 2,
+    "raw": 67
+  },
+  "rule_version_manifest": {
+    "R-EXACT-LEDGER-SOURCE": {
+      "version": "1"
+    },
+    "R-EXACT-PAYMENT-SETTLEMENT": {
+      "version": "1"
+    },
+    "R-EXACT-REFUND-PAYMENT": {
+      "version": "1"
+    },
+    "R-EXACT-REFUND-SETTLEMENT": {
+      "version": "1"
+    },
+    "R-UNIQUE-AMOUNT-WINDOW-BANK": {
+      "version": "1"
+    },
+    "R-UNIQUE-REFUND-COMPOSITION": {
+      "version": "1"
+    },
+    "R-UTR-AMOUNT-BANK": {
+      "version": "1"
+    }
+  },
+  "run_id": "run-51cdb878d927efb7",
+  "runtime_match_rate": {
+    "denominator": 64,
+    "note": "runtime self-report; the evaluator reports frozen metrics",
+    "numerator": 60
+  },
+  "timing_metrics": {
+    "ingest_seconds": 0.006027,
+    "reconcile_seconds": 0.006871,
+    "records_per_second": 1842.7,
+    "total_seconds": 0.034732,
+    "verify_seconds": 0.000238
+  },
+  "unaccounted_record_keys": [],
+  "verification": {
+    "case_status_counts": {
+      "UNRESOLVED": 3
+    },
+    "counts_by_category_status": {
+      "AMBIGUOUS_EVIDENCE": {
+        "UNRESOLVED": 3
+      }
+    },
+    "dry_run_abs_variance_after_paise": 0,
+    "dry_run_count": 0,
+    "latency_ms": {
+      "max_case_ms": 0.035,
+      "median_case_ms": 0.018,
+      "verify_total_ms": 0.238
+    },
+    "passing_proof_completeness": {
+      "denominator": 0,
+      "numerator": 0
+    },
+    "proof_count": 3,
+    "results": [
+      {
+        "authority_decision": "UNRESOLVED",
+        "canonical_hash": "ea5dfbc4a97e09a4f29be82c627651b752f85756515af7241a09942cfcd89fb7",
+        "case_id": "case-2b182da32f80",
+        "case_status": "UNRESOLVED",
+        "category": "AMBIGUOUS_EVIDENCE",
+        "conflicting_evidence_count": 0,
+        "dry_run_variance_after_paise": null,
+        "equation_count": 1,
+        "hypothesis_id": "hyp-e9071a16019e",
+        "proof_id": "proof-ea5dfbc4a97e",
+        "proposed_delta_paise": null,
+        "reason_codes": [
+          "NON_UNIQUE_EVIDENCE"
+        ],
+        "requires_approval": false,
+        "rule_id": "V-AMBIGUITY",
+        "rule_version": "1",
+        "supported_evidence_count": 4,
+        "verifier_status": "INCONCLUSIVE"
+      },
+      {
+        "authority_decision": "UNRESOLVED",
+        "canonical_hash": "d46554401972652fbf8ad16f8d0087d1e3d02b233811cbb9c7ede758bdda64df",
+        "case_id": "case-1297deaa29f5",
+        "case_status": "UNRESOLVED",
+        "category": "AMBIGUOUS_EVIDENCE",
+        "conflicting_evidence_count": 0,
+        "dry_run_variance_after_paise": null,
+        "equation_count": 1,
+        "hypothesis_id": "hyp-4876c8a4ff05",
+        "proof_id": "proof-d46554401972",
+        "proposed_delta_paise": null,
+        "reason_codes": [
+          "MISSING_EVIDENCE",
+          "NON_UNIQUE_EVIDENCE"
+        ],
+        "requires_approval": false,
+        "rule_id": "V-AMBIGUITY",
+        "rule_version": "1",
+        "supported_evidence_count": 2,
+        "verifier_status": "INCONCLUSIVE"
+      },
+      {
+        "authority_decision": "UNRESOLVED",
+        "canonical_hash": "d0b8374fefb3dff5ab7bb647b21da6ca4b302b1db318142c5f288865ca43c0e0",
+        "case_id": "case-38653c3abc78",
+        "case_status": "UNRESOLVED",
+        "category": "AMBIGUOUS_EVIDENCE",
+        "conflicting_evidence_count": 0,
+        "dry_run_variance_after_paise": null,
+        "equation_count": 1,
+        "hypothesis_id": "hyp-d11c20be3dad",
+        "proof_id": "proof-d0b8374fefb3",
+        "proposed_delta_paise": null,
+        "reason_codes": [
+          "NON_UNIQUE_EVIDENCE"
+        ],
+        "requires_approval": false,
+        "rule_id": "V-AMBIGUITY",
+        "rule_version": "1",
+        "supported_evidence_count": 6,
+        "verifier_status": "INCONCLUSIVE"
+      }
+    ],
+    "verifier_rule_manifest": {
+      "V-AMBIGUITY": {
+        "version": "1"
+      },
+      "V-DUPLICATE-LEDGER": {
+        "version": "1"
+      },
+      "V-MISSING-REFUND": {
+        "version": "1"
+      },
+      "V-TIMING-WINDOW": {
+        "version": "1"
+      }
+    },
+    "verifier_status_counts": {
+      "FAIL": 0,
+      "INCONCLUSIVE": 3,
+      "PASS": 0
+    }
+  }
+}

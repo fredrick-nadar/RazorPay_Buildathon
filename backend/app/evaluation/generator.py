@@ -238,6 +238,7 @@ class GenerationResult:
     rows: dict[str, list[dict[str, str]]]
     labels: dict[str, Any]
     label_metrics: dict[str, Any]
+    columns: dict[str, tuple[str, ...]] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -651,9 +652,28 @@ def generate_dataset(spec: GenerationSpec) -> GenerationResult:
     cases = run_exception_injections(corpus, spec)
     labels = assemble_labels(spec, corpus, cases, row_expectations=[])
     rows = corpus_rows(corpus)
+
+    # Label metrics are derived from canonical rows before any serialization
+    # variation is applied (the variation is byte-shape only).
     ds = ct.rows_to_dataset_rows(rows, labels)
     metrics = ct.eligible_metrics(ds)
-    return GenerationResult(spec=spec, rows=rows, labels=labels, label_metrics=metrics)
+
+    columns: dict[str, tuple[str, ...]] | None = None
+    if spec.profile == "holdout":
+        # PRD 13.3: the frozen holdout must not share the dev dataset's byte
+        # shape. The variation transform is an independent module (see
+        # holdout_variation.py) and preserves economics exactly; labels on
+        # this path carry no row-position semantics.
+        from app.evaluation.dataset_spec import COLUMNS
+        from app.evaluation.holdout_variation import apply_holdout_variation
+
+        variation = apply_holdout_variation(spec.seed, rows, COLUMNS)
+        rows = variation.rows
+        columns = variation.columns
+
+    return GenerationResult(
+        spec=spec, rows=rows, labels=labels, label_metrics=metrics, columns=columns
+    )
 
 
 __all__ = [

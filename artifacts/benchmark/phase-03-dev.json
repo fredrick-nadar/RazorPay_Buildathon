@@ -143,8 +143,8 @@
     },
     "throughput": {
       "eligible_records": 282,
-      "reconcile_seconds": 0.016786,
-      "records_per_second": 4251.06
+      "reconcile_seconds": 0.014049,
+      "records_per_second": 5577.69
     },
     "totals_comparison": {
       "equal": true,
@@ -232,9 +232,9 @@
         "dry_run_abs_variance_after_paise": 0,
         "dry_run_count": 9,
         "latency_ms": {
-          "max_case_ms": 0.048,
-          "median_case_ms": 0.033,
-          "verify_total_ms": 1.48
+          "max_case_ms": 0.042,
+          "median_case_ms": 0.028,
+          "verify_total_ms": 1.302
         },
         "passing_proof_completeness": {
           "denominator": 9,
@@ -507,5 +507,6 @@
   "mode": "rules-only",
   "problems": [],
   "provider": "none",
+  "replay_diagnostics": null,
   "runtime_output_path": "D:\\Programming\\RazorPay_Buildathon\\artifacts\\benchmark\\phase-03-dev.json.runtime.json"
 }

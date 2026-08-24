@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import csv
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
+from typing import Any
 
 from app.domain.enums import QuarantineReason, SourceType
 from app.domain.records import (
@@ -111,6 +112,28 @@ _PARSER_BY_STEM: dict[str, Callable[[dict[str, str], int, str], object]] = {
     "ledger_entries": parse_ledger_row,
 }
 
+# Harmless header aliases accepted at ingestion (PRD 13.3: holdout inputs may
+# vary column naming). Resolution happens before the strict column check, so
+# unknown or missing columns still reject the file explicitly.
+HEADER_ALIASES: dict[str, str] = {
+    "fee": "fee_amount",
+    "tax": "tax_amount",
+}
+
+
+def _resolve_header(fieldnames: Sequence[str]) -> tuple[str, ...]:
+    return tuple(HEADER_ALIASES.get(name, name) for name in fieldnames)
+
+
+def _canonicalize_row(row: dict[str, str]) -> dict[str, str]:
+    extra = row.get("__extra__")
+    canonical: dict[str, Any] = {
+        HEADER_ALIASES.get(key, key): value for key, value in row.items() if key != "__extra__"
+    }
+    if extra is not None:
+        canonical["__extra__"] = extra
+    return canonical
+
 
 @dataclass(frozen=True)
 class _Candidate:
@@ -124,11 +147,11 @@ def _read_rows(path: Path, spec: AdapterSpec) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle, restkey="__extra__", restval=None)
         fieldnames = reader.fieldnames
-        if fieldnames is None or tuple(fieldnames) != spec.columns:
+        if fieldnames is None or _resolve_header(fieldnames) != spec.columns:
             raise IngestError(
                 f"{path.name}: header does not match the expected columns for {spec.file_stem}"
             )
-        return [dict(row) for row in reader]
+        return [_canonicalize_row(dict(row)) for row in reader]
 
 
 def _is_shape_valid(row: dict[str, str]) -> bool:

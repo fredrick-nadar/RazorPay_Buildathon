@@ -1,0 +1,798 @@
+{
+  "benchmark_version": "argus-benchmark-agent-v1",
+  "dataset": "datasets/holdout",
+  "evaluation": {
+    "case_comparison": {
+      "false_positive_cases": [],
+      "matched_pairs": [
+        {
+          "category": "DUPLICATE_LEDGER_POSTING",
+          "label_case_id": "case-holdout-0001",
+          "runtime_case_id": "case-a5c302d4d3f3"
+        },
+        {
+          "category": "DUPLICATE_LEDGER_POSTING",
+          "label_case_id": "case-holdout-0002",
+          "runtime_case_id": "case-aad45a7b0aa1"
+        },
+        {
+          "category": "DUPLICATE_LEDGER_POSTING",
+          "label_case_id": "case-holdout-0003",
+          "runtime_case_id": "case-59322ca8fe5c"
+        },
+        {
+          "category": "DUPLICATE_LEDGER_POSTING",
+          "label_case_id": "case-holdout-0004",
+          "runtime_case_id": "case-58b3a02b4610"
+        },
+        {
+          "category": "DUPLICATE_LEDGER_POSTING",
+          "label_case_id": "case-holdout-0005",
+          "runtime_case_id": "case-9b649aa692b8"
+        },
+        {
+          "category": "DUPLICATE_LEDGER_POSTING",
+          "label_case_id": "case-holdout-0006",
+          "runtime_case_id": "case-1e55277960c2"
+        },
+        {
+          "category": "MISSING_REFUND_POSTING",
+          "label_case_id": "case-holdout-0007",
+          "runtime_case_id": "case-b99ca986d3f8"
+        },
+        {
+          "category": "MISSING_REFUND_POSTING",
+          "label_case_id": "case-holdout-0008",
+          "runtime_case_id": "case-3e36a78cb1db"
+        },
+        {
+          "category": "MISSING_REFUND_POSTING",
+          "label_case_id": "case-holdout-0009",
+          "runtime_case_id": "case-8e31e703d466"
+        },
+        {
+          "category": "MISSING_REFUND_POSTING",
+          "label_case_id": "case-holdout-0010",
+          "runtime_case_id": "case-14095a5897e0"
+        },
+        {
+          "category": "MISSING_REFUND_POSTING",
+          "label_case_id": "case-holdout-0011",
+          "runtime_case_id": "case-6f8d73b275f1"
+        },
+        {
+          "category": "MISSING_REFUND_POSTING",
+          "label_case_id": "case-holdout-0012",
+          "runtime_case_id": "case-397d299be712"
+        },
+        {
+          "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+          "label_case_id": "case-holdout-0013",
+          "runtime_case_id": "case-6d551b40c0ca"
+        },
+        {
+          "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+          "label_case_id": "case-holdout-0014",
+          "runtime_case_id": "case-d585dd45a9c9"
+        },
+        {
+          "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+          "label_case_id": "case-holdout-0015",
+          "runtime_case_id": "case-3164ed1b21af"
+        },
+        {
+          "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+          "label_case_id": "case-holdout-0016",
+          "runtime_case_id": "case-38b33726e840"
+        },
+        {
+          "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+          "label_case_id": "case-holdout-0017",
+          "runtime_case_id": "case-226fa9df4bb7"
+        },
+        {
+          "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+          "label_case_id": "case-holdout-0018",
+          "runtime_case_id": "case-a5738552bff5"
+        },
+        {
+          "category": "AMBIGUOUS_EVIDENCE",
+          "label_case_id": "case-holdout-0019",
+          "runtime_case_id": "case-c329b60debe8"
+        },
+        {
+          "category": "AMBIGUOUS_EVIDENCE",
+          "label_case_id": "case-holdout-0020",
+          "runtime_case_id": "case-4110c2fe504b"
+        },
+        {
+          "category": "AMBIGUOUS_EVIDENCE",
+          "label_case_id": "case-holdout-0021",
+          "runtime_case_id": "case-564d0c33674a"
+        },
+        {
+          "category": "AMBIGUOUS_EVIDENCE",
+          "label_case_id": "case-holdout-0022",
+          "runtime_case_id": "case-0f9a0d0d21f2"
+        },
+        {
+          "category": "AMBIGUOUS_EVIDENCE",
+          "label_case_id": "case-holdout-0023",
+          "runtime_case_id": "case-1eede37d0353"
+        }
+      ],
+      "missed_labels": []
+    },
+    "counts": {
+      "computed_eligible_records": 1880,
+      "duplicate_deliveries": {
+        "expected": 0,
+        "match": true,
+        "runtime": 0
+      },
+      "eligible_canonical_records": 1880,
+      "eligible_counts_match": true,
+      "quarantined": {
+        "expected": 0,
+        "match": true,
+        "runtime": 0
+      },
+      "raw_row_count": 1880,
+      "row_accounting_identity_holds": true,
+      "runtime_accepted_matches_eligible": true,
+      "runtime_accepted_records": 1880
+    },
+    "dataset": "holdout",
+    "economic_output_hash": "69c89e71cbf7b7cc39934069f0962bb3837d2a7c3fae7c275a8eedd7b476f31e",
+    "false_relationships": [],
+    "graph": {
+      "counts": {
+        "edge_count": 1792,
+        "edges_by_relationship": {
+          "ADJUSTS_SETTLEMENT": 50,
+          "CASE_EVIDENCE": 68,
+          "LEDGER_SOURCE": 884,
+          "MEMBER_OF_SETTLEMENT": 740,
+          "REFUND_OF_PAYMENT": 50
+        },
+        "node_count": 1903,
+        "nodes_by_type": {
+          "BANK_ENTRY": 100,
+          "CASE": 23,
+          "LEDGER_ENTRY": 890,
+          "PAYMENT": 740,
+          "REFUND": 50,
+          "SETTLEMENT": 100
+        }
+      },
+      "referentially_valid": true
+    },
+    "labels_loaded_after_runtime_output": true,
+    "metrics": {
+      "case_classification_accuracy": {
+        "denominator": 23,
+        "numerator": 23,
+        "rate": 1.0
+      },
+      "match_precision": {
+        "denominator": 1124,
+        "false_relationship_count": 0,
+        "numerator": 1124,
+        "rate": 1.0
+      },
+      "record_match_rate": {
+        "denominator": 1880,
+        "numerator": 1864,
+        "rate": 0.991489
+      }
+    },
+    "profile": "holdout",
+    "residual_variance": {
+      "equal": true,
+      "evaluator_ledger_scope_paise": 28196997,
+      "ledger_scope_equal": true,
+      "note": "evaluator derives the ledger-side residual independently from clean_reference; bank-side residual (missing bank evidence) is runtime-computed and cross-checked via case anchors",
+      "runtime_abs_sum_paise": 28196997,
+      "runtime_bank_scope_paise": 0,
+      "runtime_ledger_scope_paise": 28196997
+    },
+    "throughput": {
+      "eligible_records": 1880,
+      "reconcile_seconds": 0.08469,
+      "records_per_second": 9859.51
+    },
+    "totals_comparison": {
+      "equal": true,
+      "labels_manifest_totals": {
+        "bank_credit": 1753032412,
+        "ledger_by_account": {
+          "1100-BANK-OPERATING": 1753032412,
+          "2100-PAYMENTS-CLEARING": 1781229409
+        },
+        "ledger_total": 3534261821,
+        "payment_fee": 37289068,
+        "payment_gross": 1864453400,
+        "payment_net": 1820452312,
+        "payment_tax": 6712020,
+        "refund_total": 67419900,
+        "settlement_net": 1753032412
+      },
+      "runtime_totals": {
+        "affected_amount_paise": 171383855,
+        "bank_credit_paise": 1753032412,
+        "expected_net_settlement_paise": 1753032412,
+        "ledger_by_account_paise": {
+          "1100-BANK-OPERATING": 1753032412,
+          "2100-PAYMENTS-CLEARING": 1781229409
+        },
+        "ledger_total_paise": 3534261821,
+        "payment_fee_paise": 37289068,
+        "payment_gross_paise": 1864453400,
+        "payment_net_paise": 1820452312,
+        "payment_tax_paise": 6712020,
+        "refund_total_paise": 67419900,
+        "residual_abs_variance_paise": 28196997,
+        "scoped_ledger_accounts": [
+          "1100-BANK-OPERATING",
+          "2100-PAYMENTS-CLEARING"
+        ],
+        "settlement_net_paise": 1753032412
+      }
+    },
+    "unaccounted_record_keys": [],
+    "verification": {
+      "ambiguous_escalation": {
+        "denominator": 5,
+        "numerator": 5,
+        "rate": 1.0
+      },
+      "delta_agreement": {
+        "denominator": 23,
+        "numerator": 23,
+        "rate": 1.0
+      },
+      "false_verifier_pass_count": 0,
+      "false_verifier_passes": [],
+      "money_weighted_dry_run_error_paise": 0,
+      "outcome_agreement": {
+        "denominator": 23,
+        "numerator": 23,
+        "rate": 1.0
+      },
+      "proof_completeness": {
+        "complete": true,
+        "denominator": 18,
+        "numerator": 18
+      },
+      "runtime_verification_summary": {
+        "case_status_counts": {
+          "APPROVAL_REQUIRED": 12,
+          "UNRESOLVED": 5,
+          "VERIFIED_RESOLVED": 6
+        },
+        "counts_by_category_status": {
+          "AMBIGUOUS_EVIDENCE": {
+            "UNRESOLVED": 5
+          },
+          "DUPLICATE_LEDGER_POSTING": {
+            "APPROVAL_REQUIRED": 6
+          },
+          "MISSING_REFUND_POSTING": {
+            "APPROVAL_REQUIRED": 6
+          },
+          "SETTLEMENT_TIMING_WINDOW_SHIFT": {
+            "VERIFIED_RESOLVED": 6
+          }
+        },
+        "dry_run_abs_variance_after_paise": 0,
+        "dry_run_count": 18,
+        "latency_ms": {
+          "max_case_ms": 0.049,
+          "median_case_ms": 0.026,
+          "verify_total_ms": 5.157
+        },
+        "passing_proof_completeness": {
+          "denominator": 18,
+          "numerator": 18
+        },
+        "proof_count": 23,
+        "results": [
+          {
+            "authority_decision": "UNRESOLVED",
+            "canonical_hash": "6fd3604b2c453cf274d24fb322f23857079cf004770461eab6f255ad4a7e68bf",
+            "case_id": "case-1eede37d0353",
+            "case_status": "UNRESOLVED",
+            "category": "AMBIGUOUS_EVIDENCE",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": null,
+            "equation_count": 1,
+            "hypothesis_id": "hyp-643d5bf12ea1",
+            "proof_id": "proof-6fd3604b2c45",
+            "proposed_delta_paise": null,
+            "reason_codes": [
+              "NON_UNIQUE_EVIDENCE"
+            ],
+            "requires_approval": false,
+            "rule_id": "V-AMBIGUITY",
+            "rule_version": "1",
+            "supported_evidence_count": 4,
+            "verifier_status": "INCONCLUSIVE"
+          },
+          {
+            "authority_decision": "UNRESOLVED",
+            "canonical_hash": "dd7bcd9147ea7dc58713f458de09006f0ded6b8970abdaef4f000e47e59ce9cc",
+            "case_id": "case-564d0c33674a",
+            "case_status": "UNRESOLVED",
+            "category": "AMBIGUOUS_EVIDENCE",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": null,
+            "equation_count": 1,
+            "hypothesis_id": "hyp-a845a58b46aa",
+            "proof_id": "proof-dd7bcd9147ea",
+            "proposed_delta_paise": null,
+            "reason_codes": [
+              "NON_UNIQUE_EVIDENCE"
+            ],
+            "requires_approval": false,
+            "rule_id": "V-AMBIGUITY",
+            "rule_version": "1",
+            "supported_evidence_count": 4,
+            "verifier_status": "INCONCLUSIVE"
+          },
+          {
+            "authority_decision": "UNRESOLVED",
+            "canonical_hash": "d444571855e5bbbee3c9be11e3b02957cf4d17e0b35ac7b6d496c3c359ce163d",
+            "case_id": "case-0f9a0d0d21f2",
+            "case_status": "UNRESOLVED",
+            "category": "AMBIGUOUS_EVIDENCE",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": null,
+            "equation_count": 1,
+            "hypothesis_id": "hyp-ee23afb31a44",
+            "proof_id": "proof-d444571855e5",
+            "proposed_delta_paise": null,
+            "reason_codes": [
+              "NON_UNIQUE_EVIDENCE"
+            ],
+            "requires_approval": false,
+            "rule_id": "V-AMBIGUITY",
+            "rule_version": "1",
+            "supported_evidence_count": 4,
+            "verifier_status": "INCONCLUSIVE"
+          },
+          {
+            "authority_decision": "UNRESOLVED",
+            "canonical_hash": "2325464c31dc0c05e99f338af46bafd3dc287e3e7a65406123e12ec3a99d2225",
+            "case_id": "case-c329b60debe8",
+            "case_status": "UNRESOLVED",
+            "category": "AMBIGUOUS_EVIDENCE",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": null,
+            "equation_count": 1,
+            "hypothesis_id": "hyp-da5d29743988",
+            "proof_id": "proof-2325464c31dc",
+            "proposed_delta_paise": null,
+            "reason_codes": [
+              "NON_UNIQUE_EVIDENCE"
+            ],
+            "requires_approval": false,
+            "rule_id": "V-AMBIGUITY",
+            "rule_version": "1",
+            "supported_evidence_count": 4,
+            "verifier_status": "INCONCLUSIVE"
+          },
+          {
+            "authority_decision": "UNRESOLVED",
+            "canonical_hash": "367a0a740d6bb55c6d9c03e717b2bf24dfbbab6191e4f117d550db3d36acf8d2",
+            "case_id": "case-4110c2fe504b",
+            "case_status": "UNRESOLVED",
+            "category": "AMBIGUOUS_EVIDENCE",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": null,
+            "equation_count": 1,
+            "hypothesis_id": "hyp-334ce68d83df",
+            "proof_id": "proof-367a0a740d6b",
+            "proposed_delta_paise": null,
+            "reason_codes": [
+              "NON_UNIQUE_EVIDENCE"
+            ],
+            "requires_approval": false,
+            "rule_id": "V-AMBIGUITY",
+            "rule_version": "1",
+            "supported_evidence_count": 4,
+            "verifier_status": "INCONCLUSIVE"
+          },
+          {
+            "authority_decision": "APPROVAL_REQUIRED",
+            "canonical_hash": "d3b1fe05dbc883d25ae22f94f96b303e5b3ecd4e124b7eebe254391a8aab67a9",
+            "case_id": "case-1e55277960c2",
+            "case_status": "APPROVAL_REQUIRED",
+            "category": "DUPLICATE_LEDGER_POSTING",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-7340e7fa833c",
+            "proof_id": "proof-d3b1fe05dbc8",
+            "proposed_delta_paise": -4726948,
+            "reason_codes": [],
+            "requires_approval": true,
+            "rule_id": "V-DUPLICATE-LEDGER",
+            "rule_version": "1",
+            "supported_evidence_count": 3,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "APPROVAL_REQUIRED",
+            "canonical_hash": "c194f05c29f2f2874adbef5af5461ddfbd5dacbabd81878b6a86493dcc1d6861",
+            "case_id": "case-58b3a02b4610",
+            "case_status": "APPROVAL_REQUIRED",
+            "category": "DUPLICATE_LEDGER_POSTING",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-cb1a65086c5b",
+            "proof_id": "proof-c194f05c29f2",
+            "proposed_delta_paise": -4282588,
+            "reason_codes": [],
+            "requires_approval": true,
+            "rule_id": "V-DUPLICATE-LEDGER",
+            "rule_version": "1",
+            "supported_evidence_count": 3,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "APPROVAL_REQUIRED",
+            "canonical_hash": "c2e3c8020b77552979ff38a4ec4df251abc79bf5d7783464e1349f7e6baac510",
+            "case_id": "case-59322ca8fe5c",
+            "case_status": "APPROVAL_REQUIRED",
+            "category": "DUPLICATE_LEDGER_POSTING",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-d647d12bfaf6",
+            "proof_id": "proof-c2e3c8020b77",
+            "proposed_delta_paise": -1124129,
+            "reason_codes": [],
+            "requires_approval": true,
+            "rule_id": "V-DUPLICATE-LEDGER",
+            "rule_version": "1",
+            "supported_evidence_count": 3,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "APPROVAL_REQUIRED",
+            "canonical_hash": "d8f50fd3bc09a6f4466158ad55c6c8acc1f163de9fef5ccecf604c5d14e847ec",
+            "case_id": "case-a5c302d4d3f3",
+            "case_status": "APPROVAL_REQUIRED",
+            "category": "DUPLICATE_LEDGER_POSTING",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-3ca7ca5d1a43",
+            "proof_id": "proof-d8f50fd3bc09",
+            "proposed_delta_paise": -4620520,
+            "reason_codes": [],
+            "requires_approval": true,
+            "rule_id": "V-DUPLICATE-LEDGER",
+            "rule_version": "1",
+            "supported_evidence_count": 3,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "APPROVAL_REQUIRED",
+            "canonical_hash": "f6eaa668d0c5d1c78b155fe57b77538e3eee6a4af3618627c830595f29f38378",
+            "case_id": "case-9b649aa692b8",
+            "case_status": "APPROVAL_REQUIRED",
+            "category": "DUPLICATE_LEDGER_POSTING",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-30b3365ff48d",
+            "proof_id": "proof-f6eaa668d0c5",
+            "proposed_delta_paise": -2038430,
+            "reason_codes": [],
+            "requires_approval": true,
+            "rule_id": "V-DUPLICATE-LEDGER",
+            "rule_version": "1",
+            "supported_evidence_count": 3,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "APPROVAL_REQUIRED",
+            "canonical_hash": "e78b5cc63c7de0993bbfc5a7774c307e017d1a17a5f07e28f7ef99405c723def",
+            "case_id": "case-aad45a7b0aa1",
+            "case_status": "APPROVAL_REQUIRED",
+            "category": "DUPLICATE_LEDGER_POSTING",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-ae52d68f1e98",
+            "proof_id": "proof-e78b5cc63c7d",
+            "proposed_delta_paise": -3753282,
+            "reason_codes": [],
+            "requires_approval": true,
+            "rule_id": "V-DUPLICATE-LEDGER",
+            "rule_version": "1",
+            "supported_evidence_count": 3,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "APPROVAL_REQUIRED",
+            "canonical_hash": "4075468594c607e329ea1c70a7041561c38e0a533a3b12efa070c44c5437a4cd",
+            "case_id": "case-8e31e703d466",
+            "case_status": "APPROVAL_REQUIRED",
+            "category": "MISSING_REFUND_POSTING",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-7f4b397057a7",
+            "proof_id": "proof-4075468594c6",
+            "proposed_delta_paise": -1580400,
+            "reason_codes": [],
+            "requires_approval": true,
+            "rule_id": "V-MISSING-REFUND",
+            "rule_version": "1",
+            "supported_evidence_count": 3,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "APPROVAL_REQUIRED",
+            "canonical_hash": "faf2b07436dc8f2418227b0ca46514e7701f5dd2c848e269109eb8088106b2af",
+            "case_id": "case-397d299be712",
+            "case_status": "APPROVAL_REQUIRED",
+            "category": "MISSING_REFUND_POSTING",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-d57eb4b952c1",
+            "proof_id": "proof-faf2b07436dc",
+            "proposed_delta_paise": -1094700,
+            "reason_codes": [],
+            "requires_approval": true,
+            "rule_id": "V-MISSING-REFUND",
+            "rule_version": "1",
+            "supported_evidence_count": 3,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "APPROVAL_REQUIRED",
+            "canonical_hash": "622862cc0211cbce09c95597eb34e7451d63f1a6395ecfc0d3e344783fac22f5",
+            "case_id": "case-b99ca986d3f8",
+            "case_status": "APPROVAL_REQUIRED",
+            "category": "MISSING_REFUND_POSTING",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-dfc24c5f05bb",
+            "proof_id": "proof-622862cc0211",
+            "proposed_delta_paise": -1145800,
+            "reason_codes": [],
+            "requires_approval": true,
+            "rule_id": "V-MISSING-REFUND",
+            "rule_version": "1",
+            "supported_evidence_count": 3,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "APPROVAL_REQUIRED",
+            "canonical_hash": "9558f8dd3ef7535615eee88a7c5707da833e1a81cc7a64446396d90a1daee8c9",
+            "case_id": "case-3e36a78cb1db",
+            "case_status": "APPROVAL_REQUIRED",
+            "category": "MISSING_REFUND_POSTING",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-de4e2d6c5e48",
+            "proof_id": "proof-9558f8dd3ef7",
+            "proposed_delta_paise": -1087500,
+            "reason_codes": [],
+            "requires_approval": true,
+            "rule_id": "V-MISSING-REFUND",
+            "rule_version": "1",
+            "supported_evidence_count": 3,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "APPROVAL_REQUIRED",
+            "canonical_hash": "fce7d79c18c9f4da589ef6841a66b85badfbfc225782383c725b61ce7af133af",
+            "case_id": "case-14095a5897e0",
+            "case_status": "APPROVAL_REQUIRED",
+            "category": "MISSING_REFUND_POSTING",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-3c21e9c86abd",
+            "proof_id": "proof-fce7d79c18c9",
+            "proposed_delta_paise": -1727600,
+            "reason_codes": [],
+            "requires_approval": true,
+            "rule_id": "V-MISSING-REFUND",
+            "rule_version": "1",
+            "supported_evidence_count": 3,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "APPROVAL_REQUIRED",
+            "canonical_hash": "052967875e5fac89898d2bb45ef6f86bfb9292afbb2809ec90a78cf58586eeb5",
+            "case_id": "case-6f8d73b275f1",
+            "case_status": "APPROVAL_REQUIRED",
+            "category": "MISSING_REFUND_POSTING",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-ca42d8dc1fc1",
+            "proof_id": "proof-052967875e5f",
+            "proposed_delta_paise": -1015100,
+            "reason_codes": [],
+            "requires_approval": true,
+            "rule_id": "V-MISSING-REFUND",
+            "rule_version": "1",
+            "supported_evidence_count": 3,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "VERIFIED_RESOLVED",
+            "canonical_hash": "30cef31ea9e75a9f2e49abd52133733ce5abd967bc4f752aa29bcd76f187cdf0",
+            "case_id": "case-6d551b40c0ca",
+            "case_status": "VERIFIED_RESOLVED",
+            "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-07eed60534a9",
+            "proof_id": "proof-30cef31ea9e7",
+            "proposed_delta_paise": 0,
+            "reason_codes": [],
+            "requires_approval": false,
+            "rule_id": "V-TIMING-WINDOW",
+            "rule_version": "1",
+            "supported_evidence_count": 2,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "VERIFIED_RESOLVED",
+            "canonical_hash": "1a49e0f029371be46ae939d672f22d73012e73b5fca48666709937467662e07a",
+            "case_id": "case-d585dd45a9c9",
+            "case_status": "VERIFIED_RESOLVED",
+            "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-1e3432632d67",
+            "proof_id": "proof-1a49e0f02937",
+            "proposed_delta_paise": 0,
+            "reason_codes": [],
+            "requires_approval": false,
+            "rule_id": "V-TIMING-WINDOW",
+            "rule_version": "1",
+            "supported_evidence_count": 2,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "VERIFIED_RESOLVED",
+            "canonical_hash": "427b0a4cf4cb64f713b3527e2c7dc0617e3d62c601cad06208bb56e0f81d1ff3",
+            "case_id": "case-226fa9df4bb7",
+            "case_status": "VERIFIED_RESOLVED",
+            "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-53b9aada7cc7",
+            "proof_id": "proof-427b0a4cf4cb",
+            "proposed_delta_paise": 0,
+            "reason_codes": [],
+            "requires_approval": false,
+            "rule_id": "V-TIMING-WINDOW",
+            "rule_version": "1",
+            "supported_evidence_count": 2,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "VERIFIED_RESOLVED",
+            "canonical_hash": "d3057e6baf7b2240b7ba403fb7b4f03ff4f9f10d9c71823975d50f167aac608c",
+            "case_id": "case-a5738552bff5",
+            "case_status": "VERIFIED_RESOLVED",
+            "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-243b3a9b2455",
+            "proof_id": "proof-d3057e6baf7b",
+            "proposed_delta_paise": 0,
+            "reason_codes": [],
+            "requires_approval": false,
+            "rule_id": "V-TIMING-WINDOW",
+            "rule_version": "1",
+            "supported_evidence_count": 2,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "VERIFIED_RESOLVED",
+            "canonical_hash": "65b2b0d4fb6d4e260dc797f54a2b272d3b3ea1d1c276beaf98e18433fc176e67",
+            "case_id": "case-38b33726e840",
+            "case_status": "VERIFIED_RESOLVED",
+            "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-edc2b9e61493",
+            "proof_id": "proof-65b2b0d4fb6d",
+            "proposed_delta_paise": 0,
+            "reason_codes": [],
+            "requires_approval": false,
+            "rule_id": "V-TIMING-WINDOW",
+            "rule_version": "1",
+            "supported_evidence_count": 2,
+            "verifier_status": "PASS"
+          },
+          {
+            "authority_decision": "VERIFIED_RESOLVED",
+            "canonical_hash": "c1ebb12b8f52ef7518995063d38644d2040b1e83935427bd4b367da7c81954d2",
+            "case_id": "case-3164ed1b21af",
+            "case_status": "VERIFIED_RESOLVED",
+            "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+            "conflicting_evidence_count": 0,
+            "dry_run_variance_after_paise": 0,
+            "equation_count": 8,
+            "hypothesis_id": "hyp-5ba88e7747b7",
+            "proof_id": "proof-c1ebb12b8f52",
+            "proposed_delta_paise": 0,
+            "reason_codes": [],
+            "requires_approval": false,
+            "rule_id": "V-TIMING-WINDOW",
+            "rule_version": "1",
+            "supported_evidence_count": 2,
+            "verifier_status": "PASS"
+          }
+        ],
+        "verifier_rule_manifest": {
+          "V-AMBIGUITY": {
+            "version": "1"
+          },
+          "V-DUPLICATE-LEDGER": {
+            "version": "1"
+          },
+          "V-MISSING-REFUND": {
+            "version": "1"
+          },
+          "V-TIMING-WINDOW": {
+            "version": "1"
+          }
+        },
+        "verifier_status_counts": {
+          "FAIL": 0,
+          "INCONCLUSIVE": 5,
+          "PASS": 18
+        }
+      }
+    }
+  },
+  "idempotency": {
+    "economically_identical": true,
+    "first_economic_output_hash": "69c89e71cbf7b7cc39934069f0962bb3837d2a7c3fae7c275a8eedd7b476f31e",
+    "second_economic_output_hash": "69c89e71cbf7b7cc39934069f0962bb3837d2a7c3fae7c275a8eedd7b476f31e"
+  },
+  "mode": "agent",
+  "problems": [],
+  "provider": "fake",
+  "replay_diagnostics": {
+    "counts": {
+      "accepted_count": 1880,
+      "case_count": 23,
+      "duplicate_delivery_count": 0,
+      "matched_record_count": 1864,
+      "quarantined_count": 0,
+      "raw_row_count": 1880
+    },
+    "discrepancies": [],
+    "duplicate_corrections_detected": 0,
+    "first_duration_s": 0.1831,
+    "first_economic_hash": "69c89e71cbf7b7cc39934069f0962bb3837d2a7c3fae7c275a8eedd7b476f31e",
+    "first_run_id": "run-0201d96fceb44b7a",
+    "is_idempotent": true,
+    "replay_duration_s": 0.1834,
+    "replay_economic_hash": "69c89e71cbf7b7cc39934069f0962bb3837d2a7c3fae7c275a8eedd7b476f31e",
+    "replay_run_id": "run-0201d96fceb44b7a"
+  },
+  "runtime_output_path": "D:\\Programming\\RazorPay_Buildathon\\artifacts\\benchmark\\final.json.runtime.json"
+}

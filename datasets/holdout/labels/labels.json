@@ -1,0 +1,325 @@
+{
+  "cases": [
+    {
+      "authoring_notes": "the same payment is posted twice with compatible amounts; removing one duplicate restores the expected balance",
+      "case_id": "case-holdout-0001",
+      "expected_category": "DUPLICATE_LEDGER_POSTING",
+      "expected_delta_paise": -4620520,
+      "expected_evidence_ids": [
+        "pay_eQquw0Yz2S",
+        "led_FeNnAuRQHk",
+        "led_V6mnEOKrln"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the same payment is posted twice with compatible amounts; removing one duplicate restores the expected balance",
+      "case_id": "case-holdout-0002",
+      "expected_category": "DUPLICATE_LEDGER_POSTING",
+      "expected_delta_paise": -3753282,
+      "expected_evidence_ids": [
+        "pay_kidnKpgZOw",
+        "led_otfWh0yHCT",
+        "led_hea8QK8WYb"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the same payment is posted twice with compatible amounts; removing one duplicate restores the expected balance",
+      "case_id": "case-holdout-0003",
+      "expected_category": "DUPLICATE_LEDGER_POSTING",
+      "expected_delta_paise": -1124129,
+      "expected_evidence_ids": [
+        "pay_GIvEO0Mj8U",
+        "led_714rS047Yy",
+        "led_NiR15qsm6I"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the same payment is posted twice with compatible amounts; removing one duplicate restores the expected balance",
+      "case_id": "case-holdout-0004",
+      "expected_category": "DUPLICATE_LEDGER_POSTING",
+      "expected_delta_paise": -4282588,
+      "expected_evidence_ids": [
+        "pay_teiXNy5efe",
+        "led_5LwuInRU1O",
+        "led_vqdEOtW2nt"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the same payment is posted twice with compatible amounts; removing one duplicate restores the expected balance",
+      "case_id": "case-holdout-0005",
+      "expected_category": "DUPLICATE_LEDGER_POSTING",
+      "expected_delta_paise": -2038430,
+      "expected_evidence_ids": [
+        "pay_IO058wYSWd",
+        "led_XEFgIPxSfa",
+        "led_gKdvgMn2DV"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the same payment is posted twice with compatible amounts; removing one duplicate restores the expected balance",
+      "case_id": "case-holdout-0006",
+      "expected_category": "DUPLICATE_LEDGER_POSTING",
+      "expected_delta_paise": -4726948,
+      "expected_evidence_ids": [
+        "pay_XdlHpZGtbu",
+        "led_2cYG6uOo1o",
+        "led_xLlTHxVIdw"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "a processed refund linked to a valid payment has no ledger posting inside the posting window; adding the signed entry restores the expected balance",
+      "case_id": "case-holdout-0007",
+      "expected_category": "MISSING_REFUND_POSTING",
+      "expected_delta_paise": -1145800,
+      "expected_evidence_ids": [
+        "rfd_rKjg9Xfddl",
+        "pay_I3FNsgH874",
+        "stl_wHdLaBtl59"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "a processed refund linked to a valid payment has no ledger posting inside the posting window; adding the signed entry restores the expected balance",
+      "case_id": "case-holdout-0008",
+      "expected_category": "MISSING_REFUND_POSTING",
+      "expected_delta_paise": -1087500,
+      "expected_evidence_ids": [
+        "rfd_nMgcop0Ck1",
+        "pay_NyepmFbLaz",
+        "stl_3CZ3TZQigF"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "a processed refund linked to a valid payment has no ledger posting inside the posting window; adding the signed entry restores the expected balance",
+      "case_id": "case-holdout-0009",
+      "expected_category": "MISSING_REFUND_POSTING",
+      "expected_delta_paise": -1580400,
+      "expected_evidence_ids": [
+        "rfd_9gUfltNRNa",
+        "pay_2cuE4fBRYy",
+        "stl_o3TVz8jXd6"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "a processed refund linked to a valid payment has no ledger posting inside the posting window; adding the signed entry restores the expected balance",
+      "case_id": "case-holdout-0010",
+      "expected_category": "MISSING_REFUND_POSTING",
+      "expected_delta_paise": -1727600,
+      "expected_evidence_ids": [
+        "rfd_AVsyNfyOGy",
+        "pay_aa2cjxIrNB",
+        "stl_R1ntcEZhnd"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "a processed refund linked to a valid payment has no ledger posting inside the posting window; adding the signed entry restores the expected balance",
+      "case_id": "case-holdout-0011",
+      "expected_category": "MISSING_REFUND_POSTING",
+      "expected_delta_paise": -1015100,
+      "expected_evidence_ids": [
+        "rfd_AKjVsoFIiM",
+        "pay_e9z1t5ePta",
+        "stl_zsbHhlYrU4"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "a processed refund linked to a valid payment has no ledger posting inside the posting window; adding the signed entry restores the expected balance",
+      "case_id": "case-holdout-0012",
+      "expected_category": "MISSING_REFUND_POSTING",
+      "expected_delta_paise": -1094700,
+      "expected_evidence_ids": [
+        "rfd_8xPvDe9hcC",
+        "pay_9jdiUtbmw4",
+        "stl_FAsB0Wuu7f"
+      ],
+      "expected_outcome": "APPROVAL_REQUIRED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the settlement is credited inside its window but booked into the adjacent accounting period; period attribution only, total economic value unchanged (zero-delta verified explanation)",
+      "case_id": "case-holdout-0013",
+      "expected_category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "expected_delta_paise": 0,
+      "expected_evidence_ids": [
+        "stl_wDvQ5i8cL3",
+        "led_6H9r3CTcR7"
+      ],
+      "expected_outcome": "VERIFIED_RESOLVED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the settlement is credited inside its window but booked into the adjacent accounting period; period attribution only, total economic value unchanged (zero-delta verified explanation)",
+      "case_id": "case-holdout-0014",
+      "expected_category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "expected_delta_paise": 0,
+      "expected_evidence_ids": [
+        "stl_EgRu1Ult2w",
+        "led_6zV4FJEN7E"
+      ],
+      "expected_outcome": "VERIFIED_RESOLVED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the settlement is credited inside its window but booked into the adjacent accounting period; period attribution only, total economic value unchanged (zero-delta verified explanation)",
+      "case_id": "case-holdout-0015",
+      "expected_category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "expected_delta_paise": 0,
+      "expected_evidence_ids": [
+        "stl_Mz934knxRz",
+        "led_ySXzMZsXwl"
+      ],
+      "expected_outcome": "VERIFIED_RESOLVED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the settlement is credited inside its window but booked into the adjacent accounting period; period attribution only, total economic value unchanged (zero-delta verified explanation)",
+      "case_id": "case-holdout-0016",
+      "expected_category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "expected_delta_paise": 0,
+      "expected_evidence_ids": [
+        "stl_PLN4T6n2ei",
+        "led_n4igiUiS31"
+      ],
+      "expected_outcome": "VERIFIED_RESOLVED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the settlement is credited inside its window but booked into the adjacent accounting period; period attribution only, total economic value unchanged (zero-delta verified explanation)",
+      "case_id": "case-holdout-0017",
+      "expected_category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "expected_delta_paise": 0,
+      "expected_evidence_ids": [
+        "stl_82J7lnCQTx",
+        "led_C1DdwcGVLi"
+      ],
+      "expected_outcome": "VERIFIED_RESOLVED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "the settlement is credited inside its window but booked into the adjacent accounting period; period attribution only, total economic value unchanged (zero-delta verified explanation)",
+      "case_id": "case-holdout-0018",
+      "expected_category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "expected_delta_paise": 0,
+      "expected_evidence_ids": [
+        "stl_wt0NosM2lv",
+        "led_ErHx6RpPed"
+      ],
+      "expected_outcome": "VERIFIED_RESOLVED",
+      "must_escalate": false
+    },
+    {
+      "authoring_notes": "twin settlements with identical net in adjacent windows; bank credits carry no UTR and the twin credit is posted exactly on the shared window boundary; the missing UTR is the absent discriminator",
+      "case_id": "case-holdout-0019",
+      "expected_category": "AMBIGUOUS_EVIDENCE",
+      "expected_delta_paise": null,
+      "expected_evidence_ids": [
+        "stl_qqiXqAgA60",
+        "stl_z8ceg2ybfe",
+        "bnk_u7tQLtXBCd",
+        "bnk_T5Bl6RUfax"
+      ],
+      "expected_outcome": "UNRESOLVED",
+      "must_escalate": true
+    },
+    {
+      "authoring_notes": "twin settlements with identical net in adjacent windows; bank credits carry no UTR and the twin credit is posted exactly on the shared window boundary; the missing UTR is the absent discriminator",
+      "case_id": "case-holdout-0020",
+      "expected_category": "AMBIGUOUS_EVIDENCE",
+      "expected_delta_paise": null,
+      "expected_evidence_ids": [
+        "stl_7vDaYDRpNT",
+        "stl_HIh2v9yt1Q",
+        "bnk_zuzLXM0BQb",
+        "bnk_hYQR7U0GA4"
+      ],
+      "expected_outcome": "UNRESOLVED",
+      "must_escalate": true
+    },
+    {
+      "authoring_notes": "twin settlements with identical net in adjacent windows; bank credits carry no UTR and the twin credit is posted exactly on the shared window boundary; the missing UTR is the absent discriminator",
+      "case_id": "case-holdout-0021",
+      "expected_category": "AMBIGUOUS_EVIDENCE",
+      "expected_delta_paise": null,
+      "expected_evidence_ids": [
+        "stl_8jkQXBpAyC",
+        "stl_cBCaVPo4AP",
+        "bnk_OpCrmrUkyU",
+        "bnk_g9sLLmrMMi"
+      ],
+      "expected_outcome": "UNRESOLVED",
+      "must_escalate": true
+    },
+    {
+      "authoring_notes": "twin settlements with identical net in adjacent windows; bank credits carry no UTR and the twin credit is posted exactly on the shared window boundary; the missing UTR is the absent discriminator",
+      "case_id": "case-holdout-0022",
+      "expected_category": "AMBIGUOUS_EVIDENCE",
+      "expected_delta_paise": null,
+      "expected_evidence_ids": [
+        "stl_edOTJYiMpJ",
+        "stl_UtwMFxyf7x",
+        "bnk_RJW3XVeX6o",
+        "bnk_cy9ShlkzwV"
+      ],
+      "expected_outcome": "UNRESOLVED",
+      "must_escalate": true
+    },
+    {
+      "authoring_notes": "twin settlements with identical net in adjacent windows; bank credits carry no UTR and the twin credit is posted exactly on the shared window boundary; the missing UTR is the absent discriminator",
+      "case_id": "case-holdout-0023",
+      "expected_category": "AMBIGUOUS_EVIDENCE",
+      "expected_delta_paise": null,
+      "expected_evidence_ids": [
+        "stl_G6LgTeFPqY",
+        "stl_mt7oMkhRz0",
+        "bnk_8SsV9ZP1WC",
+        "bnk_fixqTzcfoI"
+      ],
+      "expected_outcome": "UNRESOLVED",
+      "must_escalate": true
+    }
+  ],
+  "clean_reference": {
+    "derivation": "ledger state immediately before exception injection",
+    "ledger_by_account_paise": {
+      "1100-BANK-OPERATING": 1753032412,
+      "2100-PAYMENTS-CLEARING": 1753032412
+    },
+    "ledger_total_paise": 3506064824
+  },
+  "dataset_version": "argus-datasets-v1",
+  "label_schema_version": "argus-labels-v1",
+  "profile": "holdout",
+  "row_expectations": [],
+  "seed": 9107,
+  "summary": {
+    "by_category": {
+      "AMBIGUOUS_EVIDENCE": 5,
+      "DUPLICATE_LEDGER_POSTING": 6,
+      "MISSING_REFUND_POSTING": 6,
+      "SETTLEMENT_TIMING_WINDOW_SHIFT": 6
+    },
+    "case_count": 23,
+    "row_expectation_count": 0
+  }
+}

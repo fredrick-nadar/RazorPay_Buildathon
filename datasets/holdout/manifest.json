@@ -1,0 +1,83 @@
+{
+  "dataset_version": "argus-datasets-v1",
+  "files": {
+    "inputs/bank_entries.csv": {
+      "columns": [
+        "bank_entry_id",
+        "posted_at_utc",
+        "value_date",
+        "currency",
+        "signed_amount",
+        "narration",
+        "utr",
+        "account_fingerprint"
+      ],
+      "rows": 100,
+      "sha256": "08d093b46c47295ac97758d7464340fe20e09bc2fe58ac349e343b475bd89dd3"
+    },
+    "inputs/ledger_entries.csv": {
+      "columns": [
+        "ledger_entry_id",
+        "account_code",
+        "accounting_date",
+        "currency",
+        "signed_amount",
+        "source_reference",
+        "source_type",
+        "description",
+        "entry_origin"
+      ],
+      "rows": 890,
+      "sha256": "525a4afe44b2f919de8f6bb3b381f16b2d5d38247c702b5de4dd94968a3e01f1"
+    },
+    "inputs/payments.csv": {
+      "columns": [
+        "payment_id",
+        "order_id",
+        "status",
+        "currency",
+        "gross_amount",
+        "fee",
+        "tax",
+        "captured_at_utc",
+        "settlement_id"
+      ],
+      "rows": 740,
+      "sha256": "22d3ec9ff2cb0d6c9e533fafe0f26e6790e861790fcca80e19b127feab432069"
+    },
+    "inputs/refunds.csv": {
+      "columns": [
+        "refund_id",
+        "payment_id",
+        "status",
+        "currency",
+        "refund_amount",
+        "created_at_utc",
+        "settlement_id"
+      ],
+      "rows": 50,
+      "sha256": "4fc5dd3ceeb7cdb95d235399837cc5cd9f985eb2737319247c77a544be9f5dd5"
+    },
+    "inputs/settlements.csv": {
+      "columns": [
+        "settlement_id",
+        "settled_at_utc",
+        "window_start_utc",
+        "window_end_utc",
+        "status",
+        "currency",
+        "gross_credit",
+        "fee",
+        "tax",
+        "adjustment_amount",
+        "net_amount",
+        "utr"
+      ],
+      "rows": 100,
+      "sha256": "c4a4158d98c946dc4c13faaba54090ae065225cef49dfc4a5b550bb2da0a8bab"
+    }
+  },
+  "profile": "holdout",
+  "reproducibility_hash": "29282179b457099602d0f7f146c92d8ca00be1fd0a718ebbf3e23dae7a797057",
+  "seed": 9107
+}

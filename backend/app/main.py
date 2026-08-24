@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.api.routes_cases import router as cases_router
@@ -26,6 +27,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.db.close()
 
     app = FastAPI(title=APP_NAME, version=__version__, lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.include_router(meta_router)
     app.include_router(runs_router)
     app.include_router(cases_router)

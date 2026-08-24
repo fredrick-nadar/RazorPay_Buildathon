@@ -73,12 +73,13 @@ def write_dataset(root: Path, result: GenerationResult) -> dict[str, str]:
     encoded: dict[str, bytes] = {}
     files_info: dict[str, dict[str, Any]] = {}
     for name in INPUT_FILES:
-        data = csv_bytes(COLUMNS[name], result.rows[name])
+        columns = result.columns.get(name, COLUMNS[name]) if result.columns else COLUMNS[name]
+        data = csv_bytes(columns, result.rows[name])
         encoded[f"inputs/{name}.csv"] = data
         files_info[f"inputs/{name}.csv"] = {
             "rows": len(result.rows[name]),
             "sha256": sha256_bytes(data),
-            "columns": list(COLUMNS[name]),
+            "columns": list(columns),
         }
 
     labels_data = json_bytes(result.labels)

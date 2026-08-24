@@ -188,15 +188,22 @@ def collect_physical_layout_violations(repo_root: Path) -> list[str]:
         return ["datasets directory contains no profiles"]
     for profile_dir in profile_dirs:
         profile = profile_dir.name
-        if profile == "holdout":
-            entries = sorted(p.name for p in profile_dir.iterdir())
-            if entries != ["spec.json"]:
-                violations.append(f"datasets/holdout must contain only spec.json, found {entries}")
+        entries = sorted(p.name for p in profile_dir.iterdir())
+        if profile == "holdout" and entries == ["spec.json"]:
             continue
-        inputs = sorted(p.name for p in (profile_dir / "inputs").iterdir())
+        inputs_dir = profile_dir / "inputs"
+        if not inputs_dir.is_dir():
+            violations.append(f"datasets/{profile}/inputs directory missing")
+            continue
+        inputs = sorted(p.name for p in inputs_dir.iterdir())
         if tuple(inputs) != INPUT_FILE_NAMES:
             violations.append(f"datasets/{profile}/inputs has unexpected contents: {inputs}")
-        labels = sorted(p.name for p in (profile_dir / "labels").iterdir())
+
+        labels_dir = profile_dir / "labels"
+        if not labels_dir.is_dir():
+            violations.append(f"datasets/{profile}/labels directory missing")
+            continue
+        labels = sorted(p.name for p in labels_dir.iterdir())
         if labels != ["labels.json", "manifest.json"]:
             violations.append(
                 f"datasets/{profile}/labels must contain exactly labels.json and "

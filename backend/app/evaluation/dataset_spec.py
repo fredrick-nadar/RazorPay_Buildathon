@@ -161,13 +161,13 @@ HOLDOUT_DATASET_SPEC = GenerationSpec(
     profile="holdout",
     seed=HOLDOUT_SEED,
     base_epoch_s=epoch_seconds(2026, 6, 1),
-    window_count=20,
-    ambiguous_pair_windows=(4, 11),
-    payments_per_base_settlement=3,
-    refund_count=6,
-    duplicate_cases=2,
-    missing_refund_cases=2,
-    timing_shift_cases=2,
+    window_count=100,
+    ambiguous_pair_windows=(10, 30, 50, 70, 90),
+    payments_per_base_settlement=8,
+    refund_count=50,
+    duplicate_cases=6,
+    missing_refund_cases=6,
+    timing_shift_cases=6,
 )
 
 # Test-only scale profile for the 500+ benchmark smoke; never committed.
@@ -187,6 +187,7 @@ BENCHMARK_SPEC = GenerationSpec(
 PROFILES: dict[str, GenerationSpec] = {
     "dev": DEV_SPEC,
     "adversarial": ADVERSARIAL_SPEC,
+    "holdout": HOLDOUT_DATASET_SPEC,
 }
 
 HOLDOUT_SPEC_DOC: dict[str, object] = {

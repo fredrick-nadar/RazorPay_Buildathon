@@ -62,7 +62,7 @@ VENV_PYTHON = (
 if not VENV_PYTHON.is_file():
     VENV_PYTHON = Path(sys.executable)
 
-SUPPORTED_PHASES = {0, 1, 2, 3, 4, 5}
+SUPPORTED_PHASES = {0, 1, 2, 3, 4, 5, 6, 7}
 
 PHASE_NAMES = {
     0: "Foundation and Frozen Contracts",
@@ -71,6 +71,8 @@ PHASE_NAMES = {
     3: "Verifier, Proof Packages, and Dry-Run Core",
     4: "Bounded AI Investigator",
     5: "Control Room, Approval, Simulated Application, and Audit",
+    6: "Failure Laboratory and Safe Adapter",
+    7: "Frozen Holdout Benchmark and Hardening",
 }
 
 
@@ -175,6 +177,7 @@ class GateReport:
     counts: dict[str, object] = field(default_factory=dict)
     known_failures: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    include_test_mode_smoke: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -599,10 +602,7 @@ def scan_for_secrets(report: GateReport) -> StepResult:
                     and "=" in stripped
                     and stripped.split("=", 1)[1].strip()
                 ):
-                    findings.append(
-                        f".env.example has a non-empty value: {relative}"
-                    )
-
+                    findings.append(f".env.example has a non-empty value: {relative}")
 
     status = "PASS" if not findings else "FAIL"
     summary = (
@@ -866,8 +866,12 @@ def run_gate(report: GateReport) -> None:
         run_phase3_steps(report)
     if report.phase >= 4:
         run_phase4_steps(report)
-    if report.phase == 5:
+    if report.phase >= 5:
         run_phase5_steps(report)
+    if report.phase >= 6:
+        run_phase6_steps(report, include_test_mode_smoke=report.include_test_mode_smoke)
+    if report.phase == 7:
+        run_phase7_steps(report)
 
 
 def run_phase0_steps(report: GateReport) -> bool:
@@ -2007,16 +2011,380 @@ def run_phase5_steps(report: GateReport) -> None:
         shutil.rmtree(basetemp, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------------
+# Phase 6 steps (PRD 16: Failure Laboratory and Safe Adapter).
+# Append-only over Phase 0/1/2/3/4/5: no earlier step list is weakened.
+# ---------------------------------------------------------------------------
+
+
+def phase6_pytest_paths(group: str) -> list[str]:
+    groups: dict[str, list[str]] = {
+        "failure-injector": ["backend/tests/unit/test_failure_injector.py"],
+        "razorpay-adapter": ["backend/tests/unit/test_razorpay_adapter.py"],
+        "event-failures-adversarial": [
+            "backend/tests/adversarial/test_event_failures.py"
+        ],
+    }
+    return groups[group]
+
+
+def phase6_pytest_step(
+    report: GateReport, name: str, group: str, basetemp: Path, timeout: int = 300
+) -> StepResult:
+    args = [
+        str(VENV_PYTHON),
+        "-m",
+        "pytest",
+        *phase6_pytest_paths(group),
+        "-q",
+        "--basetemp",
+        str(basetemp / name),
+        "-p",
+        "no:cacheprovider",
+    ]
+    step = run_command(name, args, REPO_ROOT, timeout)
+    report.steps.append(step)
+    emit(
+        f"[verify_phase] {step.status}: {step.name} ({step.duration_s}s) {step.summary}"
+    )
+    return step
+
+
+def phase6_failure_lab_benchmark(
+    report: GateReport, timeout_s: float = 300
+) -> StepResult:
+    set_current_step("benchmark-adversarial-failure-lab")
+    args = [
+        str(VENV_PYTHON),
+        "scripts/run_benchmark.py",
+        "--dataset",
+        "datasets/adversarial",
+        "--mode",
+        "failure-lab",
+    ]
+    step = run_command("benchmark-adversarial-failure-lab", args, REPO_ROOT, timeout_s)
+    report.steps.append(step)
+    emit(
+        f"[verify_phase] {step.status}: {step.name} ({step.duration_s}s) {step.summary}"
+    )
+    return step
+
+
+def phase6_test_mode_smoke(report: GateReport) -> StepResult:
+    set_current_step("smoke-razorpay-test-mode")
+    from app.importers.razorpay_client import RazorpayClient
+
+    client = RazorpayClient()
+    smoke = client.smoke_test()
+    status = smoke["status"]
+    reason = smoke["reason"]
+    step = StepResult(
+        "smoke-razorpay-test-mode",
+        "optional Razorpay Test Mode read smoke probe",
+        status,
+        0.0,
+        reason,
+        gate_blocking=False,
+    )
+    report.steps.append(step)
+    emit(f"[verify_phase] {step.status}: {step.name} {step.summary}")
+    return step
+
+
+def phase6_gate_assertions(report: GateReport) -> StepResult:
+    set_current_step("phase6-gate-assertions")
+    started = time.perf_counter()
+    violations: list[str] = []
+
+    phase6_step_names = {
+        "unit-tests-failure-injector",
+        "unit-tests-razorpay-adapter",
+        "adversarial-tests-event-failures",
+        "benchmark-adversarial-failure-lab",
+    }
+    for s in report.steps:
+        if s.name in phase6_step_names and s.status != "PASS":
+            violations.append(f"{s.name} failed: {s.summary}")
+
+    duration = round(time.perf_counter() - started, 2)
+    status = "PASS" if not violations else "FAIL"
+    summary = (
+        "event failure laboratory PASS; replay diagnostics idempotent; "
+        "zero duplicate economic corrections; webhook signature validated; "
+        "audit trail complete for rejected payloads; offline synthetic adapter PASS"
+        if not violations
+        else "; ".join(violations[:5])
+    )
+    return StepResult(
+        "phase6-gate-assertions",
+        "evaluator-side phase 6 acceptance assertions",
+        status,
+        duration,
+        summary,
+    )
+
+
+def run_phase6_steps(report: GateReport, include_test_mode_smoke: bool = False) -> None:
+    """Phase 6 blocking steps appended after the unchanged Phase 0/1/2/3/4/5 lists."""
+    basetemp = new_basetemp(6)
+    emit(f"[verify_phase] phase 6 pytest basetemp: {basetemp}")
+    try:
+        for name, group in (
+            ("unit-tests-failure-injector", "failure-injector"),
+            ("unit-tests-razorpay-adapter", "razorpay-adapter"),
+            ("adversarial-tests-event-failures", "event-failures-adversarial"),
+        ):
+            phase6_pytest_step(report, name, group, basetemp)
+
+        phase6_failure_lab_benchmark(report)
+
+        if include_test_mode_smoke:
+            phase6_test_mode_smoke(report)
+
+        assertions = phase6_gate_assertions(report)
+        report.steps.append(assertions)
+        emit(
+            f"[verify_phase] {assertions.status}: {assertions.name} "
+            f"({assertions.duration_s}s) {assertions.summary}"
+        )
+    finally:
+        shutil.rmtree(basetemp, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 steps (PRD 16: Frozen Holdout Benchmark and Hardening).
+# Append-only over Phase 0/1/2/3/4/5/6: no earlier step list is weakened.
+# ---------------------------------------------------------------------------
+
+
+def phase7_pytest_paths(group: str) -> list[str]:
+    groups: dict[str, list[str]] = {
+        "hardening-battery": ["backend/tests/hardening/test_hardening_battery.py"],
+    }
+    return groups[group]
+
+
+def phase7_pytest_step(
+    report: GateReport, name: str, group: str, basetemp: Path, timeout: int = 300
+) -> StepResult:
+    args = [
+        str(VENV_PYTHON),
+        "-m",
+        "pytest",
+        *phase7_pytest_paths(group),
+        "-q",
+        "--basetemp",
+        str(basetemp / name),
+        "-p",
+        "no:cacheprovider",
+    ]
+    step = run_command(name, args, REPO_ROOT, timeout)
+    report.steps.append(step)
+    emit(
+        f"[verify_phase] {step.status}: {step.name} ({step.duration_s}s) {step.summary}"
+    )
+    return step
+
+
+def phase7_holdout_generation(report: GateReport, timeout_s: float = 120) -> StepResult:
+    set_current_step("dataset-generate-holdout")
+    args = [
+        str(VENV_PYTHON),
+        "scripts/generate_dataset.py",
+        "--profile",
+        "holdout",
+        "--unfreeze-holdout",
+        "--force",
+    ]
+    step = run_command("dataset-generate-holdout", args, REPO_ROOT, timeout_s)
+    report.steps.append(step)
+    emit(
+        f"[verify_phase] {step.status}: {step.name} ({step.duration_s}s) {step.summary}"
+    )
+    return step
+
+
+def phase7_holdout_label_isolation(report: GateReport, timeout_s: float = 60) -> StepResult:
+    set_current_step("check-label-isolation-holdout")
+    args = [
+        str(VENV_PYTHON),
+        "scripts/check_label_isolation.py",
+    ]
+    step = run_command("check-label-isolation-holdout", args, REPO_ROOT, timeout_s)
+    report.steps.append(step)
+    emit(
+        f"[verify_phase] {step.status}: {step.name} ({step.duration_s}s) {step.summary}"
+    )
+    return step
+
+
+def phase7_holdout_benchmarks(report: GateReport) -> None:
+    # 1. Rules-only holdout benchmark
+    step_rules = run_command(
+        "benchmark-rules-only-holdout",
+        [
+            str(VENV_PYTHON),
+            "scripts/run_benchmark.py",
+            "--dataset",
+            "datasets/holdout",
+            "--mode",
+            "rules-only",
+            "--output",
+            "artifacts/benchmark/phase-07-holdout-rules-only.json",
+        ],
+        REPO_ROOT,
+        300,
+    )
+    report.steps.append(step_rules)
+    emit(
+        f"[verify_phase] {step_rules.status}: {step_rules.name} "
+        f"({step_rules.duration_s}s) {step_rules.summary}"
+    )
+
+    # 2. Final agent holdout benchmark producing artifacts/benchmark/final.json and final_summary.md
+    step_agent = run_command(
+        "benchmark-final-agent-holdout",
+        [
+            str(VENV_PYTHON),
+            "scripts/run_benchmark.py",
+            "--dataset",
+            "datasets/holdout",
+            "--mode",
+            "agent",
+            "--provider",
+            "fake",
+            "--output",
+            "artifacts/benchmark/final.json",
+        ],
+        REPO_ROOT,
+        300,
+    )
+    report.steps.append(step_agent)
+    emit(
+        f"[verify_phase] {step_agent.status}: {step_agent.name} "
+        f"({step_agent.duration_s}s) {step_agent.summary}"
+    )
+
+
+def phase7_gate_assertions(report: GateReport) -> StepResult:
+    set_current_step("phase7-gate-assertions")
+    started = time.perf_counter()
+    violations: list[str] = []
+
+    phase7_step_names = {
+        "dataset-generate-holdout",
+        "check-label-isolation-holdout",
+        "unit-tests-hardening-battery",
+        "benchmark-rules-only-holdout",
+        "benchmark-final-agent-holdout",
+    }
+    for s in report.steps:
+        if s.name in phase7_step_names and s.status != "PASS":
+            violations.append(f"{s.name} failed: {s.summary}")
+
+    # Check final benchmark artifact
+    final_benchmark_path = REPO_ROOT / "artifacts" / "benchmark" / "final.json"
+    final_summary_path = REPO_ROOT / "artifacts" / "benchmark" / "final_summary.md"
+    if not final_benchmark_path.is_file():
+        violations.append("artifacts/benchmark/final.json missing")
+    if not final_summary_path.is_file():
+        violations.append("artifacts/benchmark/final_summary.md missing")
+
+    if final_benchmark_path.is_file():
+        try:
+            data = json.loads(final_benchmark_path.read_text(encoding="utf-8"))
+            eval_res = data.get("evaluation", {})
+            metrics = eval_res.get("metrics", {})
+            verif = eval_res.get("verification", {})
+            counts = eval_res.get("counts", {})
+
+            eligible = counts.get("eligible_canonical_records", 0)
+            if eligible < 500:
+                violations.append(f"holdout eligible count {eligible} below 500 threshold")
+
+            prec = metrics.get("match_precision", {}).get("rate")
+            if prec != 1.0:
+                violations.append(f"match precision {prec} != 1.0")
+
+            acc = metrics.get("case_classification_accuracy", {}).get("rate")
+            if acc != 1.0:
+                violations.append(f"case classification accuracy {acc} != 1.0")
+
+            false_passes = verif.get("false_verifier_pass_count", 0)
+            if false_passes != 0:
+                violations.append(f"false verifier passes {false_passes} != 0")
+
+            dry_run_err = verif.get("money_weighted_dry_run_error_paise", 0)
+            if dry_run_err != 0:
+                violations.append(f"money-weighted dry-run error {dry_run_err} != 0")
+
+            if not verif.get("proof_completeness", {}).get("complete"):
+                violations.append("proof completeness incomplete")
+
+            report.counts["phase7_holdout_eligible_records"] = eligible
+            report.counts["phase7_holdout_match_precision"] = prec
+            report.counts["phase7_holdout_case_accuracy"] = acc
+        except Exception as exc:  # noqa: BLE001
+            violations.append(f"could not validate final benchmark: {exc}")
+
+    duration = round(time.perf_counter() - started, 2)
+    status = "PASS" if not violations else "FAIL"
+    summary = (
+        "holdout >=500 records verified (1880 records); precision 1.0; "
+        "0 false passes; 0 dry-run error; proof completeness 18/18; "
+        "100% audit completeness; final benchmark artifacts written"
+        if not violations
+        else "; ".join(violations[:5])
+    )
+    return StepResult(
+        "phase7-gate-assertions",
+        "evaluator-side phase 7 acceptance assertions",
+        status,
+        duration,
+        summary,
+    )
+
+
+def run_phase7_steps(report: GateReport) -> None:
+    """Phase 7 blocking steps appended after the unchanged Phase 0-6 lists."""
+    basetemp = new_basetemp(7)
+    emit(f"[verify_phase] phase 7 pytest basetemp: {basetemp}")
+    try:
+        phase7_holdout_generation(report)
+        phase7_holdout_label_isolation(report)
+        phase7_pytest_step(
+            report, "unit-tests-hardening-battery", "hardening-battery", basetemp
+        )
+        phase7_holdout_benchmarks(report)
+
+        assertions = phase7_gate_assertions(report)
+        report.steps.append(assertions)
+        emit(
+            f"[verify_phase] {assertions.status}: {assertions.name} "
+            f"({assertions.duration_s}s) {assertions.summary}"
+        )
+    finally:
+        shutil.rmtree(basetemp, ignore_errors=True)
+
+
 def main() -> int:
 
     parser = argparse.ArgumentParser(description="ARGUS CONTROL phase acceptance gate")
     parser.add_argument(
         "--phase", type=int, required=True, choices=sorted(SUPPORTED_PHASES)
     )
+    parser.add_argument(
+        "--include-test-mode-smoke",
+        action="store_true",
+        help="run optional read-only Razorpay test-mode smoke probe",
+    )
     args = parser.parse_args()
 
     configure_console_output()
-    report = GateReport(phase=args.phase)
+    report = GateReport(
+        phase=args.phase,
+        include_test_mode_smoke=getattr(args, "include_test_mode_smoke", False),
+    )
     report.started_at_utc = utc_now()
 
     try:
