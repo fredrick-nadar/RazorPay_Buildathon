@@ -31,6 +31,7 @@ Portability contract (Windows cmd/PowerShell, any active code page):
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import platform
@@ -61,14 +62,17 @@ VENV_PYTHON = (
 if not VENV_PYTHON.is_file():
     VENV_PYTHON = Path(sys.executable)
 
-SUPPORTED_PHASES = {0, 1, 2, 3}
+SUPPORTED_PHASES = {0, 1, 2, 3, 4, 5}
 
 PHASE_NAMES = {
     0: "Foundation and Frozen Contracts",
     1: "Synthetic Data, Ground Truth, and Isolation",
     2: "Normalization, Reconciliation, and Evidence Graph",
     3: "Verifier, Proof Packages, and Dry-Run Core",
+    4: "Bounded AI Investigator",
+    5: "Control Room, Approval, Simulated Application, and Audit",
 }
+
 
 DATASET_PROFILES = (
     # (profile name, PRD-documented seed) for the Phase 1 dataset steps.
@@ -589,11 +593,16 @@ def scan_for_secrets(report: GateReport) -> StepResult:
         if path.name == ".env.example":
             for line in text.splitlines():
                 stripped = line.strip()
-                if stripped and not stripped.startswith("#") and "=" in stripped:
-                    if stripped.split("=", 1)[1].strip():
-                        findings.append(
-                            f".env.example has a non-empty value: {relative}"
-                        )
+                if (
+                    stripped
+                    and not stripped.startswith("#")
+                    and "=" in stripped
+                    and stripped.split("=", 1)[1].strip()
+                ):
+                    findings.append(
+                        f".env.example has a non-empty value: {relative}"
+                    )
+
 
     status = "PASS" if not findings else "FAIL"
     summary = (
@@ -853,8 +862,12 @@ def run_gate(report: GateReport) -> None:
         run_phase1_steps(report)
     if report.phase >= 2:
         run_phase2_steps(report)
-    if report.phase == 3:
+    if report.phase >= 3:
         run_phase3_steps(report)
+    if report.phase >= 4:
+        run_phase4_steps(report)
+    if report.phase == 5:
+        run_phase5_steps(report)
 
 
 def run_phase0_steps(report: GateReport) -> bool:
@@ -982,7 +995,7 @@ def load_backend_evaluation() -> None:
 def collect_phase1_metrics_and_violations() -> tuple[list[str], dict[str, object]]:
     """Evaluator-side acceptance assertions over the committed datasets."""
     load_backend_evaluation()
-    from app.evaluation import control_totals as ct
+    ct = importlib.import_module("app.evaluation.control_totals")
 
     violations: list[str] = []
     dataset_metrics: dict[str, object] = {}
@@ -1538,23 +1551,27 @@ def collect_phase3_metrics_and_violations() -> tuple[list[str], dict[str, object
                 "economically_identical"
             ),
         }
-        if outcome.get("numerator") != wants["outcomes"] or outcome.get(
-            "denominator"
-        ) != wants["outcomes"]:
+        if (
+            outcome.get("numerator") != wants["outcomes"]
+            or outcome.get("denominator") != wants["outcomes"]
+        ):
             violations.append(f"{profile}: verifier outcome agreement mismatch")
-        if delta.get("numerator") != wants["deltas"] or delta.get("denominator") != wants[
-            "deltas"
-        ]:
+        if (
+            delta.get("numerator") != wants["deltas"]
+            or delta.get("denominator") != wants["deltas"]
+        ):
             violations.append(f"{profile}: proposed delta agreement mismatch")
-        if escalation.get("numerator") != wants["escalations"] or escalation.get(
-            "denominator"
-        ) != wants["escalations"]:
+        if (
+            escalation.get("numerator") != wants["escalations"]
+            or escalation.get("denominator") != wants["escalations"]
+        ):
             violations.append(f"{profile}: ambiguous escalation mismatch")
         if verification.get("false_verifier_pass_count") != 0:
             violations.append(f"{profile}: false verifier passes present")
-        if proof.get("numerator") != wants["proofs"] or proof.get("denominator") != wants[
-            "proofs"
-        ]:
+        if (
+            proof.get("numerator") != wants["proofs"]
+            or proof.get("denominator") != wants["proofs"]
+        ):
             violations.append(f"{profile}: proof completeness mismatch")
         if verification.get("money_weighted_dry_run_error_paise") != 0:
             violations.append(f"{profile}: dry-run money error is nonzero")
@@ -1648,7 +1665,350 @@ def run_phase3_steps(report: GateReport) -> None:
         shutil.rmtree(basetemp, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------------
+# Phase 4 steps (PRD 16: Bounded AI Investigator).
+# Append-only over Phase 0/1/2/3: no earlier step list is weakened.
+# ---------------------------------------------------------------------------
+
+
+def phase4_pytest_paths(group: str) -> list[str]:
+    groups: dict[str, list[str]] = {
+        "investigator-tools": ["backend/tests/unit/test_investigator_tools.py"],
+        "investigator-schemas": ["backend/tests/unit/test_investigator_schemas.py"],
+        "investigator-engine": ["backend/tests/unit/test_investigator_engine.py"],
+        "investigator-boundaries": [
+            "backend/tests/adversarial/test_investigator_boundaries.py"
+        ],
+        "scope-safety": ["backend/tests/unit/test_scope_safety.py"],
+    }
+    return groups[group]
+
+
+def phase4_pytest_step(
+    report: GateReport, name: str, group: str, basetemp: Path, timeout: int = 300
+) -> StepResult:
+    args = [
+        str(VENV_PYTHON),
+        "-m",
+        "pytest",
+        *phase4_pytest_paths(group),
+        "-q",
+        "--basetemp",
+        str(basetemp / name),
+        "-p",
+        "no:cacheprovider",
+    ]
+    step = run_command(name, args, REPO_ROOT, timeout)
+    report.steps.append(step)
+    emit(
+        f"[verify_phase] {step.status}: {step.name} ({step.duration_s}s) {step.summary}"
+    )
+    return step
+
+
+def collect_phase4_metrics_and_violations() -> tuple[list[str], dict[str, object]]:
+    """Evaluator-side acceptance assertions over Phase 4 benchmark reports and boundaries."""
+    violations: list[str] = []
+    metrics: dict[str, object] = {}
+    expected = {
+        "dev": {
+            "outcomes": 12,
+            "deltas": 12,
+            "escalations": 3,
+            "proofs": 9,
+            "status_counts": {
+                "APPROVAL_REQUIRED": 6,
+                "UNRESOLVED": 3,
+                "VERIFIED_RESOLVED": 3,
+            },
+            "verifier_status_counts": {"FAIL": 0, "INCONCLUSIVE": 3, "PASS": 9},
+        },
+        "adversarial": {
+            "outcomes": 3,
+            "deltas": 3,
+            "escalations": 3,
+            "proofs": 0,
+            "status_counts": {"UNRESOLVED": 3},
+            "verifier_status_counts": {"FAIL": 0, "INCONCLUSIVE": 3, "PASS": 0},
+        },
+    }
+    for profile, wants in expected.items():
+        report_path = (
+            REPO_ROOT / "artifacts" / "benchmark" / f"phase-04-fake-{profile}.json"
+        )
+        if not report_path.is_file():
+            violations.append(
+                f"{profile}: Phase 4 benchmark report missing at {report_path}"
+            )
+            continue
+        benchmark = json.loads(report_path.read_text(encoding="utf-8"))
+        evaluation = benchmark.get("evaluation", {})
+        verification = evaluation.get("verification", {})
+        runtime_summary = verification.get("runtime_verification_summary", {})
+        outcome = verification.get("outcome_agreement", {})
+        delta = verification.get("delta_agreement", {})
+        escalation = verification.get("ambiguous_escalation", {})
+        proof = verification.get("proof_completeness", {})
+
+        runtime_path = report_path.with_name(report_path.name + ".runtime.json")
+        runtime_data = (
+            json.loads(runtime_path.read_text(encoding="utf-8"))
+            if runtime_path.is_file()
+            else {}
+        )
+        investigation = runtime_data.get("investigation")
+
+        if not investigation:
+            violations.append(
+                f"{profile}: runtime output missing investigation summary block"
+            )
+
+        metrics[profile] = {
+            "outcome_agreement": outcome,
+            "delta_agreement": delta,
+            "ambiguous_escalation": escalation,
+            "false_verifier_pass_count": verification.get("false_verifier_pass_count"),
+            "proof_completeness": proof,
+            "money_weighted_dry_run_error_paise": verification.get(
+                "money_weighted_dry_run_error_paise"
+            ),
+            "runtime_status_counts": runtime_summary.get("case_status_counts"),
+            "verifier_status_counts": runtime_summary.get("verifier_status_counts"),
+            "dry_run_count": runtime_summary.get("dry_run_count"),
+            "dry_run_abs_variance_after_paise": runtime_summary.get(
+                "dry_run_abs_variance_after_paise"
+            ),
+            "economic_output_hash": benchmark.get("idempotency", {}).get(
+                "first_economic_output_hash"
+            ),
+            "economically_identical_rerun": benchmark.get("idempotency", {}).get(
+                "economically_identical"
+            ),
+            "investigation_summary": investigation,
+        }
+        if (
+            outcome.get("numerator") != wants["outcomes"]
+            or outcome.get("denominator") != wants["outcomes"]
+        ):
+            violations.append(f"{profile}: verifier outcome agreement mismatch")
+        if (
+            delta.get("numerator") != wants["deltas"]
+            or delta.get("denominator") != wants["deltas"]
+        ):
+            violations.append(f"{profile}: proposed delta agreement mismatch")
+        if (
+            escalation.get("numerator") != wants["escalations"]
+            or escalation.get("denominator") != wants["escalations"]
+        ):
+            violations.append(f"{profile}: ambiguous escalation mismatch")
+        if verification.get("false_verifier_pass_count") != 0:
+            violations.append(f"{profile}: false verifier passes present")
+        if (
+            proof.get("numerator") != wants["proofs"]
+            or proof.get("denominator") != wants["proofs"]
+        ):
+            violations.append(f"{profile}: proof completeness mismatch")
+        if verification.get("money_weighted_dry_run_error_paise") != 0:
+            violations.append(f"{profile}: dry-run money error is nonzero")
+        if runtime_summary.get("case_status_counts") != wants["status_counts"]:
+            violations.append(f"{profile}: final case status counts mismatch")
+        if (
+            runtime_summary.get("verifier_status_counts")
+            != wants["verifier_status_counts"]
+        ):
+            violations.append(f"{profile}: verifier status counts mismatch")
+        if not benchmark.get("idempotency", {}).get("economically_identical"):
+            violations.append(f"{profile}: rerun economic hash differs")
+
+    # Static / structural safety checks
+    load_backend_evaluation()
+    firewall = importlib.import_module("app.evaluation.label_firewall")
+    runtime_py_roots = getattr(firewall, "RUNTIME_PY_ROOTS", ())
+
+    if "backend/app/investigator" not in runtime_py_roots:
+        violations.append(
+            "label firewall RUNTIME_PY_ROOTS does not cover backend/app/investigator"
+        )
+
+    return violations, {"phase4": metrics}
+
+
+def phase4_gate_assertions(report: GateReport) -> StepResult:
+    set_current_step("phase4-gate-assertions")
+    started = time.perf_counter()
+    try:
+        violations, metrics = collect_phase4_metrics_and_violations()
+    except Exception as exc:  # noqa: BLE001
+        duration = round(time.perf_counter() - started, 2)
+        return StepResult(
+            "phase4-gate-assertions",
+            "evaluator-side phase 4 acceptance assertions",
+            "FAIL",
+            duration,
+            f"{type(exc).__name__}: {exc}",
+        )
+    report.counts.update(metrics)
+    duration = round(time.perf_counter() - started, 2)
+    status = "PASS" if not violations else "FAIL"
+    summary = (
+        "fake-provider dev outcome/delta 12/12; false passes 0; escalation 3/3; "
+        "proofs 9/9; dry-run error 0; investigation summary persisted; "
+        "adversarial 3/3 unresolved; firewall covers investigator"
+        if not violations
+        else "; ".join(violations[:5])
+    )
+    return StepResult(
+        "phase4-gate-assertions",
+        "evaluator-side phase 4 acceptance assertions",
+        status,
+        duration,
+        summary,
+    )
+
+
+def run_phase4_steps(report: GateReport) -> None:
+    """Phase 4 blocking steps appended after the unchanged Phase 0/1/2/3 lists."""
+    basetemp = new_basetemp(4)
+    emit(f"[verify_phase] phase 4 pytest basetemp: {basetemp}")
+    try:
+        for name, group in (
+            ("unit-tests-investigator-tools", "investigator-tools"),
+            ("unit-tests-investigator-schemas", "investigator-schemas"),
+            ("unit-tests-investigator-engine", "investigator-engine"),
+            ("adversarial-tests-investigator-boundaries", "investigator-boundaries"),
+            ("scope-safety-phase4", "scope-safety"),
+        ):
+            phase4_pytest_step(report, name, group, basetemp)
+
+        for profile in ("dev", "adversarial"):
+            benchmark = run_command(
+                f"benchmark-agent-fake-phase4-{profile}",
+                [
+                    str(VENV_PYTHON),
+                    "scripts/run_benchmark.py",
+                    "--dataset",
+                    f"datasets/{profile}",
+                    "--mode",
+                    "agent",
+                    "--provider",
+                    "fake",
+                    "--output",
+                    f"artifacts/benchmark/phase-04-fake-{profile}.json",
+                ],
+                REPO_ROOT,
+                600,
+            )
+            report.steps.append(benchmark)
+            emit(
+                f"[verify_phase] {benchmark.status}: {benchmark.name} "
+                f"({benchmark.duration_s}s) {benchmark.summary}"
+            )
+
+        assertions = phase4_gate_assertions(report)
+        report.steps.append(assertions)
+        emit(
+            f"[verify_phase] {assertions.status}: {assertions.name} "
+            f"({assertions.duration_s}s) {assertions.summary}"
+        )
+    finally:
+        shutil.rmtree(basetemp, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 steps (PRD 16: Control Room, Approval, Simulated Application, and Audit).
+# Append-only over Phase 0/1/2/3/4: no earlier step list is weakened.
+# ---------------------------------------------------------------------------
+
+
+def phase5_pytest_paths(group: str) -> list[str]:
+    groups: dict[str, list[str]] = {
+        "corrections-application": [
+            "backend/tests/unit/test_corrections_application.py"
+        ],
+        "audit-service": ["backend/tests/unit/test_audit_service.py"],
+        "golden-flow-integration": ["backend/tests/integration/test_golden_flow.py"],
+    }
+    return groups[group]
+
+
+def phase5_pytest_step(
+    report: GateReport, name: str, group: str, basetemp: Path, timeout: int = 300
+) -> StepResult:
+    args = [
+        str(VENV_PYTHON),
+        "-m",
+        "pytest",
+        *phase5_pytest_paths(group),
+        "-q",
+        "--basetemp",
+        str(basetemp / name),
+        "-p",
+        "no:cacheprovider",
+    ]
+    step = run_command(name, args, REPO_ROOT, timeout)
+    report.steps.append(step)
+    emit(
+        f"[verify_phase] {step.status}: {step.name} ({step.duration_s}s) {step.summary}"
+    )
+    return step
+
+
+def phase5_gate_assertions(report: GateReport) -> StepResult:
+    set_current_step("phase5-gate-assertions")
+    started = time.perf_counter()
+    violations: list[str] = []
+
+    phase5_step_names = {
+        "unit-tests-corrections-application",
+        "unit-tests-audit-service",
+        "integration-golden-flow",
+    }
+    for s in report.steps:
+        if s.name in phase5_step_names and s.status != "PASS":
+            violations.append(f"{s.name} failed: {s.summary}")
+
+    duration = round(time.perf_counter() - started, 2)
+    status = "PASS" if not violations else "FAIL"
+    summary = (
+        "golden flow end-to-end PASS; human approval gate enforced; "
+        "simulated correction idempotent; audit completeness verified; "
+        "raw source rows immutable"
+        if not violations
+        else "; ".join(violations[:5])
+    )
+    return StepResult(
+        "phase5-gate-assertions",
+        "evaluator-side phase 5 acceptance assertions",
+        status,
+        duration,
+        summary,
+    )
+
+
+def run_phase5_steps(report: GateReport) -> None:
+    """Phase 5 blocking steps appended after the unchanged Phase 0/1/2/3/4 lists."""
+    basetemp = new_basetemp(5)
+    emit(f"[verify_phase] phase 5 pytest basetemp: {basetemp}")
+    try:
+        for name, group in (
+            ("unit-tests-corrections-application", "corrections-application"),
+            ("unit-tests-audit-service", "audit-service"),
+            ("integration-golden-flow", "golden-flow-integration"),
+        ):
+            phase5_pytest_step(report, name, group, basetemp)
+
+        assertions = phase5_gate_assertions(report)
+        report.steps.append(assertions)
+        emit(
+            f"[verify_phase] {assertions.status}: {assertions.name} "
+            f"({assertions.duration_s}s) {assertions.summary}"
+        )
+    finally:
+        shutil.rmtree(basetemp, ignore_errors=True)
+
+
 def main() -> int:
+
     parser = argparse.ArgumentParser(description="ARGUS CONTROL phase acceptance gate")
     parser.add_argument(
         "--phase", type=int, required=True, choices=sorted(SUPPORTED_PHASES)

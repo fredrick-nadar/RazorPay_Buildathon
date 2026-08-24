@@ -172,17 +172,20 @@ class TestPhaseDispatch:
     removal of an earlier phase still fails loudly.
     """
 
-    def test_supported_phases_are_exactly_zero_one_two_three(
-        self, verify_phase: ModuleType
-    ) -> None:
+    def test_supported_phases_are_zero_through_five(self, verify_phase: ModuleType) -> None:
         phases = verify_phase.SUPPORTED_PHASES
-        assert phases == {0, 1, 2, 3}
+        assert phases == {0, 1, 2, 3, 4, 5}
 
     def test_phase_names_cover_all_phases(self, verify_phase: ModuleType) -> None:
         assert verify_phase.PHASE_NAMES[0] == "Foundation and Frozen Contracts"
         assert verify_phase.PHASE_NAMES[1] == "Synthetic Data, Ground Truth, and Isolation"
         assert verify_phase.PHASE_NAMES[2] == "Normalization, Reconciliation, and Evidence Graph"
         assert verify_phase.PHASE_NAMES[3] == "Verifier, Proof Packages, and Dry-Run Core"
+        assert verify_phase.PHASE_NAMES[4] == "Bounded AI Investigator"
+        assert (
+            verify_phase.PHASE_NAMES[5]
+            == "Control Room, Approval, Simulated Application, and Audit"
+        )
 
     def test_phase1_artifact_uses_phase_name_and_zero_padded_name(
         self, verify_phase: ModuleType, tmp_path: Path

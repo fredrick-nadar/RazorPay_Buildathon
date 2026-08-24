@@ -1,7 +1,14 @@
-"""Correction preview package (PRD 11.1, 11.2).
+"""Corrections package for ARGUS CONTROL."""
 
-Phase 3 contains authority classification and dry-run calculation only.
-There is deliberately no approval, application, or ledger-write path: a dry
-run produces a DRAFT preview value object and never mutates persisted state
-or creates a ledger entry of any origin.
-"""
+from __future__ import annotations
+
+from app.corrections.application import apply_simulated_correction
+from app.corrections.authority import AuthorityDecision, classify_authority
+from app.corrections.dry_run import preview_correction
+
+__all__ = [
+    "AuthorityDecision",
+    "apply_simulated_correction",
+    "classify_authority",
+    "preview_correction",
+]

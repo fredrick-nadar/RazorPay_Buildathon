@@ -27,7 +27,8 @@ OUTPUT_PATH = REPO_ROOT / "contracts" / "domain_enums.json"
 
 def build_contract() -> dict[str, object]:
     enums: dict[str, list[str]] = {
-        name: [member.value for member in enum_cls] for name, enum_cls in ALL_ENUMS.items()
+        name: [member.value for member in enum_cls]
+        for name, enum_cls in ALL_ENUMS.items()
     }
     return {
         "contract": "domain_enums",

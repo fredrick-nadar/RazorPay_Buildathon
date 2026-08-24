@@ -34,6 +34,7 @@ RUNTIME_PY_ROOTS = (
     "backend/app/graph",
     "backend/app/verifier",
     "backend/app/corrections",
+    "backend/app/investigator",
     "backend/app/runs.py",
 )
 

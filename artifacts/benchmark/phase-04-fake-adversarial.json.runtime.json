@@ -1274,8 +1274,43 @@
       }
     ]
   },
-  "idempotency_key": "51cdb878d927efb7d04985a7c2078a2e41c9b95b2a1d63b3dd88cd94b30eafb5",
+  "idempotency_key": "018f946d0b6b8951aaabc35a8a1f05c9765ac3e9602a81d6c0f2296093e27a2b",
   "inputs_fingerprint": "c251474ace6e7c55aa4fbcd19d85f2bf016b6910818d573f0dde55344d8823fa",
+  "investigation": {
+    "cases": [
+      {
+        "case_id": "case-2b182da32f80",
+        "category": "AMBIGUOUS_EVIDENCE",
+        "duration_ms": 3.022,
+        "outcome": "UNRESOLVED",
+        "retries_used": 0,
+        "tool_calls_used": 5
+      },
+      {
+        "case_id": "case-1297deaa29f5",
+        "category": "AMBIGUOUS_EVIDENCE",
+        "duration_ms": 0.299,
+        "outcome": "UNRESOLVED",
+        "retries_used": 0,
+        "tool_calls_used": 3
+      },
+      {
+        "case_id": "case-38653c3abc78",
+        "category": "AMBIGUOUS_EVIDENCE",
+        "duration_ms": 0.219,
+        "outcome": "UNRESOLVED",
+        "retries_used": 0,
+        "tool_calls_used": 7
+      }
+    ],
+    "provider_id": "fake-deterministic-v1",
+    "status_counts": {
+      "UNRESOLVED": 3
+    },
+    "total_duration_ms": 3.623,
+    "total_retries": 0,
+    "total_tool_calls": 15
+  },
   "match_groups_count": 42,
   "match_invariant_violations": [],
   "matched_record_count": 60,
@@ -2229,9 +2264,9 @@
       "rule_id": "R-UNIQUE-AMOUNT-WINDOW-BANK"
     }
   ],
-  "mode": "rules-only",
+  "mode": "agent",
   "normalizer_version": "normalizer-v1",
-  "provider_id": "none",
+  "provider_id": "fake-deterministic-v1",
   "quarantined_row_count": 2,
   "quarantined_rows": [
     {
@@ -2280,18 +2315,18 @@
       "version": "1"
     }
   },
-  "run_id": "run-51cdb878d927efb7",
+  "run_id": "run-018f946d0b6b8951",
   "runtime_match_rate": {
     "denominator": 64,
     "note": "runtime self-report; the evaluator reports frozen metrics",
     "numerator": 60
   },
   "timing_metrics": {
-    "ingest_seconds": 0.007027,
-    "reconcile_seconds": 0.007467,
-    "records_per_second": 1874.94,
-    "total_seconds": 0.034134,
-    "verify_seconds": 0.000284
+    "ingest_seconds": 0.006877,
+    "reconcile_seconds": 0.01224,
+    "records_per_second": 1590.16,
+    "total_seconds": 0.040248,
+    "verify_seconds": 0.000251
   },
   "unaccounted_record_keys": [],
   "verification": {
@@ -2306,9 +2341,9 @@
     "dry_run_abs_variance_after_paise": 0,
     "dry_run_count": 0,
     "latency_ms": {
-      "max_case_ms": 0.04,
-      "median_case_ms": 0.018,
-      "verify_total_ms": 0.284
+      "max_case_ms": 0.033,
+      "median_case_ms": 0.017,
+      "verify_total_ms": 0.251
     },
     "passing_proof_completeness": {
       "denominator": 0,

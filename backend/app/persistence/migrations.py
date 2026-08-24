@@ -271,11 +271,65 @@ def _migration_2_to_3_statements() -> tuple[str, ...]:
     )
 
 
+def _migration_3_to_4_statements() -> tuple[str, ...]:
+    """Phase 5 approval, simulated correction, and audit tables (PRD 6.11, 6.12, 11, 16).
+
+    ``simulated_corrections`` stores applied corrections as new linked ledger entries
+    (never modifying raw imported rows). ``approvals`` stores human reviewer authorizations
+    and rejections. ``audit_log`` is an append-only event trail.
+    """
+    return (
+        """
+        CREATE TABLE simulated_corrections (
+            correction_id TEXT PRIMARY KEY,
+            case_id TEXT NOT NULL REFERENCES cases(case_id),
+            run_id TEXT NOT NULL REFERENCES runs(run_id),
+            proof_id TEXT NOT NULL REFERENCES proofs(proof_id),
+            approval_id TEXT NOT NULL REFERENCES approvals(approval_id),
+            target_ledger_entry_id TEXT,
+            account_code TEXT NOT NULL,
+            delta_paise INTEGER NOT NULL,
+            applied_at_utc TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL UNIQUE
+        )
+        """,
+        """
+        CREATE TABLE approvals (
+            approval_id TEXT PRIMARY KEY,
+            case_id TEXT NOT NULL REFERENCES cases(case_id),
+            proof_id TEXT NOT NULL REFERENCES proofs(proof_id),
+            reviewer_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            notes TEXT,
+            approved_at_utc TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE audit_log (
+            event_id TEXT PRIMARY KEY,
+            case_id TEXT,
+            run_id TEXT,
+            timestamp_utc TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            action TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            digest TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX idx_sim_corrections_case ON simulated_corrections(case_id)",
+        "CREATE INDEX idx_sim_corrections_run ON simulated_corrections(run_id)",
+        "CREATE INDEX idx_approvals_case ON approvals(case_id)",
+        "CREATE INDEX idx_audit_case ON audit_log(case_id)",
+        "CREATE INDEX idx_audit_run ON audit_log(run_id)",
+    )
+
+
 # The chain stores statement-function NAMES resolved at call time so that
 # tests can monkeypatch a broken migration into any step.
 _MIGRATION_CHAIN: tuple[tuple[int, int, str], ...] = (
     (1, 2, "_migration_1_to_2_statements"),
     (2, 3, "_migration_2_to_3_statements"),
+    (3, 4, "_migration_3_to_4_statements"),
 )
 
 

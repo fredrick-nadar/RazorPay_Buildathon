@@ -44,3 +44,8 @@ artifacts/traces/
 .zcode/
 .DS_Store
 Thumbs.db
+
+# Local AI context
+.ai/GEMINI_CONTEXT.md
+.ai/GEMINI.md
+

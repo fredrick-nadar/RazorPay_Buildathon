@@ -44,12 +44,20 @@ def emit(message: str) -> None:
 
 
 def run_runtime_phase(
-    inputs_dir: Path, scratch_dir: Path, label: str
+    inputs_dir: Path,
+    scratch_dir: Path,
+    label: str,
+    mode: str = "rules-only",
 ) -> dict[str, object]:
     database_path = scratch_dir / f"benchmark-{label}.sqlite3"
     database = Database(database_path)
     try:
-        result = execute_run(inputs_dir, database)
+        result = execute_run(inputs_dir, database, mode=mode)
+        if result.reused:
+            raise RuntimeError(
+                f"Benchmark run '{label}' unexpectedly reused an existing run (reused=True). "
+                "Each benchmark run must execute freshly in its scratch database."
+            )
     finally:
         database.close()
     return dict(result.summary)
@@ -75,6 +83,8 @@ def check_runtime_contract(runtime_output: dict[str, object]) -> list[str]:
     graph = runtime_output.get("graph", {})
     if not isinstance(graph, dict) or "counts" not in graph:
         problems.append("graph summary missing")
+    if runtime_output.get("mode") == "agent" and "investigation" not in runtime_output:
+        problems.append("agent mode output is missing investigation summary block")
     return problems
 
 
@@ -83,11 +93,12 @@ def main() -> int:
     parser.add_argument(
         "--dataset", required=True, help="dataset root, e.g. datasets/dev"
     )
-    parser.add_argument("--mode", default="rules-only", choices=["rules-only"])
+    parser.add_argument("--mode", default="rules-only", choices=["rules-only", "agent"])
+    parser.add_argument("--provider", default="fake", choices=["fake", "none"])
     parser.add_argument(
         "--output",
         default=None,
-        help="report path (default artifacts/benchmark/<dataset>-rules-only.json)",
+        help="report path (default artifacts/benchmark/<dataset>-<mode>.json)",
     )
     parser.add_argument(
         "--require-precision", type=float, default=1.0, help="minimum match precision"
@@ -105,13 +116,14 @@ def main() -> int:
     if not inputs_dir.is_dir():
         emit(f"[run_benchmark] inputs directory not found: {inputs_dir}")
         return 1
+    suffix = f"{args.mode}-{args.provider}" if args.mode == "agent" else "rules-only"
     output_path = (
         REPO_ROOT / args.output
         if args.output is not None
         else REPO_ROOT
         / "artifacts"
         / "benchmark"
-        / f"{dataset_root.name}-rules-only.json"
+        / f"{dataset_root.name}-{suffix}.json"
     )
 
     problems: list[str] = []
@@ -120,8 +132,8 @@ def main() -> int:
     scratch_dir = Path(tempfile.mkdtemp(prefix="argus-benchmark-", dir=str(tmp_root)))
     try:
         # Phase A: two independent fresh-database runs; outputs finalized here.
-        first = run_runtime_phase(inputs_dir, scratch_dir, "first")
-        second = run_runtime_phase(inputs_dir, scratch_dir, "second")
+        first = run_runtime_phase(inputs_dir, scratch_dir, "first", mode=args.mode)
+        second = run_runtime_phase(inputs_dir, scratch_dir, "second", mode=args.mode)
         problems.extend(check_runtime_contract(first))
         first_hash = str(first.get("economic_output_hash", ""))
         second_hash = str(second.get("economic_output_hash", ""))
@@ -207,9 +219,14 @@ def main() -> int:
         problems.append(f"{len(missed_labels)} labelled cases missed by the runtime")
 
     report = {
-        "benchmark_version": "argus-benchmark-rules-only-v1",
+        "benchmark_version": (
+            "argus-benchmark-agent-v1"
+            if args.mode == "agent"
+            else "argus-benchmark-rules-only-v1"
+        ),
         "dataset": args.dataset,
         "mode": args.mode,
+        "provider": args.provider if args.mode == "agent" else "none",
         "idempotency": {
             "first_economic_output_hash": first_hash,
             "second_economic_output_hash": second_hash,

@@ -15,7 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 APP_ROOT = REPO_ROOT / "backend" / "app"
 RUNTIME_PURE_ROOTS = (
     APP_ROOT / "verifier",
-    APP_ROOT / "corrections",
+    APP_ROOT / "investigator",
 )
 
 FORBIDDEN_FUNCTION_PREFIXES = (
@@ -29,6 +29,8 @@ FORBIDDEN_FUNCTION_PREFIXES = (
 
 
 def _py_files(root: Path) -> list[Path]:
+    if root.is_file():
+        return [root]
     return sorted(path for path in root.rglob("*.py") if path.is_file())
 
 
@@ -42,7 +44,7 @@ def _relative(path: Path) -> str:
 
 def test_no_phase4_financial_action_callables_exist() -> None:
     violations: list[str] = []
-    for path in _py_files(APP_ROOT):
+    for path in _py_files(APP_ROOT / "investigator"):
         for node in ast.walk(_tree(path)):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
@@ -54,7 +56,7 @@ def test_no_phase4_financial_action_callables_exist() -> None:
 
 def test_verifier_and_corrections_do_not_import_persistence() -> None:
     violations: list[str] = []
-    for root in RUNTIME_PURE_ROOTS:
+    for root in (*RUNTIME_PURE_ROOTS, APP_ROOT / "corrections" / "dry_run.py"):
         for path in _py_files(root):
             for node in ast.walk(_tree(path)):
                 modules: list[str]

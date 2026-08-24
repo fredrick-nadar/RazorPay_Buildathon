@@ -5141,8 +5141,116 @@
       }
     ]
   },
-  "idempotency_key": "120179f988ab6dfb0697c676c4ede7234065a350bf0beae8143dcaf8682d1e4f",
+  "idempotency_key": "8c78f03be9dcdd12d100774ce8853b8dc9cf07d0314741f66a7be87e286bad91",
   "inputs_fingerprint": "90156baaff9c01249778ca324f86f4206008253ffcff934fd2f7c575775f330b",
+  "investigation": {
+    "cases": [
+      {
+        "case_id": "case-c9aa7339d62d",
+        "category": "AMBIGUOUS_EVIDENCE",
+        "duration_ms": 2.694,
+        "outcome": "UNRESOLVED",
+        "retries_used": 0,
+        "tool_calls_used": 5
+      },
+      {
+        "case_id": "case-a7b551d1b818",
+        "category": "AMBIGUOUS_EVIDENCE",
+        "duration_ms": 0.279,
+        "outcome": "UNRESOLVED",
+        "retries_used": 0,
+        "tool_calls_used": 5
+      },
+      {
+        "case_id": "case-492f56f74715",
+        "category": "AMBIGUOUS_EVIDENCE",
+        "duration_ms": 0.27,
+        "outcome": "UNRESOLVED",
+        "retries_used": 0,
+        "tool_calls_used": 5
+      },
+      {
+        "case_id": "case-70823c2b850b",
+        "category": "DUPLICATE_LEDGER_POSTING",
+        "duration_ms": 0.0,
+        "outcome": "SKIPPED",
+        "retries_used": 0,
+        "tool_calls_used": 0
+      },
+      {
+        "case_id": "case-0452b5ad6245",
+        "category": "DUPLICATE_LEDGER_POSTING",
+        "duration_ms": 0.0,
+        "outcome": "SKIPPED",
+        "retries_used": 0,
+        "tool_calls_used": 0
+      },
+      {
+        "case_id": "case-2264d8bb9f5c",
+        "category": "DUPLICATE_LEDGER_POSTING",
+        "duration_ms": 0.0,
+        "outcome": "SKIPPED",
+        "retries_used": 0,
+        "tool_calls_used": 0
+      },
+      {
+        "case_id": "case-b89e91d2b0dc",
+        "category": "MISSING_REFUND_POSTING",
+        "duration_ms": 0.0,
+        "outcome": "SKIPPED",
+        "retries_used": 0,
+        "tool_calls_used": 0
+      },
+      {
+        "case_id": "case-0cd9817955c0",
+        "category": "MISSING_REFUND_POSTING",
+        "duration_ms": 0.0,
+        "outcome": "SKIPPED",
+        "retries_used": 0,
+        "tool_calls_used": 0
+      },
+      {
+        "case_id": "case-84ae81b6cadd",
+        "category": "MISSING_REFUND_POSTING",
+        "duration_ms": 0.0,
+        "outcome": "SKIPPED",
+        "retries_used": 0,
+        "tool_calls_used": 0
+      },
+      {
+        "case_id": "case-cc8b8467db8a",
+        "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+        "duration_ms": 0.0,
+        "outcome": "SKIPPED",
+        "retries_used": 0,
+        "tool_calls_used": 0
+      },
+      {
+        "case_id": "case-02f20591738a",
+        "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+        "duration_ms": 0.0,
+        "outcome": "SKIPPED",
+        "retries_used": 0,
+        "tool_calls_used": 0
+      },
+      {
+        "case_id": "case-cf75e1adbf12",
+        "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+        "duration_ms": 0.0,
+        "outcome": "SKIPPED",
+        "retries_used": 0,
+        "tool_calls_used": 0
+      }
+    ],
+    "provider_id": "fake-deterministic-v1",
+    "status_counts": {
+      "SKIPPED": 9,
+      "UNRESOLVED": 3
+    },
+    "total_duration_ms": 3.342,
+    "total_retries": 0,
+    "total_tool_calls": 15
+  },
   "match_groups_count": 177,
   "match_invariant_violations": [],
   "matched_record_count": 273,
@@ -9264,9 +9372,9 @@
       "rule_id": "R-UTR-AMOUNT-BANK"
     }
   ],
-  "mode": "rules-only",
+  "mode": "agent",
   "normalizer_version": "normalizer-v1",
-  "provider_id": "none",
+  "provider_id": "fake-deterministic-v1",
   "quarantined_row_count": 0,
   "quarantined_rows": [],
   "raw_row_count": 282,
@@ -9300,18 +9408,18 @@
       "version": "1"
     }
   },
-  "run_id": "run-120179f988ab6dfb",
+  "run_id": "run-8c78f03be9dcdd12",
   "runtime_match_rate": {
     "denominator": 282,
     "note": "runtime self-report; the evaluator reports frozen metrics",
     "numerator": 273
   },
   "timing_metrics": {
-    "ingest_seconds": 0.013861,
-    "reconcile_seconds": 0.016283,
-    "records_per_second": 4983.93,
-    "total_seconds": 0.056582,
-    "verify_seconds": 0.001478
+    "ingest_seconds": 0.012948,
+    "reconcile_seconds": 0.020401,
+    "records_per_second": 4838.35,
+    "total_seconds": 0.058284,
+    "verify_seconds": 0.001424
   },
   "unaccounted_record_keys": [],
   "verification": {
@@ -9337,9 +9445,9 @@
     "dry_run_abs_variance_after_paise": 0,
     "dry_run_count": 9,
     "latency_ms": {
-      "max_case_ms": 0.051,
+      "max_case_ms": 0.05,
       "median_case_ms": 0.032,
-      "verify_total_ms": 1.478
+      "verify_total_ms": 1.424
     },
     "passing_proof_completeness": {
       "denominator": 9,

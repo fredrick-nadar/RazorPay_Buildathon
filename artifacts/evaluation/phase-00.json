@@ -2,21 +2,21 @@
   "phase": 0,
   "phase_name": "Foundation and Frozen Contracts",
   "status": "PASS",
-  "started_at_utc": "2026-08-22T11:50:36+00:00",
-  "finished_at_utc": "2026-08-22T11:52:03+00:00",
+  "started_at_utc": "2026-08-24T14:14:15+00:00",
+  "finished_at_utc": "2026-08-24T14:14:55+00:00",
   "environment": {
     "python": "Python 3.12.9",
     "node": "v22.13.1",
     "npm": "11.1.0",
     "platform": "Windows-11-10.0.26200-SP0",
-    "git": "git version 2.53.0.windows.3; HEAD 3b1903546550f1c02a84ccf9e8b5881c198925a0"
+    "git": "git version 2.55.0.windows.5; HEAD 718c1ceacfb468f88a33c21f9c5d49183afd62d3"
   },
   "commands": [
     {
       "name": "preflight-backend-imports",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -c import fastapi, uvicorn, pydantic_settings, pytest, ruff, mypy, httpx",
       "status": "PASS",
-      "duration_s": 0.63,
+      "duration_s": 0.64,
       "summary": "exit code 0",
       "gate_blocking": true
     },
@@ -32,7 +32,7 @@
       "name": "backend-ruff-check",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m ruff check backend",
       "status": "PASS",
-      "duration_s": 0.1,
+      "duration_s": 0.12,
       "summary": "All checks passed!",
       "gate_blocking": true
     },
@@ -40,31 +40,31 @@
       "name": "backend-ruff-format",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m ruff format --check backend",
       "status": "PASS",
-      "duration_s": 0.09,
-      "summary": "18 files already formatted",
+      "duration_s": 0.08,
+      "summary": "89 files already formatted",
       "gate_blocking": true
     },
     {
       "name": "backend-mypy",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m mypy",
       "status": "PASS",
-      "duration_s": 0.3,
-      "summary": "Success: no issues found in 10 source files",
+      "duration_s": 0.34,
+      "summary": "Success: no issues found in 55 source files",
       "gate_blocking": true
     },
     {
       "name": "backend-pytest",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-00-hjsy5n24 -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-00-tbw8o10x -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 3.23,
-      "summary": "65 passed, 1 warning in 2.80s",
+      "duration_s": 12.38,
+      "summary": "258 passed, 1 warning in 11.91s",
       "gate_blocking": true
     },
     {
       "name": "frontend-lint",
       "command": "cmd /c npm --prefix frontend run lint",
       "status": "PASS",
-      "duration_s": 3.26,
+      "duration_s": 3.23,
       "summary": "> eslint .",
       "gate_blocking": true
     },
@@ -72,7 +72,7 @@
       "name": "frontend-typecheck",
       "command": "cmd /c npm --prefix frontend run typecheck",
       "status": "PASS",
-      "duration_s": 1.56,
+      "duration_s": 1.47,
       "summary": "> tsc --noEmit",
       "gate_blocking": true
     },
@@ -81,14 +81,14 @@
       "command": "cmd /c npm --prefix frontend run test",
       "status": "PASS",
       "duration_s": 1.39,
-      "summary": "   Duration  509ms (transform 35ms, setup 0ms, collect 40ms, tests 4ms, environment 0ms, prepare 276ms)",
+      "summary": "\u001b[2m   Duration \u001b[22m 483ms\u001b[2m (transform 41ms, setup 0ms, collect 42ms, tests 4ms, environment 0ms, prepare 221ms)\u001b[22m",
       "gate_blocking": true
     },
     {
       "name": "frontend-build",
       "command": "cmd /c npm --prefix frontend run build",
       "status": "PASS",
-      "duration_s": 12.68,
+      "duration_s": 12.66,
       "summary": "○  (Static)  prerendered as static content",
       "gate_blocking": true
     },
@@ -96,7 +96,7 @@
       "name": "backend-boot-health",
       "command": "uvicorn boot + GET /api/v1/health,/version",
       "status": "PASS",
-      "duration_s": 0.64,
+      "duration_s": 0.65,
       "summary": "health ok, persistence sqlite ok, api v1",
       "gate_blocking": true
     },
@@ -104,7 +104,7 @@
       "name": "frontend-boot-home",
       "command": "next start boot + GET /",
       "status": "PASS",
-      "duration_s": 1.07,
+      "duration_s": 1.08,
       "summary": "home page served with ARGUS CONTROL heading",
       "gate_blocking": true
     },
@@ -127,21 +127,18 @@
     {
       "name": "optional-e2e-playwright",
       "command": "cmd /c npm --prefix frontend run test:e2e",
-      "status": "FAIL",
-      "duration_s": 60.07,
-      "summary": "timed out after 60s; process tree terminated",
+      "status": "PASS",
+      "duration_s": 2.98,
+      "summary": "  1 passed (2.2s)",
       "gate_blocking": false
     }
   ],
   "counts": {
-    "backend_tests_passed": 65,
+    "backend_tests_passed": 258,
     "backend_tests_failed": 0,
     "backend_tests_skipped": 0
   },
-  "known_failures": [
-    "optional Playwright e2e failed or timed out (not part of the Phase 0 gate); see step optional-e2e-playwright",
-    "non-blocking failure: optional-e2e-playwright"
-  ],
+  "known_failures": [],
   "notes": [],
   "failed_step": null,
   "next_phase": 1,

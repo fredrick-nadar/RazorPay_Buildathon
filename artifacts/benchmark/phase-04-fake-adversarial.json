@@ -1,5 +1,5 @@
 {
-  "benchmark_version": "argus-benchmark-rules-only-v1",
+  "benchmark_version": "argus-benchmark-agent-v1",
   "dataset": "datasets/adversarial",
   "evaluation": {
     "case_comparison": {
@@ -98,8 +98,8 @@
     },
     "throughput": {
       "eligible_records": 64,
-      "reconcile_seconds": 0.007467,
-      "records_per_second": 1874.94
+      "reconcile_seconds": 0.01224,
+      "records_per_second": 1590.16
     },
     "totals_comparison": {
       "equal": true,
@@ -176,9 +176,9 @@
         "dry_run_abs_variance_after_paise": 0,
         "dry_run_count": 0,
         "latency_ms": {
-          "max_case_ms": 0.04,
-          "median_case_ms": 0.018,
-          "verify_total_ms": 0.284
+          "max_case_ms": 0.033,
+          "median_case_ms": 0.017,
+          "verify_total_ms": 0.251
         },
         "passing_proof_completeness": {
           "denominator": 0,
@@ -278,8 +278,8 @@
     "first_economic_output_hash": "9787355f41947e9c6f77ed144ca044effa12cc5a1a19058d8fb500c50c590e78",
     "second_economic_output_hash": "9787355f41947e9c6f77ed144ca044effa12cc5a1a19058d8fb500c50c590e78"
   },
-  "mode": "rules-only",
+  "mode": "agent",
   "problems": [],
-  "provider": "none",
-  "runtime_output_path": "D:\\Programming\\RazorPay_Buildathon\\artifacts\\benchmark\\phase-02-adversarial.json.runtime.json"
+  "provider": "fake",
+  "runtime_output_path": "D:\\Programming\\RazorPay_Buildathon\\artifacts\\benchmark\\phase-04-fake-adversarial.json.runtime.json"
 }

@@ -2229,7 +2229,9 @@
       "rule_id": "R-UNIQUE-AMOUNT-WINDOW-BANK"
     }
   ],
+  "mode": "rules-only",
   "normalizer_version": "normalizer-v1",
+  "provider_id": "none",
   "quarantined_row_count": 2,
   "quarantined_rows": [
     {
@@ -2285,11 +2287,11 @@
     "numerator": 60
   },
   "timing_metrics": {
-    "ingest_seconds": 0.006548,
-    "reconcile_seconds": 0.008879,
-    "records_per_second": 1489.94,
-    "total_seconds": 0.042955,
-    "verify_seconds": 0.000302
+    "ingest_seconds": 0.005997,
+    "reconcile_seconds": 0.007473,
+    "records_per_second": 1870.41,
+    "total_seconds": 0.034217,
+    "verify_seconds": 0.000251
   },
   "unaccounted_record_keys": [],
   "verification": {
@@ -2304,9 +2306,9 @@
     "dry_run_abs_variance_after_paise": 0,
     "dry_run_count": 0,
     "latency_ms": {
-      "max_case_ms": 0.035,
-      "median_case_ms": 0.02,
-      "verify_total_ms": 0.302
+      "max_case_ms": 0.036,
+      "median_case_ms": 0.018,
+      "verify_total_ms": 0.251
     },
     "passing_proof_completeness": {
       "denominator": 0,

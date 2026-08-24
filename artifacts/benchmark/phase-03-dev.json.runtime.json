@@ -9264,7 +9264,9 @@
       "rule_id": "R-UTR-AMOUNT-BANK"
     }
   ],
+  "mode": "rules-only",
   "normalizer_version": "normalizer-v1",
+  "provider_id": "none",
   "quarantined_row_count": 0,
   "quarantined_rows": [],
   "raw_row_count": 282,
@@ -9305,11 +9307,11 @@
     "numerator": 273
   },
   "timing_metrics": {
-    "ingest_seconds": 0.014482,
-    "reconcile_seconds": 0.015555,
-    "records_per_second": 4995.41,
-    "total_seconds": 0.056452,
-    "verify_seconds": 0.001483
+    "ingest_seconds": 0.022782,
+    "reconcile_seconds": 0.016786,
+    "records_per_second": 4251.06,
+    "total_seconds": 0.066336,
+    "verify_seconds": 0.00148
   },
   "unaccounted_record_keys": [],
   "verification": {
@@ -9335,9 +9337,9 @@
     "dry_run_abs_variance_after_paise": 0,
     "dry_run_count": 9,
     "latency_ms": {
-      "max_case_ms": 0.047,
-      "median_case_ms": 0.034,
-      "verify_total_ms": 1.483
+      "max_case_ms": 0.048,
+      "median_case_ms": 0.033,
+      "verify_total_ms": 1.48
     },
     "passing_proof_completeness": {
       "denominator": 9,

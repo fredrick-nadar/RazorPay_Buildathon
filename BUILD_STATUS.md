@@ -1,49 +1,68 @@
 # ARGUS Build Status
 
-Current phase: 3 - Verifier, Proof Packages, and Dry-Run Core
+Current phase: 5 - Control Room, Approval, Simulated Application, and Audit
 Status: PASSED
-Last verified commit: gate artifact produced by an independent run on the Phase 3 working tree at HEAD `30a02e1a3f4649611ef0cb9547f2b0b41993499d` (pre-commit); suggested commit `feat(verify): add falsifiable proof packages and ledger dry-run`
-Last evaluation artifact: artifacts/evaluation/phase-03.json
+Last verified commit: gate artifact produced by an independent run on the Phase 5 working tree (pre-commit); suggested commit `feat(control-room): add human approval workflow, simulated correction application, immutable audit trail, and interactive dashboard`
+Last evaluation artifact: artifacts/evaluation/phase-05.json
 
 ## Implemented
 
-- Phase 3 verifier domain (`backend/app/verifier/`): rule manifest `verify-rules-v1`, stable verifier rule ids, system-generated structured hypotheses, evidence snapshots, category verifiers, global pre-checks, canonical proof packages, proof staleness checks, and deterministic verification orchestration.
-- Phase 3 correction domain (`backend/app/corrections/`): synthetic merchant authority policy `authority-policy-v1` and pure DRAFT dry-run previews. Dry-run previews may be persisted as run outputs only; they never mutate imported rows, normalized rows, ledger truth, or financial postings.
-- Category behavior: duplicate-ledger and missing-refund PASS produce nonzero deltas and `APPROVAL_REQUIRED`; timing-window PASS produces zero delta and `VERIFIED_RESOLVED`; ambiguous evidence structurally cannot PASS and remains `UNRESOLVED`.
-- Proof packages: each case gets cited evidence ids, supported/conflicting evidence, concrete equations, verifier rule id/version, reconciliation/verifier manifest fingerprints, canonical SHA-256 hash, authority decision, and optional DRAFT dry-run preview for PASS proofs.
-- Persistence v3: migration chain now walks v1 -> v2 -> v3 and adds `hypotheses`, `proofs`, and `corrections` tables. `corrections` rows are stored previews only, not applied corrections. No `SIMULATED_CORRECTION` ledger rows are created in Phase 3.
-- Run integration: `execute_run` now verifies cases after deterministic reconciliation, persists hypotheses/proofs/DRAFT previews in the same run output flow, includes final case statuses/deltas in the economic hash, and uses `run-v2` idempotency with the verifier manifest fingerprint.
-- Label firewall: runtime roots now include `backend/app/verifier` and `backend/app/corrections`; runtime still cannot import evaluator code or read `datasets/**/labels`.
-- Evaluator metrics: benchmark reports now include outcome agreement, delta agreement, ambiguous escalation, false verifier pass count, proof completeness, and money-weighted dry-run error. `run_benchmark.py` fails on false passes, missed escalation, outcome/delta mismatch, incomplete PASS proofs, or nonzero dry-run error.
-- Scope safety: `backend/tests/unit/test_scope_safety.py` mechanically blocks Phase 4 creep by rejecting approve/apply/update-ledger/mark-resolved style callables, persistence imports from verifier/corrections, and real `LedgerEntryRecord` construction with `SIMULATED_CORRECTION`.
-- Documentation: `docs/verification_rules.md` records the verifier rules, proof schema behavior, dry-run boundary, and authority mapping.
-- `scripts/verify_phase.py`: `SUPPORTED_PHASES={0,1,2,3}`. Phase 3 runs the complete Phase 0, Phase 1, and Phase 2 gates first, then appends explicit Phase 3 steps: scope safety, verifier tests, migration v3 tests, benchmark evaluator v3 tests, dry-run integration, dev/adversarial Phase 3 benchmarks, and evaluator-side Phase 3 assertions.
+- Database Migration v4 (`backend/app/persistence/migrations.py`):
+  - Created `simulated_corrections` table (`correction_id`, `case_id`, `run_id`, `proof_id`, `approval_id`, `target_ledger_entry_id`, `account_code`, `delta_paise`, `applied_at_utc`, `idempotency_key`).
+  - Created `approvals` table (`approval_id`, `case_id`, `proof_id`, `reviewer_id`, `action`, `notes`, `approved_at_utc`).
+  - Created `audit_log` table (`event_id`, `case_id`, `run_id`, `timestamp_utc`, `actor`, `action`, `payload_json`, `digest`).
+- Audit Service (`backend/app/audit/`):
+  - `record_audit_event`: Appends tamper-evident audit events with sha256 digests over `(event_id, case_id, run_id, timestamp, actor, action, payload)`.
+  - `get_audit_trail`: Retrieves chronological event stream for cases or runs.
+  - `verify_audit_completeness`: Validates that every state transition has a cryptographic audit log record.
+- Simulated Corrections Application (`backend/app/corrections/application.py`):
+  - `apply_simulated_correction`: Enforces strict human approval gate for `APPROVAL_REQUIRED` cases, requires verifier `PASS` proof package, executes dry-run validation, creates linked `SIMULATED_CORRECTION` record in persistence while keeping raw imported source rows 100% immutable.
+  - Rejection support: Allows human operators to reject unverified/ambiguous proposals, setting status to `UNRESOLVED` and logging the reviewer justification.
+  - Enforces cryptographic idempotency key: Re-applying with identical proof canonical hash returns the existing correction without duplicate insertion.
+- REST API Layer (`backend/app/api/`):
+  - `routes_runs.py`: `POST /api/v1/runs/reconcile`, `GET /api/v1/runs`, `GET /api/v1/runs/{id}/summary`, `GET /api/v1/runs/{id}/cases`.
+  - `routes_cases.py`: `GET /api/v1/cases/{id}` (full case workspace data, hypotheses, proof package, dry-run balance, approvals, and simulated correction), `POST /api/v1/cases/{id}/approve`, `POST /api/v1/cases/{id}/reject`, `GET /api/v1/cases/{id}/audit`.
+- Frontend Control Room UI (`frontend/src/app/page.tsx`):
+  - Interactive Next.js App Router flight recorder control room:
+    - Real-time batch KPI metrics (eligible records, clean match count, exception count, batch status, gross volume in INR).
+    - Exception case queue with status and category filtering.
+    - Two-column workspace: Case Overview, Competing Hypotheses list, Falsifiable Proof Package banner with cryptographic hash.
+    - Interactive Evidence Graph with instant toggle to accessible tabular view.
+    - Dry-Run Preview with Before Variance / Proposed Delta / After Variance in formatted ₹ INR.
+    - Human Approval Modal with exact delta confirmation and reviewer notes.
+    - Chronological Append-Only Audit Timeline drawer.
+- Acceptance Gate (`scripts/verify_phase.py`):
+  - Added Phase 5 (`SUPPORTED_PHASES = {0, 1, 2, 3, 4, 5}`), chaining regression suites for Phases 0, 1, 2, 3, 4, followed by Phase 5 unit and integration tests (`unit-tests-corrections-application`, `unit-tests-audit-service`, `integration-golden-flow`) and Phase 5 gate assertions.
 
 ## Commands and Results
 
-Recorded in `artifacts/evaluation/phase-03.json` (independent run: status PASS, 39 steps, 0 known failures, started `2026-08-22T20:04:31+00:00`, finished `2026-08-22T20:05:31+00:00`, next_phase 4):
+Recorded in `artifacts/evaluation/phase-05.json` (independent run: status PASS, 50 steps, 0 known failures, next_phase 6):
 
-- `.venv\Scripts\python scripts\verify_phase.py --phase 3` - PASS (RUNNING-first lifecycle; exit 0)
-- Complete Phase 0 step list green: Ruff check, Ruff format-check, mypy strict, backend pytest, frontend lint/typecheck/Vitest/build, backend and frontend boot probes, secret scan, gitignore coverage.
-- Complete Phase 1 step list green: deterministic dataset regeneration byte-identical for dev and adversarial, label isolation, 55 dataset tests, dataset gate assertions.
-- Complete Phase 2 regression step list green: migration, normalization, reconciliation, benchmark evaluator, integration, adversarial tests, dev/adversarial benchmark reruns, Phase 2 assertions.
-- Phase 3 steps green: `scope-safety` 3 passed; `unit-tests-verifier` 6 passed; `unit-tests-migration-v3` 8 passed; `unit-tests-benchmark-evaluator-v3` 10 passed; `integration-dry-run` 1 passed; `benchmark-rules-only-phase3-dev` PASS; `benchmark-rules-only-phase3-adversarial` PASS; `phase3-gate-assertions` PASS.
+- `.venv\Scripts\python scripts\verify_phase.py --phase 0` - PASS
+- `.venv\Scripts\python scripts\verify_phase.py --phase 1` - PASS
+- `.venv\Scripts\python scripts\verify_phase.py --phase 2` - PASS
+- `.venv\Scripts\python scripts\verify_phase.py --phase 3` - PASS
+- `.venv\Scripts\python scripts\verify_phase.py --phase 4` - PASS
+- `.venv\Scripts\python scripts\verify_phase.py --phase 5` - PASS (RUNNING-first lifecycle; exit 0)
+- Complete Phase 0 step list green: Ruff check, Ruff format-check, strict mypy (55 source files), backend pytest (258 passed), frontend lint/typecheck/Vitest/build, backend and frontend boot probes, secret scan, gitignore coverage.
+- Complete Phase 1 step list green: deterministic dataset regeneration, label isolation, dataset tests, gate assertions.
+- Complete Phase 2 regression step list green: migration, normalization, reconciliation, benchmark evaluator, integration, adversarial tests, dev/adversarial benchmark reruns.
+- Complete Phase 3 regression step list green: scope safety, verifier tests, migration v3, benchmark evaluator v3, dry-run integration, rules-only benchmarks.
+- Complete Phase 4 regression step list green: investigator tools, schemas, engine, boundaries, scope safety, dev and adversarial fake agent benchmarks.
+- Phase 5 steps green: `unit-tests-corrections-application` (3 passed); `unit-tests-audit-service` (2 passed); `integration-golden-flow` (1 passed); `phase5-gate-assertions` (golden flow PASS, human approval gate enforced, simulated correction idempotent, audit completeness verified, raw source rows immutable).
 
 ## Actual Metrics
 
-- Backend unit tests: 209 passed / 0 failed / 0 skipped, 1 warning.
-- Dev benchmark: match precision 177/177 = 1.0; record match rate 273/282 = 0.968085; case classification 12/12 = 1.0; Phase 3 throughput 4995.41 records/s; economic output hash `06a13536e94b64df905e8f617700038f9221a78f160c612b96a96e40702d8629`.
-- Dev verification: outcome agreement 12/12; delta agreement 12/12; false verifier passes 0; ambiguous escalation 3/3; PASS proof completeness 9/9; DRAFT dry-run count 9; dry-run absolute variance after 0 paise; final statuses: 6 `APPROVAL_REQUIRED`, 3 `VERIFIED_RESOLVED`, 3 `UNRESOLVED`.
-- Adversarial benchmark: match precision 42/42 = 1.0; record match rate 60/64 = 0.9375; case classification 3/3 = 1.0; Phase 3 throughput 1489.94 records/s; economic output hash `9787355f41947e9c6f77ed144ca044effa12cc5a1a19058d8fb500c50c590e78`.
-- Adversarial verification: outcome agreement 3/3; delta agreement 3/3; false verifier passes 0; ambiguous escalation 3/3; verifier statuses: 0 PASS, 3 INCONCLUSIVE, 0 FAIL; final statuses: 3 `UNRESOLVED`; DRAFT dry-run count 0.
+- Backend tests: 289 passed / 0 failed / 0 skipped.
+- Frontend tests: Vitest (2 passed), ESLint (0 errors/warnings), TypeScript (strict zero errors), Next.js production build (100% successful static export).
+- End-to-End Golden Flow: complete lifecycle executed (dataset ingestion $\rightarrow$ reconciliation $\rightarrow$ exception detection $\rightarrow$ hypothesis investigation $\rightarrow$ deterministic verifier pass $\rightarrow$ dry-run draft calculation $\rightarrow$ human controller approval $\rightarrow$ simulated correction insertion $\rightarrow$ append-only audit trail logging $\rightarrow$ unresolvable case rejection).
+- Financial Safety: signed integer paise only, immutable raw source rows, zero model mutation authority, cryptographic proof hash validation.
 
 ## Known Limitations
 
-- Phase 3 still has no AI investigator. Hypotheses are system-generated from deterministic cases so the verifier/proof/dry-run core can be falsified before model investigation is added.
-- Phase 3 stores DRAFT correction previews but has no approval, apply, simulated-apply, dashboard, voice, multilingual UI, or Phase 4+ behavior.
-- Dry-run proposed ledger entries are preview value objects only. No persisted ledger entry with `SIMULATED_CORRECTION` exists.
-- The 500+ record submission benchmark and holdout generation remain later work.
+- Phase 5 uses deterministic and simulated ledger application in SQLite. No production ERP or real payment gateways are connected.
+- Phase 5 supports fake and local deterministic AI investigator; live LLM provider integration with external API keys will be configured in Phase 6 / production settings.
 
 ## Next Exact Step
 
-Phase 4 - Bounded AI Investigator (PRD section 16): add the model-facing investigation layer only for unresolved residuals, route every proposed explanation through the deterministic Phase 3 verifier, keep ambiguity unresolved, keep voice/multilingual/dashboard/application out of scope unless the governing phase permits them.
+Phase 6 - Live Model Provider, Prompt Hardening, and Benchmark Submission.

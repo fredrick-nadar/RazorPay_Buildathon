@@ -29,20 +29,23 @@ from __future__ import annotations
 import json
 import time
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
+from app.corrections.authority import classify_authority
 from app.domain.enums import BatchStatus
 from app.graph.evidence import build_evidence_graph
 from app.importers.ingest import IngestResult, ingest_inputs
+from app.investigator.engine import investigate_cases
+from app.investigator.provider import FakeProvider
 from app.persistence.database import Database
 from app.reconciliation.detectors import ReconciliationResult, reconcile
 from app.reconciliation.rules import rule_manifest
 from app.reconciliation.totals import control_totals, verify_match_invariants
-from app.verifier.engine import VerificationOutcome, verify_cases
+from app.verifier.engine import CaseVerification, VerificationOutcome, verify_cases
 from app.verifier.proof import verifier_manifest_fingerprint
 
 NORMALIZER_VERSION = "normalizer-v1"
@@ -60,17 +63,35 @@ class RunResult:
     summary: dict[str, Any]
 
 
-def compute_idempotency_key(inputs_fingerprint: str) -> str:
-    material = "|".join(
-        (
-            RUN_KEY_VERSION,
-            DEFAULT_TENANT,
-            inputs_fingerprint,
-            NORMALIZER_VERSION,
-            _rule_manifest_fingerprint(),
-            verifier_manifest_fingerprint(),
+def compute_idempotency_key(
+    inputs_fingerprint: str,
+    mode: str = "rules-only",
+    provider_id: str = "none",
+) -> str:
+    if mode == "agent":
+        material = "|".join(
+            (
+                "run-v3-agent",
+                DEFAULT_TENANT,
+                inputs_fingerprint,
+                NORMALIZER_VERSION,
+                _rule_manifest_fingerprint(),
+                verifier_manifest_fingerprint(),
+                mode,
+                provider_id,
+            )
         )
-    )
+    else:
+        material = "|".join(
+            (
+                RUN_KEY_VERSION,
+                DEFAULT_TENANT,
+                inputs_fingerprint,
+                NORMALIZER_VERSION,
+                _rule_manifest_fingerprint(),
+                verifier_manifest_fingerprint(),
+            )
+        )
     return sha256(material.encode("utf-8")).hexdigest()
 
 
@@ -508,12 +529,17 @@ def _runtime_output(
     econ_hash: str,
     timings: dict[str, Any],
     verification: VerificationOutcome,
+    investigation_summary: dict[str, Any] | None = None,
+    mode: str = "rules-only",
+    provider_id: str = "none",
 ) -> dict[str, Any]:
     cases_by_category: dict[str, int] = {}
     for case in result.cases:
         cases_by_category[case.category.value] = cases_by_category.get(case.category.value, 0) + 1
-    return {
+    output: dict[str, Any] = {
         "batch_status": BatchStatus.COMPLETED.value,
+        "mode": mode,
+        "provider_id": provider_id,
         "normalizer_version": NORMALIZER_VERSION,
         "eligible_record_count": ingest.accepted_count,
         "matched_record_count": result.matched_record_count,
@@ -605,14 +631,76 @@ def _runtime_output(
             for case in result.cases
         ],
     }
+    if investigation_summary is not None:
+        output["investigation"] = investigation_summary
+    return output
 
 
 def _compute_run_outputs(
     ingest: IngestResult,
-) -> tuple[ReconciliationResult, dict[str, Any], dict[str, Any], str, VerificationOutcome]:
+    mode: str = "rules-only",
+    provider: Any = None,
+) -> tuple[
+    ReconciliationResult,
+    dict[str, Any],
+    dict[str, Any],
+    str,
+    VerificationOutcome,
+    dict[str, Any] | None,
+]:
     """Pure computation shared by the normal and forced-replacement paths."""
     result = reconcile(ingest.records)
     verification = verify_cases(ingest.records, list(result.cases))
+    investigation_summary: dict[str, Any] | None = None
+
+    if mode == "agent":
+        if provider is None:
+            provider = FakeProvider()
+        intermediate_graph = build_evidence_graph(
+            ingest.records, list(result.matches), list(verification.cases)
+        )
+        inv_outcome = investigate_cases(
+            records=ingest.records,
+            cases=list(verification.cases),
+            provider=provider,
+            graph_json=intermediate_graph.to_json(),
+        )
+        investigation_summary = inv_outcome.summary()
+
+        updated_verifications: list[CaseVerification] = []
+        for orig_cv, inv in zip(
+            verification.verifications, inv_outcome.investigations, strict=False
+        ):
+            if inv.status == "SKIPPED":
+                updated_verifications.append(orig_cv)
+            elif (
+                inv.proof is not None
+                and inv.hypothesis is not None
+                and inv.verifier_result is not None
+            ):
+                auth = classify_authority(
+                    inv.verifier_result.status,
+                    inv.verifier_result.proposed_delta_paise,
+                )
+                updated_verifications.append(
+                    CaseVerification(
+                        case=inv.case,
+                        hypothesis=inv.hypothesis,
+                        result=inv.verifier_result,
+                        proof=inv.proof,
+                        dry_run=inv.dry_run,
+                        authority=auth,
+                        duration_ms=inv.duration_ms,
+                    )
+                )
+            else:
+                updated_verifications.append(replace(orig_cv, case=inv.case))
+
+        verification = VerificationOutcome(
+            verifications=tuple(updated_verifications),
+            latency_ms=verification.latency_ms,
+        )
+
     verified = ReconciliationResult(
         matches=result.matches,
         cases=verification.cases,
@@ -623,7 +711,7 @@ def _compute_run_outputs(
     totals = control_totals(ingest.records, list(verified.cases))
     graph = build_evidence_graph(ingest.records, list(verified.matches), list(verified.cases))
     econ_hash = economic_output_hash(ingest, verified, totals)
-    return verified, totals, graph.to_json(), econ_hash, verification
+    return verified, totals, graph.to_json(), econ_hash, verification, investigation_summary
 
 
 def _persist_completed_run(
@@ -667,8 +755,10 @@ def execute_run(
     database: Database,
     *,
     force: bool = False,
+    mode: Literal["rules-only", "agent"] = "rules-only",
+    provider: Any = None,
 ) -> RunResult:
-    """Execute one rules-only reconciliation run end to end.
+    """Execute one reconciliation run end to end (rules-only or agent).
 
     Failure semantics:
 
@@ -689,7 +779,14 @@ def execute_run(
     ingest = ingest_inputs(inputs_dir)
     ingest_elapsed = time.perf_counter() - ingest_started
 
-    key = compute_idempotency_key(ingest.inputs_fingerprint)
+    provider_obj = (
+        provider if provider is not None else (FakeProvider() if mode == "agent" else None)
+    )
+    provider_id = (
+        getattr(provider_obj, "provider_id", "none") if provider_obj is not None else "none"
+    )
+
+    key = compute_idempotency_key(ingest.inputs_fingerprint, mode=mode, provider_id=provider_id)
     run_id = f"run-{key[:16]}"
     existing = find_run(database, run_id)
     if existing is not None and existing["status"] == BatchStatus.COMPLETED.value:
@@ -707,7 +804,9 @@ def execute_run(
         # any failure here leaves the prior completed run untouched. Then
         # swap atomically: delete + full insert inside ONE transaction, so
         # an in-transaction failure rolls back to the previous result.
-        result, totals, graph_json, econ_hash, verification = _compute_run_outputs(ingest)
+        result, totals, graph_json, econ_hash, verification, inv_summary = _compute_run_outputs(
+            ingest, mode=mode, provider=provider_obj
+        )
         total_elapsed = time.perf_counter() - started_clock
         elapsed_s = max(total_elapsed, 0.000001)
         timings = {
@@ -718,7 +817,16 @@ def execute_run(
             "records_per_second": round(ingest.accepted_count / elapsed_s, 2),
         }
         summary = _runtime_output(
-            ingest, result, totals, graph_json, econ_hash, timings, verification
+            ingest,
+            result,
+            totals,
+            graph_json,
+            econ_hash,
+            timings,
+            verification,
+            investigation_summary=inv_summary,
+            mode=mode,
+            provider_id=provider_id,
         )
         summary["run_id"] = run_id
         summary["idempotency_key"] = key
@@ -779,7 +887,9 @@ def execute_run(
         _update_status(database, run_id, BatchStatus.NORMALIZED)
         _update_status(database, run_id, BatchStatus.RECONCILING)
         reconcile_started = time.perf_counter()
-        result, totals, graph_json, econ_hash, verification = _compute_run_outputs(ingest)
+        result, totals, graph_json, econ_hash, verification, inv_summary = _compute_run_outputs(
+            ingest, mode=mode, provider=provider_obj
+        )
         created_at = _iso(_utc_now())
         with database.transaction():
             _persist_reconciliation(database, run_id, result, verification, created_at)
@@ -794,7 +904,16 @@ def execute_run(
             "records_per_second": round(ingest.accepted_count / elapsed_s, 2),
         }
         summary = _runtime_output(
-            ingest, result, totals, graph_json, econ_hash, timings, verification
+            ingest,
+            result,
+            totals,
+            graph_json,
+            econ_hash,
+            timings,
+            verification,
+            investigation_summary=inv_summary,
+            mode=mode,
+            provider_id=provider_id,
         )
         summary["run_id"] = run_id
         summary["idempotency_key"] = key

@@ -37,7 +37,13 @@ V3_TABLES = (
     "corrections",
 )
 
-ALL_RUNTIME_TABLES = (*V2_TABLES, *V3_TABLES)
+V4_TABLES = (
+    "simulated_corrections",
+    "approvals",
+    "audit_log",
+)
+
+ALL_RUNTIME_TABLES = (*V2_TABLES, *V3_TABLES, *V4_TABLES)
 
 
 def _table_names(path: Path) -> set[str]:
@@ -61,10 +67,10 @@ def _create_v1_database(path: Path) -> None:
 
 
 class TestFreshDatabase:
-    def test_fresh_database_migrates_to_v3(self, tmp_path: Path) -> None:
+    def test_fresh_database_migrates_to_v4(self, tmp_path: Path) -> None:
         database = Database(tmp_path / "fresh.sqlite3")
         try:
-            assert database.schema_version == 3
+            assert database.schema_version == 4
             assert database.healthcheck() is True
             tables = _table_names(database.path)
             assert set(ALL_RUNTIME_TABLES) <= tables
@@ -87,9 +93,9 @@ class TestUpgradeFromV1:
         _create_v1_database(path)
         database = Database(path)
         try:
-            assert database.schema_version == 3
+            assert database.schema_version == 4
             assert database.get_meta("tenant_note") == "phase0-metadata"
-            assert database.get_meta("schema_version") == "3"
+            assert database.get_meta("schema_version") == "4"
             assert database.healthcheck() is True
             assert set(ALL_RUNTIME_TABLES) <= _table_names(path)
             # No run row exists; none is claimed.
@@ -104,12 +110,12 @@ class TestUpgradeFromV1:
         first.close()
         second = Database(path)
         try:
-            assert second.schema_version == 3
+            assert second.schema_version == 4
             assert second.get_meta("tenant_note") == "phase0-metadata"
         finally:
             second.close()
 
-    def test_v2_database_upgrades_to_v3_preserving_rows(self, tmp_path: Path) -> None:
+    def test_v2_database_upgrades_to_v4_preserving_rows(self, tmp_path: Path) -> None:
         path = tmp_path / "phase2.sqlite3"
         _create_v1_database(path)
         original_chain = migrations._MIGRATION_CHAIN
@@ -144,8 +150,9 @@ class TestUpgradeFromV1:
 
         upgraded = Database(path)
         try:
-            assert upgraded.schema_version == 3
+            assert upgraded.schema_version == 4
             assert set(V3_TABLES) <= _table_names(path)
+            assert set(V4_TABLES) <= _table_names(path)
             rows = upgraded.query_all("SELECT run_id FROM runs")
             assert [row["run_id"] for row in rows] == ["run-existing"]
         finally:
@@ -204,7 +211,7 @@ class TestMigrationFailure:
 
         database = Database(path)
         try:
-            assert database.schema_version == 3
+            assert database.schema_version == 4
             assert database.get_meta("tenant_note") == "phase0-metadata"
         finally:
             database.close()
@@ -243,3 +250,38 @@ class TestMigrationFailure:
         finally:
             conn.close()
         assert version == "2"
+
+    def test_failed_v4_migration_rolls_back_to_v3(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        path = tmp_path / "phase3.sqlite3"
+        _create_v1_database(path)
+        original_chain = migrations._MIGRATION_CHAIN
+        try:
+            migrations._MIGRATION_CHAIN = original_chain[:2]
+            phase3 = Database(path)
+            phase3.close()
+        finally:
+            migrations._MIGRATION_CHAIN = original_chain
+
+        def broken_v4() -> tuple[str, ...]:
+            return (
+                "CREATE TABLE simulated_corrections (correction_id TEXT PRIMARY KEY)",
+                "CREATE TABLE broken_v4 (",
+            )
+
+        monkeypatch.setattr(migrations, "_migration_3_to_4_statements", broken_v4)
+        with pytest.raises(PersistenceMigrationError):
+            Database(path)
+
+        tables = _table_names(path)
+        assert "simulated_corrections" not in tables
+        assert not (set(V4_TABLES) & tables)
+        conn = sqlite3.connect(str(path))
+        try:
+            version = conn.execute(
+                "SELECT value FROM app_meta WHERE key = 'schema_version'"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        assert version == "3"

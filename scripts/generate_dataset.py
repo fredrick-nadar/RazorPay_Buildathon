@@ -57,10 +57,16 @@ def write_holdout_spec(output_root: Path) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate an ARGUS evaluation dataset")
-    parser.add_argument("--profile", required=True, choices=["dev", "adversarial", "holdout"])
-    parser.add_argument("--seed", type=int, default=None, help="override the profile seed")
     parser.add_argument(
-        "--output-root", default=str(REPO_ROOT / "datasets"), help="datasets root directory"
+        "--profile", required=True, choices=["dev", "adversarial", "holdout"]
+    )
+    parser.add_argument(
+        "--seed", type=int, default=None, help="override the profile seed"
+    )
+    parser.add_argument(
+        "--output-root",
+        default=str(REPO_ROOT / "datasets"),
+        help="datasets root directory",
     )
     parser.add_argument(
         "--force", action="store_true", help="overwrite an existing profile directory"

@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     log_level: str = Field(default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR)$")
+    investigator_tool_budget: int = Field(default=12, ge=1, le=100)
+    investigator_max_retries: int = Field(default=2, ge=1, le=10)
+    investigator_timeout_s: float = Field(default=30.0, gt=0)
 
     @property
     def rules_only(self) -> bool:
