@@ -830,3 +830,21 @@ export function IconRefresh({ size = 16, className = "", ...props }: IconProps) 
     </motion.svg>
   );
 }
+
+export function IconRazorpay({ size = 16, className = "", ...props }: IconProps) {
+  return (
+    <motion.svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      whileHover={{ scale: 1.1, rotate: -4 }}
+      transition={{ type: "spring", stiffness: 400, damping: 20 }}
+      className={`text-slate-900 ${className}`}
+      {...props}
+    >
+      <path d="M14.52 2L6 14.5h5.18L8.74 22 20 8.5h-5.48L14.52 2z" />
+    </motion.svg>
+  );
+}

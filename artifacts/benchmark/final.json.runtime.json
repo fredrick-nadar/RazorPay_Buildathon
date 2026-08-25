@@ -30034,7 +30034,7 @@
       {
         "case_id": "case-1eede37d0353",
         "category": "AMBIGUOUS_EVIDENCE",
-        "duration_ms": 2.38,
+        "duration_ms": 3.432,
         "outcome": "UNRESOLVED",
         "retries_used": 0,
         "tool_calls_used": 5
@@ -30042,7 +30042,7 @@
       {
         "case_id": "case-564d0c33674a",
         "category": "AMBIGUOUS_EVIDENCE",
-        "duration_ms": 0.234,
+        "duration_ms": 0.339,
         "outcome": "UNRESOLVED",
         "retries_used": 0,
         "tool_calls_used": 5
@@ -30050,7 +30050,7 @@
       {
         "case_id": "case-0f9a0d0d21f2",
         "category": "AMBIGUOUS_EVIDENCE",
-        "duration_ms": 0.17,
+        "duration_ms": 0.295,
         "outcome": "UNRESOLVED",
         "retries_used": 0,
         "tool_calls_used": 5
@@ -30058,7 +30058,7 @@
       {
         "case_id": "case-c329b60debe8",
         "category": "AMBIGUOUS_EVIDENCE",
-        "duration_ms": 0.156,
+        "duration_ms": 0.273,
         "outcome": "UNRESOLVED",
         "retries_used": 0,
         "tool_calls_used": 5
@@ -30066,7 +30066,7 @@
       {
         "case_id": "case-4110c2fe504b",
         "category": "AMBIGUOUS_EVIDENCE",
-        "duration_ms": 0.165,
+        "duration_ms": 0.354,
         "outcome": "UNRESOLVED",
         "retries_used": 0,
         "tool_calls_used": 5
@@ -30221,7 +30221,7 @@
       "SKIPPED": 18,
       "UNRESOLVED": 5
     },
-    "total_duration_ms": 3.228,
+    "total_duration_ms": 4.88,
     "total_retries": 0,
     "total_tool_calls": 25
   },
@@ -56893,11 +56893,11 @@
     "numerator": 1864
   },
   "timing_metrics": {
-    "ingest_seconds": 0.060064,
-    "reconcile_seconds": 0.07118,
-    "records_per_second": 11250.57,
-    "total_seconds": 0.167103,
-    "verify_seconds": 0.005003
+    "ingest_seconds": 0.06719,
+    "reconcile_seconds": 0.087112,
+    "records_per_second": 9656.1,
+    "total_seconds": 0.194696,
+    "verify_seconds": 0.00557
   },
   "unaccounted_record_keys": [],
   "verification": {
@@ -56923,9 +56923,9 @@
     "dry_run_abs_variance_after_paise": 0,
     "dry_run_count": 18,
     "latency_ms": {
-      "max_case_ms": 0.046,
-      "median_case_ms": 0.024,
-      "verify_total_ms": 5.003
+      "max_case_ms": 0.053,
+      "median_case_ms": 0.029,
+      "verify_total_ms": 5.57
     },
     "passing_proof_completeness": {
       "denominator": 18,

@@ -369,7 +369,7 @@ def _persist_reconciliation(
 ) -> None:
     for group in result.matches:
         database.execute(
-            "INSERT INTO match_groups (match_id, run_id, relationship_type, rule_id,"
+            "INSERT OR REPLACE INTO match_groups (match_id, run_id, relationship_type, rule_id,"
             " rule_version, status, amount_paise, created_at_utc)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -384,7 +384,7 @@ def _persist_reconciliation(
             ),
         )
         database.execute_many(
-            "INSERT INTO match_members (match_id, record_type, record_id, role,"
+            "INSERT OR REPLACE INTO match_members (match_id, record_type, record_id, role,"
             " signed_contribution_paise) VALUES (?, ?, ?, ?, ?)",
             [
                 (
@@ -399,7 +399,7 @@ def _persist_reconciliation(
         )
     for case in result.cases:
         database.execute(
-            "INSERT INTO cases (case_id, run_id, category_candidate, status,"
+            "INSERT OR REPLACE INTO cases (case_id, run_id, category_candidate, status,"
             " variance_paise, affected_amount_paise, proposed_delta_paise, currency,"
             " summary, reason_codes_json, opened_at_utc, updated_at_utc)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -419,7 +419,8 @@ def _persist_reconciliation(
             ),
         )
         database.execute_many(
-            "INSERT INTO case_evidence (case_id, record_type, record_id, note) VALUES (?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO case_evidence (case_id, record_type, record_id, note)"
+            " VALUES (?, ?, ?, ?)",
             [(case.case_id, item.record_type, item.record_id, None) for item in case.evidence],
         )
     _persist_verification(database, verification, created_at)
@@ -436,7 +437,7 @@ def _persist_verification(
     for item in verification.verifications:
         hypothesis = item.hypothesis
         database.execute(
-            "INSERT INTO hypotheses (hypothesis_id, case_id, category, claim,"
+            "INSERT OR REPLACE INTO hypotheses (hypothesis_id, case_id, category, claim,"
             " evidence_json, status, reason_codes_json, created_at_utc)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -452,7 +453,7 @@ def _persist_verification(
         )
         proof = item.proof.to_json()
         database.execute(
-            "INSERT INTO proofs (proof_id, case_id, hypothesis_id, claim, category,"
+            "INSERT OR REPLACE INTO proofs (proof_id, case_id, hypothesis_id, claim, category,"
             " evidence_json, supported_evidence_json, conflicting_evidence_json,"
             " equations_json, rejected_alternatives_json, verifier_status,"
             " verifier_rule_id, verifier_rule_version, recon_manifest_fingerprint,"
@@ -493,7 +494,7 @@ def _persist_verification(
         if item.dry_run is not None:
             dry = item.dry_run.to_json()
             database.execute(
-                "INSERT INTO corrections (correction_id, case_id, proof_id, status,"
+                "INSERT OR REPLACE INTO corrections (correction_id, case_id, proof_id, status,"
                 " proposed_entry_json, target_ledger_entry_id, account_code,"
                 " proposed_delta_paise, variance_before_paise, variance_after_paise,"
                 " totals_before_json, totals_after_json, warnings_json,"

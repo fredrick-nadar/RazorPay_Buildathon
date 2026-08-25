@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.api.routes_cases import router as cases_router
 from app.api.routes_meta import router as meta_router
+from app.api.routes_razorpay import router as razorpay_router
 from app.api.routes_runs import router as runs_router
 from app.config import APP_NAME, Settings, get_settings
 from app.persistence.database import open_database
@@ -38,6 +39,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(meta_router)
     app.include_router(runs_router)
     app.include_router(cases_router)
+    app.include_router(razorpay_router)
     app.include_router(voice_router)
     return app
 

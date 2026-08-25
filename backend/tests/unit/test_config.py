@@ -8,8 +8,10 @@ from pydantic import ValidationError
 from app.config import Settings
 
 
-def test_defaults_load_without_any_environment() -> None:
-    settings = Settings()
+def test_defaults_load_without_any_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ARGUS_MODEL_PROVIDER", raising=False)
+    monkeypatch.delenv("ARGUS_MODEL_API_KEY", raising=False)
+    settings = Settings(_env_file=None)
     assert settings.db_path == type(settings).model_fields["db_path"].default
     assert settings.port == 8000
     assert settings.host == "127.0.0.1"

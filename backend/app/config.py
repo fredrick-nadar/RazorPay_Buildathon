@@ -40,9 +40,24 @@ class Settings(BaseSettings):
     investigator_tool_budget: int = Field(default=12, ge=1, le=100)
     investigator_max_retries: int = Field(default=2, ge=1, le=10)
     investigator_timeout_s: float = Field(default=30.0, gt=0)
-    razorpay_key_id: str | None = None
-    razorpay_key_secret: SecretStr | None = None
-    razorpay_webhook_secret: SecretStr | None = None
+    razorpay_key_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ARGUS_RAZORPAY_KEY_ID", "RAZORPAY_KEY_ID", "razorpay_key_id"
+        ),
+    )
+    razorpay_key_secret: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ARGUS_RAZORPAY_KEY_SECRET", "RAZORPAY_KEY_SECRET", "razorpay_key_secret"
+        ),
+    )
+    razorpay_webhook_secret: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ARGUS_RAZORPAY_WEBHOOK_SECRET", "RAZORPAY_WEBHOOK_SECRET", "razorpay_webhook_secret"
+        ),
+    )
 
     # Optional voice speech providers (PRD 13.5.3). Keys are NEVER required:
     # with them unset, /voice/transcribe and /voice/tts return 501 with a

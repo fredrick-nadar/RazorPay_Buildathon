@@ -11,6 +11,7 @@ import json
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from pydantic import SecretStr
@@ -34,26 +35,52 @@ class RazorpayFetchResult:
         }
 
 
+_UNSET: Any = object()
+
+
 class RazorpayClient:
-    """Read-only client for documented Razorpay Test Mode endpoints."""
+    """Read-only client for fetching records from Razorpay Test Mode API."""
 
     BASE_URL = "https://api.razorpay.com/v1"
 
     def __init__(
         self,
-        key_id: str | None = None,
-        key_secret: str | None = None,
+        key_id: str | None | Any = _UNSET,
+        key_secret: str | None | Any = _UNSET,
         timeout_s: float = 10.0,
     ) -> None:
-        settings = get_settings()
-        self.key_id = key_id or getattr(settings, "razorpay_key_id", None)
-        raw_secret = key_secret or getattr(settings, "razorpay_key_secret", None)
-        if isinstance(raw_secret, SecretStr):
-            self.key_secret: str | None = raw_secret.get_secret_value()
-        elif raw_secret:
-            self.key_secret = str(raw_secret)
+        if key_id is not _UNSET or key_secret is not _UNSET:
+            self.key_id = None if key_id is _UNSET else key_id
+            self.key_secret = None if key_secret is _UNSET else key_secret
         else:
-            self.key_secret = None
+            settings = get_settings()
+            self.key_id = getattr(settings, "razorpay_key_id", None)
+            raw_secret = getattr(settings, "razorpay_key_secret", None)
+            if isinstance(raw_secret, SecretStr):
+                self.key_secret = raw_secret.get_secret_value()
+            elif raw_secret:
+                self.key_secret = str(raw_secret)
+            else:
+                self.key_secret = None
+
+            if not self.key_id or not self.key_secret:
+                csv_path = Path("rzp-test-key.csv")
+                if csv_path.exists():
+                    try:
+                        text = csv_path.read_text(encoding="utf-8").strip()
+                        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+                        for ln in lines:
+                            parts = [p.strip() for p in ln.split(",") if p.strip()]
+                            if len(parts) >= 2:
+                                if "key" in parts[0].lower() and "secret" in parts[1].lower():
+                                    continue
+                                if not self.key_id:
+                                    self.key_id = parts[0]
+                                if not self.key_secret:
+                                    self.key_secret = parts[1]
+                                break
+                    except Exception:
+                        pass
         self.timeout_s = timeout_s
 
     @property
@@ -115,6 +142,10 @@ class RazorpayClient:
     def fetch_payments(self, count: int = 10) -> RazorpayFetchResult:
         """Read-only fetch of captured payments from Test Mode."""
         return self._get("payments", {"count": count})
+
+    def fetch_orders(self, count: int = 100, skip: int = 0) -> RazorpayFetchResult:
+        """Read-only fetch of created orders from Test Mode."""
+        return self._get("orders", {"count": count, "skip": skip})
 
     def fetch_refunds(self, count: int = 10) -> RazorpayFetchResult:
         """Read-only fetch of processed refunds from Test Mode."""

@@ -25,6 +25,7 @@ import { CaseWorkspace } from "../../components/case-workspace";
 import { EvidenceChain } from "../../components/evidence-chain";
 import { AuditLog } from "../../components/audit-log";
 import { ApprovalModal } from "../../components/approval-modal";
+import { ConnectDatasetModal } from "../../components/connect-dataset-modal";
 import {
   IconActivity,
   IconArrowUp,
@@ -145,6 +146,7 @@ export default function ControlRoomPage() {
 
   const [modalAction, setModalAction] = useState<"APPROVE" | "REJECT">("APPROVE");
   const [modalOpen, setModalOpen] = useState(false);
+  const [connectDatasetOpen, setConnectDatasetOpen] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
   useEffect(() => {
@@ -763,18 +765,15 @@ export default function ControlRoomPage() {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      title="Add dataset or policy rule"
+                      onClick={() => setConnectDatasetOpen(true)}
+                      title="Add dataset or connect live Razorpay"
                       className="flex h-8 w-8 items-center justify-center rounded-full text-slate-800 hover:bg-slate-100 transition-colors"
                     >
                       <IconPlus size={16} />
                     </button>
                     <button
                       type="button"
-                      onClick={() => {
-                        setActiveTab("dossier");
-                        setStatusFilter("ALL");
-                        void triggerRun("dev", "rules-only");
-                      }}
+                      onClick={() => setConnectDatasetOpen(true)}
                       className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50/80 px-3 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-100 transition-colors"
                     >
                       <IconPlug size={13} />
@@ -1449,6 +1448,26 @@ export default function ControlRoomPage() {
         )}
 
         {/* ============================ Overlays ============================ */}
+        <ConnectDatasetModal
+          open={connectDatasetOpen}
+          onClose={() => setConnectDatasetOpen(false)}
+          onRunSynthetic={(profile, mode) => {
+            setActiveTab("dossier");
+            setStatusFilter("ALL");
+            void triggerRun(profile, mode);
+          }}
+          onSyncSuccess={(runId) => {
+            setActiveRunId(runId);
+            setActiveTab("dossier");
+            setStatusFilter("ALL");
+            void loadRuns();
+            void loadCases(runId);
+            setToast({
+              message: `Synced and reconciled live Razorpay data (Run ${runId.slice(0, 10)})`,
+              kind: "success",
+            });
+          }}
+        />
         {modalOpen && caseDetail && (
           <ApprovalModal
             detail={caseDetail}
