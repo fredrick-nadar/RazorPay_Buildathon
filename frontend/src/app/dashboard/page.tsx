@@ -278,46 +278,55 @@ export default function ControlRoomPage() {
     <div className="flex h-screen overflow-hidden bg-[#f8fafc] text-slate-900 antialiased font-sans">
       {/* ============================ Sarvam API Style Clean Sidebar ============================ */}
       <aside
-        className={`flex shrink-0 flex-col border-r border-slate-200 bg-white transition-all duration-200 z-30 ${
-          sidebarOpen ? "w-[240px]" : "w-[68px]"
-        }`}
+        className={`flex shrink-0 flex-col border-r border-slate-200 bg-white transition-[width] duration-200 ease-in-out z-30 overflow-hidden select-none ${sidebarOpen ? "w-[240px]" : "w-[56px]"
+          }`}
       >
         {/* Sidebar Header */}
-        <div className="flex h-14 items-center justify-between border-b border-slate-100 px-4">
-          <Link
-            href="/"
-            aria-label="Back to home"
-            className="flex items-center gap-2.5 overflow-hidden transition hover:opacity-80"
-          >
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-white shadow-2xs">
-              <svg viewBox="0 0 42 34" className="w-4 h-3.5" fill="currentColor" aria-hidden="true">
-                <polygon points="12,0 30,0 33.2,3.2 15.2,3.2" />
-                <polygon points="14.6,5.6 32.6,5.6 35.8,8.8 17.8,8.8" />
-                <polygon points="17.2,11.2 35.2,11.2 38.4,14.4 20.4,14.4" />
-                <polygon points="3.2,16.8 21.2,16.8 24.4,20 6.4,20" />
-                <polygon points="5.8,22.4 23.8,22.4 27,25.6 9,25.6" />
-                <polygon points="8.4,28 26.4,28 29.6,31.2 11.6,31.2" />
-              </svg>
-            </div>
-            {sidebarOpen && (
-              <span className="truncate font-sans text-[15px] font-bold tracking-tight text-slate-900">
-                Argus API
-              </span>
-            )}
-          </Link>
+        <div className="flex h-14 items-center px-2 border-b border-slate-100 shrink-0 overflow-hidden">
+          {sidebarOpen ? (
+            <div className="flex w-full items-center justify-between overflow-hidden">
+              <Link
+                href="/"
+                aria-label="Back to home"
+                className="flex items-center overflow-hidden transition hover:opacity-80 min-w-0"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900 text-white shadow-xs">
+                    <svg viewBox="0 0 42 34" className="w-4 h-3.5" fill="currentColor" aria-hidden="true">
+                      <polygon points="12,0 30,0 33.2,3.2 15.2,3.2" />
+                      <polygon points="14.6,5.6 32.6,5.6 35.8,8.8 17.8,8.8" />
+                      <polygon points="17.2,11.2 35.2,11.2 38.4,14.4 20.4,14.4" />
+                      <polygon points="3.2,16.8 21.2,16.8 24.4,20 6.4,20" />
+                      <polygon points="5.8,22.4 23.8,22.4 27,25.6 9,25.6" />
+                      <polygon points="8.4,28 26.4,28 29.6,31.2 11.6,31.2" />
+                    </svg>
+                  </div>
+                </div>
+              </Link>
 
-          <button
-            onClick={() => setSidebarOpen((s) => !s)}
-            aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-            title="Toggle sidebar"
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-          >
-            <IconSidebar size={16} />
-          </button>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                aria-label="Collapse sidebar"
+                title="Collapse sidebar"
+                className="group flex h-9 w-9 shrink-0 items-center justify-center rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+              >
+                <IconSidebar size={18} className="text-slate-500 transition-transform duration-200 group-hover:scale-110 group-hover:text-slate-900" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Expand sidebar"
+              title="Expand sidebar"
+              className="group flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+            >
+              <IconSidebar size={18} className="text-slate-500 transition-transform duration-200 group-hover:scale-110 group-hover:text-slate-900" />
+            </button>
+          )}
         </div>
 
         {/* Sidebar Nav Items */}
-        <div className="flex-1 space-y-6 overflow-y-auto p-3">
+        <div className="flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-2">
           {/* Home Active Pill */}
           <div>
             <button
@@ -327,144 +336,221 @@ export default function ControlRoomPage() {
                 setSearchQuery("");
                 setActiveTab("investigation");
               }}
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-semibold transition-all ${
-                statusFilter === "ALL" && categoryFilter === "ALL" && activeTab === "investigation"
-                  ? "bg-slate-100 text-slate-900"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`}
+              title="Home"
+              className={`group flex h-10 w-full items-center rounded-xl transition-all duration-150 overflow-hidden ${statusFilter === "ALL" && categoryFilter === "ALL" && activeTab === "investigation"
+                ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                }`}
             >
-              <IconHome size={18} className="shrink-0 text-slate-700" />
-              {sidebarOpen && <span>Home</span>}
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                <IconHome size={18} className="text-slate-700 transition-transform duration-200 group-hover:scale-110 group-hover:text-blue-600" />
+              </div>
+              <div
+                className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
+                  }`}
+              >
+                <span className="truncate text-[13px]">Home</span>
+              </div>
             </button>
           </div>
 
           {/* Section: Build / Reconciliation */}
-          <div className="space-y-1">
-            {sidebarOpen && (
+          <div className="space-y-1 overflow-hidden">
+            {sidebarOpen ? (
               <button
                 onClick={() => setBuildSectionOpen((o) => !o)}
-                className="flex w-full items-center justify-between px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-800"
+                className="flex w-full items-center justify-between px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-700"
               >
                 <span>Build</span>
                 {buildSectionOpen ? <IconChevronUp size={13} /> : <IconChevronDown size={13} />}
               </button>
+            ) : (
+              <div className="my-2 border-t border-slate-100 mx-1" />
             )}
 
             {(buildSectionOpen || !sidebarOpen) && (
-              <div className="space-y-0.5">
+              <div className="space-y-0.5 overflow-hidden">
                 <button
                   onClick={() => void triggerRun("dev", "rules-only")}
                   disabled={running || booting}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-100/80 hover:text-slate-900 transition-all disabled:opacity-50"
+                  title="Reconcile Dev"
+                  className="group flex h-10 w-full items-center rounded-xl text-slate-700 hover:bg-slate-100/80 hover:text-slate-900 transition-all disabled:opacity-50 overflow-hidden"
                 >
-                  <IconBolt size={17} className="shrink-0 text-slate-700" />
-                  {sidebarOpen && <span>Reconcile Dev</span>}
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                    <IconBolt size={17} className="text-slate-700 transition-transform duration-300 group-hover:scale-120 group-hover:text-amber-500 group-hover:rotate-12" />
+                  </div>
+                  <div
+                    className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
+                      }`}
+                  >
+                    <span className="truncate text-[13px] font-medium">Reconcile Dev</span>
+                  </div>
                 </button>
 
                 <button
                   onClick={() => void triggerRun("adversarial", "agent")}
                   disabled={running || booting}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-100/80 hover:text-slate-900 transition-all disabled:opacity-50"
+                  title="AI Adversarial"
+                  className="group flex h-10 w-full items-center rounded-xl text-slate-700 hover:bg-slate-100/80 hover:text-slate-900 transition-all disabled:opacity-50 overflow-hidden"
                 >
-                  <IconRoute size={17} className="shrink-0 text-slate-700" />
-                  {sidebarOpen && <span>AI Adversarial</span>}
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                    <IconRoute size={17} className="text-slate-700 transition-transform duration-300 group-hover:scale-115 group-hover:text-purple-600 group-hover:rotate-12" />
+                  </div>
+                  <div
+                    className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
+                      }`}
+                  >
+                    <span className="truncate text-[13px] font-medium">AI Adversarial</span>
+                  </div>
                 </button>
 
                 <button
                   onClick={() => setStatusFilter(CaseStatus.APPROVAL_REQUIRED)}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-all ${
-                    statusFilter === CaseStatus.APPROVAL_REQUIRED
-                      ? "bg-slate-100 text-slate-900 font-semibold"
-                      : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                  }`}
+                  title="Approval Queue"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${statusFilter === CaseStatus.APPROVAL_REQUIRED
+                    ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                    : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
+                    }`}
                 >
-                  <IconShield size={17} className="shrink-0 text-amber-600" />
-                  {sidebarOpen && <span>Approval Queue</span>}
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                    <IconShield size={17} className="text-amber-600 transition-transform duration-200 group-hover:scale-115 group-hover:-translate-y-0.5" />
+                  </div>
+                  <div
+                    className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
+                      }`}
+                  >
+                    <span className="truncate text-[13px]">Approval Queue</span>
+                  </div>
                 </button>
 
                 <button
                   onClick={() => setStatusFilter(CaseStatus.VERIFIED_RESOLVED)}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-all ${
-                    statusFilter === CaseStatus.VERIFIED_RESOLVED
-                      ? "bg-slate-100 text-slate-900 font-semibold"
-                      : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                  }`}
+                  title="Verified Resolved"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${statusFilter === CaseStatus.VERIFIED_RESOLVED
+                    ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                    : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
+                    }`}
                 >
-                  <IconCheck size={17} className="shrink-0 text-emerald-600" />
-                  {sidebarOpen && <span>Verified Resolved</span>}
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                    <IconCheck size={17} className="text-emerald-600 transition-transform duration-200 group-hover:scale-120 group-hover:text-emerald-500" />
+                  </div>
+                  <div
+                    className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
+                      }`}
+                  >
+                    <span className="truncate text-[13px]">Verified Resolved</span>
+                  </div>
                 </button>
 
                 <button
                   onClick={() => setStatusFilter(CaseStatus.UNRESOLVED)}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-all ${
-                    statusFilter === CaseStatus.UNRESOLVED
-                      ? "bg-slate-100 text-slate-900 font-semibold"
-                      : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                  }`}
+                  title="Unresolved Cases"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${statusFilter === CaseStatus.UNRESOLVED
+                    ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                    : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
+                    }`}
                 >
-                  <IconFlag size={17} className="shrink-0 text-rose-600" />
-                  {sidebarOpen && <span>Unresolved Cases</span>}
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                    <IconFlag size={17} className="text-rose-600 transition-transform duration-200 group-hover:scale-120 group-hover:rotate-12 group-hover:text-rose-500" />
+                  </div>
+                  <div
+                    className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
+                      }`}
+                  >
+                    <span className="truncate text-[13px]">Unresolved Cases</span>
+                  </div>
                 </button>
               </div>
             )}
           </div>
 
           {/* Section: Investigation & Tools */}
-          <div className="space-y-1">
-            {sidebarOpen && (
+          <div className="space-y-1 overflow-hidden">
+            {sidebarOpen ? (
               <button
                 onClick={() => setInvestigationSectionOpen((o) => !o)}
-                className="flex w-full items-center justify-between px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-800"
+                className="flex w-full items-center justify-between px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-700"
               >
                 <span>Investigation</span>
                 {investigationSectionOpen ? <IconChevronUp size={13} /> : <IconChevronDown size={13} />}
               </button>
+            ) : (
+              <div className="my-2 border-t border-slate-100 mx-1" />
             )}
 
             {(investigationSectionOpen || !sidebarOpen) && (
-              <div className="space-y-0.5">
+              <div className="space-y-0.5 overflow-hidden">
                 <button
                   onClick={() => setActiveTab("investigation")}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-all ${
-                    activeTab === "investigation"
-                      ? "bg-slate-100 text-slate-900 font-semibold"
-                      : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                  }`}
+                  title="Case Dossier"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "investigation"
+                    ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                    : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
+                    }`}
                 >
-                  <IconLayers size={17} className="shrink-0 text-slate-700" />
-                  {sidebarOpen && <span>Case Dossier</span>}
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                    <IconLayers size={17} className="text-slate-700 transition-transform duration-200 group-hover:scale-115 group-hover:text-blue-600" />
+                  </div>
+                  <div
+                    className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
+                      }`}
+                  >
+                    <span className="truncate text-[13px]">Case Dossier</span>
+                  </div>
                 </button>
 
                 <button
                   onClick={() => setActiveTab("evidence")}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-all ${
-                    activeTab === "evidence"
-                      ? "bg-slate-100 text-slate-900 font-semibold"
-                      : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                  }`}
+                  title="Evidence Trace"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "evidence"
+                    ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                    : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
+                    }`}
                 >
-                  <IconRoute size={17} className="shrink-0 text-slate-700" />
-                  {sidebarOpen && <span>Evidence Trace</span>}
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                    <IconRoute size={17} className="text-slate-700 transition-transform duration-200 group-hover:scale-115 group-hover:text-indigo-600 group-hover:rotate-12" />
+                  </div>
+                  <div
+                    className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
+                      }`}
+                  >
+                    <span className="truncate text-[13px]">Evidence Trace</span>
+                  </div>
                 </button>
 
                 <button
                   onClick={() => setActiveTab("investigation")}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-100/80 hover:text-slate-900 transition-all"
+                  title="Ledger Dry-Run"
+                  className="group flex h-10 w-full items-center rounded-xl text-slate-700 hover:bg-slate-100/80 hover:text-slate-900 transition-all overflow-hidden"
                 >
-                  <IconScale size={17} className="shrink-0 text-slate-700" />
-                  {sidebarOpen && <span>Ledger Dry-Run</span>}
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                    <IconScale size={17} className="text-slate-700 transition-transform duration-200 group-hover:scale-115 group-hover:text-teal-600 group-hover:rotate-6" />
+                  </div>
+                  <div
+                    className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
+                      }`}
+                  >
+                    <span className="truncate text-[13px]">Ledger Dry-Run</span>
+                  </div>
                 </button>
 
                 <button
                   onClick={() => setActiveTab("audit")}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-all ${
-                    activeTab === "audit"
-                      ? "bg-slate-100 text-slate-900 font-semibold"
-                      : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                  }`}
+                  title="Audit Trail"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "audit"
+                    ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                    : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
+                    }`}
                 >
-                  <IconScroll size={17} className="shrink-0 text-slate-700" />
-                  {sidebarOpen && <span>Audit Trail</span>}
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                    <IconScroll size={17} className="text-slate-700 transition-transform duration-200 group-hover:scale-115 group-hover:text-cyan-600 group-hover:-translate-y-0.5" />
+                  </div>
+                  <div
+                    className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
+                      }`}
+                  >
+                    <span className="truncate text-[13px]">Audit Trail</span>
+                  </div>
                 </button>
               </div>
             )}
@@ -472,31 +558,55 @@ export default function ControlRoomPage() {
         </div>
 
         {/* Sidebar Footer Resources */}
-        <div className="border-t border-slate-100 p-3 space-y-1 bg-slate-50/50">
-          <div className="flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-700">
-            <IconActivity size={17} className="shrink-0 text-emerald-600" />
-            {sidebarOpen && (
-              <span className="flex items-center gap-2">
+        <div className="border-t border-slate-100 p-2 space-y-1 bg-slate-50/50 shrink-0 overflow-x-hidden">
+          <div
+            title="API Status: Operational"
+            className="group flex h-10 w-full items-center rounded-xl text-slate-700 overflow-hidden"
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+              <IconActivity size={17} className="text-emerald-600 transition-transform duration-300 group-hover:scale-120 group-hover:text-emerald-500" />
+            </div>
+            <div
+              className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
+                }`}
+            >
+              <span className="flex items-center gap-2 text-[13px] font-medium truncate">
                 API Status
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse-dot" />
               </span>
-            )}
+            </div>
           </div>
 
           <Link
             href="/presentation"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-all"
+            title="Presentation Mode"
+            className="group flex h-10 w-full items-center rounded-xl text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-all overflow-hidden"
           >
-            <IconPresentation size={17} className="shrink-0 text-slate-700" />
-            {sidebarOpen && <span>Presentation</span>}
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+              <IconPresentation size={17} className="text-slate-700 transition-transform duration-200 group-hover:scale-115 group-hover:text-blue-600" />
+            </div>
+            <div
+              className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
+                }`}
+            >
+              <span className="truncate text-[13px] font-medium">Presentation</span>
+            </div>
           </Link>
 
           <Link
             href="/"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-all"
+            title="Documentation / Home"
+            className="group flex h-10 w-full items-center rounded-xl text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-all overflow-hidden"
           >
-            <IconBookOpen size={17} className="shrink-0 text-slate-700" />
-            {sidebarOpen && <span>Documentation</span>}
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+              <IconBookOpen size={17} className="text-slate-700 transition-transform duration-200 group-hover:scale-115 group-hover:text-indigo-600" />
+            </div>
+            <div
+              className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
+                }`}
+            >
+              <span className="truncate text-[13px] font-medium">Documentation</span>
+            </div>
           </Link>
         </div>
       </aside>
@@ -705,11 +815,10 @@ export default function ControlRoomPage() {
                         key={tab}
                         onClick={() => setActiveTab(tab)}
                         aria-current={activeTab === tab ? "page" : undefined}
-                        className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
-                          activeTab === tab
-                            ? "bg-white text-slate-900 shadow-sm"
-                            : "text-slate-500 hover:text-slate-900"
-                        }`}
+                        className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${activeTab === tab
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-500 hover:text-slate-900"
+                          }`}
                       >
                         {icon}
                         {label}
