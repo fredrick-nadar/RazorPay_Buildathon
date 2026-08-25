@@ -1,4 +1,4 @@
-﻿/* ==========================================================================
+/* ==========================================================================
    ARGUS landing - supporting sections (what ARGUS does)
    ========================================================================== */
 
@@ -363,6 +363,7 @@
 
 .landing .packet--blue { fill: #006cd2; }
 .landing .packet--amber { fill: #d97706; }
+.landing .packet--bad { fill: #f43f5e; }
 
 .landing .edge-labels text {
   font-family: var(--font);
@@ -562,4 +563,44 @@
       animation-range: entry 0% entry 38%;
     }
   }
+}
+
+/* ==========================================================================
+   Monumental Gradient ARGUS Signature Wordmark
+   ========================================================================== */
+
+.landing .landing-signature {
+  position: relative;
+  width: 100%;
+  margin-top: clamp(60px, 9vw, 140px);
+  padding-bottom: clamp(10px, 3vw, 40px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  user-select: none;
+  pointer-events: none;
+}
+
+.landing .landing-signature__word {
+  font-family: var(--font);
+  font-size: clamp(6.5rem, 23vw, 24rem);
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  line-height: 0.8;
+  text-transform: uppercase;
+  text-align: center;
+  width: 100%;
+  color: transparent;
+  background: linear-gradient(
+    180deg,
+    #0f172a 0%,
+    #1e3a8a 35%,
+    #2563eb 65%,
+    rgba(59, 130, 246, 0.06) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  opacity: 0.95;
+  filter: drop-shadow(0 8px 32px rgba(37, 99, 235, 0.1));
 }

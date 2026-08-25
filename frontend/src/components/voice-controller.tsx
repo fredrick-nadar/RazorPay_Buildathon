@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Wave } from "@/components/ui/wave";
 
 type VoiceStatus =
@@ -188,6 +188,7 @@ function playBrowserSpeech(text: string, lang: string) {
 
 export function VoiceController() {
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [language, setLanguage] = useState("en-IN");
   const [status, setStatus] = useState<VoiceStatus>("idle");
@@ -564,6 +565,10 @@ export function VoiceController() {
   }, [typed, runParseAndExecute]);
 
   const busy = status === "parsing" || status === "listening";
+
+  if (pathname === "/") {
+    return null;
+  }
 
   return (
     <div className="pointer-events-none fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-3 w-full max-w-2xl px-4">

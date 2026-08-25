@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 
 import "./landing.css";
 import "./landing-sections.css";
@@ -183,6 +183,18 @@ export default function LandingPage() {
               role="img"
               aria-label="Workflow graph: five source record types flow into normalize, then reconcile. Clean records match deterministically. Residual variance becomes an exception case, investigated by a bounded AI, checked by a deterministic verifier. A PASS leads to dry-run, approval and a simulated entry; an inconclusive result stays unresolved; a fail returns for re-investigation."
             >
+              <defs>
+                <filter id="packet-glow-blue" x="-50%" y="-50%" width="200%" height="200%">
+                  <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#006cd2" floodOpacity="0.85" />
+                </filter>
+                <filter id="packet-glow-amber" x="-50%" y="-50%" width="200%" height="200%">
+                  <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#d97706" floodOpacity="0.85" />
+                </filter>
+                <filter id="packet-glow-bad" x="-50%" y="-50%" width="200%" height="200%">
+                  <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#f43f5e" floodOpacity="0.85" />
+                </filter>
+              </defs>
+
               {/* ---------- edges (packets travel beneath nodes) ---------- */}
               <g className="edges">
                 <path className="edge" d="M160 62 C 230 62, 215 242, 280 242" />
@@ -200,20 +212,62 @@ export default function LandingPage() {
                 <path className="edge edge--fail" d="M1210 486 C 1236 486, 1236 374, 1210 374" />
               </g>
 
-              {/* ---------- travelling packets ---------- */}
+              {/* ---------- travelling packets (Single active packet at a time, sequential cycles) ---------- */}
               <g className="packets" aria-hidden="true">
-                <circle className="packet packet--blue" r="5">
+                {/* Dot 1: Deterministic Match Cycle (Settlement -> Normalize -> Reconcile -> Matched) */}
+                <circle className="packet packet--blue" r="6" filter="url(#packet-glow-blue)" opacity="0">
                   <animateMotion
-                    dur="5s"
-                    repeatCount="indefinite"
-                    path="M160 242 L 280 242 L 520 242 C 745 242, 725 110, 760 110 L 860 110"
+                    id="flowCycle1"
+                    dur="4.2s"
+                    begin="0s; flowCycle3.end+0.7s"
+                    fill="freeze"
+                    path="M160 242 L 280 242 L 460 242 L 520 242 L 710 242 C 745 242, 725 110, 760 110 L 860 110"
+                  />
+                  <animate
+                    attributeName="opacity"
+                    values="0; 1; 1; 1; 0"
+                    keyTimes="0; 0.05; 0.9; 0.98; 1"
+                    dur="4.2s"
+                    begin="0s; flowCycle3.end+0.7s"
+                    fill="freeze"
                   />
                 </circle>
-                <circle className="packet packet--amber" r="5">
+
+                {/* Dot 2: Exception Investigation & Approval Cycle (Payment -> Normalize -> Reconcile -> Exception -> AI -> Verifier -> Pass -> Approval) */}
+                <circle className="packet packet--amber" r="6" filter="url(#packet-glow-amber)" opacity="0">
                   <animateMotion
-                    dur="6s"
-                    repeatCount="indefinite"
-                    path="M710 242 C 745 242, 725 374, 760 374 L 1000 374 L 1100 374 L 1100 486 L 980 486"
+                    id="flowCycle2"
+                    dur="6.2s"
+                    begin="flowCycle1.end+0.7s"
+                    fill="freeze"
+                    path="M160 62 C 230 62, 215 242, 280 242 L 460 242 L 520 242 L 710 242 C 745 242, 725 374, 760 374 L 960 374 L 1000 374 L 1100 374 L 1100 464 L 1100 486 L 980 486 L 860 486"
+                  />
+                  <animate
+                    attributeName="opacity"
+                    values="0; 1; 1; 1; 0"
+                    keyTimes="0; 0.04; 0.92; 0.98; 1"
+                    dur="6.2s"
+                    begin="flowCycle1.end+0.7s"
+                    fill="freeze"
+                  />
+                </circle>
+
+                {/* Dot 3: Ambiguity / Unresolved Case Cycle (Refund -> Normalize -> Reconcile -> Exception -> AI -> Verifier -> Inconclusive -> Unresolved) */}
+                <circle className="packet packet--bad" r="6" filter="url(#packet-glow-bad)" opacity="0">
+                  <animateMotion
+                    id="flowCycle3"
+                    dur="5.8s"
+                    begin="flowCycle2.end+0.7s"
+                    fill="freeze"
+                    path="M160 152 C 225 152, 215 242, 280 242 L 460 242 L 520 242 L 710 242 C 745 242, 725 374, 760 374 L 960 374 L 1000 374 L 1100 374 L 1100 464 L 1100 486 L 1100 508 L 1100 568 L 1100 590"
+                  />
+                  <animate
+                    attributeName="opacity"
+                    values="0; 1; 1; 1; 0"
+                    keyTimes="0; 0.05; 0.92; 0.98; 1"
+                    dur="5.8s"
+                    begin="flowCycle2.end+0.7s"
+                    fill="freeze"
                   />
                 </circle>
               </g>
@@ -387,6 +441,11 @@ export default function LandingPage() {
               </a>
             </div>
           </div>
+        </section>
+
+        {/* ================= Monumental Gradient ARGUS Typography ================= */}
+        <section className="landing-signature" aria-hidden="true">
+          <div className="landing-signature__word">ARGUS</div>
         </section>
       </main>
     </div>
