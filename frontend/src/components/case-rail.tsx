@@ -132,17 +132,21 @@ export function CaseRail({
   onCategoryFilter,
   searchQuery,
   onSearchQuery,
+  title,
+  hideStatusFilters = false,
 }: {
   cases: CaseSummary[];
   loading: boolean;
   selectedCaseId: string | null;
   onSelect: (caseId: string) => void;
   statusFilter: string;
-  onStatusFilter: (value: string) => void;
+  onStatusFilter?: (value: string) => void;
   categoryFilter: string;
   onCategoryFilter: (value: string) => void;
   searchQuery: string;
   onSearchQuery: (value: string) => void;
+  title?: string;
+  hideStatusFilters?: boolean;
 }) {
   const filtered = cases.filter((c) => {
     if (statusFilter !== "ALL" && c.status !== statusFilter) return false;
@@ -161,12 +165,12 @@ export function CaseRail({
   return (
     <aside className="flex w-[320px] shrink-0 flex-col border-r border-slate-200 bg-white xl:w-[350px]">
       {/* Filters Header */}
-      <div className="space-y-3 border-b border-slate-100 p-4">
+      <div className="space-y-2.5 border-b border-slate-100 p-3.5">
         <div className="flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-800">
-            Exception queue
+            {title ?? "Exception queue"}
             <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-semibold text-slate-700">
-              {filtered.length}/{cases.length}
+              {filtered.length}
             </span>
           </h2>
           <select
@@ -199,25 +203,27 @@ export function CaseRail({
           />
         </div>
 
-        <div className="flex gap-1 overflow-x-auto pb-0.5">
-          {STATUS_FILTERS.map((st) => {
-            const active = statusFilter === st.value;
-            return (
-              <button
-                key={st.value}
-                onClick={() => onStatusFilter(st.value)}
-                suppressHydrationWarning
-                className={`whitespace-nowrap rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all ${
-                  active
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
-                }`}
-              >
-                {st.label}
-              </button>
-            );
-          })}
-        </div>
+        {!hideStatusFilters && onStatusFilter && (
+          <div className="flex gap-1 overflow-x-auto pb-0.5">
+            {STATUS_FILTERS.map((st) => {
+              const active = statusFilter === st.value;
+              return (
+                <button
+                  key={st.value}
+                  onClick={() => onStatusFilter(st.value)}
+                  suppressHydrationWarning
+                  className={`whitespace-nowrap rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                    active
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+                  }`}
+                >
+                  {st.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Case List Queue */}

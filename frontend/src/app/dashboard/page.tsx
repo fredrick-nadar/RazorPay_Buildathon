@@ -10,7 +10,6 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import type { ReactNode } from "react";
 import Link from "next/link";
 import type {
   AuditLogItem,
@@ -20,13 +19,14 @@ import type {
   RunListItem,
 } from "../../lib/types";
 import { formatCount, formatINR, formatRate, shortHash } from "../../lib/format";
-import { CaseRail, categoryMeta, StatusBadge } from "../../components/case-rail";
+import { CaseRail, StatusBadge } from "../../components/case-rail";
 import { CaseWorkspace } from "../../components/case-workspace";
 import { EvidenceChain } from "../../components/evidence-chain";
 import { AuditLog } from "../../components/audit-log";
 import { ApprovalModal } from "../../components/approval-modal";
 import {
   IconActivity,
+  IconArrowUp,
   IconBolt,
   IconBookOpen,
   IconCheck,
@@ -34,15 +34,17 @@ import {
   IconFlag,
   IconHome,
   IconLayers,
+  IconMic,
+  IconPlus,
+  IconPlug,
   IconPresentation,
-  IconRefresh,
   IconRoute,
   IconScale,
   IconScroll,
   IconShield,
   IconSidebar,
 } from "../../components/icons";
-import { Metric, Panel, Skeleton, Toast, type ToastState } from "../../components/primitives";
+import { Metric, Toast, type ToastState } from "../../components/primitives";
 import { CaseStatus } from "../../domain/enums";
 
 /* ------------------------------------------------------------------ */
@@ -107,8 +109,15 @@ function telemetryFromRun(run: RunListItem): RunTelemetry {
 /* ------------------------------------------------------------------ */
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
-
-type Tab = "investigation" | "evidence" | "audit";
+type Tab =
+  | "home"
+  | "approval_queue"
+  | "verified_resolved"
+  | "unresolved"
+  | "dossier"
+  | "evidence"
+  | "ledger"
+  | "audit";
 
 export default function ControlRoomPage() {
   const [runs, setRuns] = useState<RunListItem[]>([]);
@@ -118,7 +127,8 @@ export default function ControlRoomPage() {
   const [caseDetail, setCaseDetail] = useState<CaseDetail | null>(null);
   const [auditTrail, setAuditTrail] = useState<AuditLogItem[]>([]);
 
-  const [activeTab, setActiveTab] = useState<Tab>("investigation");
+  const [activeTab, setActiveTab] = useState<Tab>("home");
+  const [homePrompt, setHomePrompt] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
@@ -135,6 +145,39 @@ export default function ControlRoomPage() {
   const [modalAction, setModalAction] = useState<"APPROVE" | "REJECT">("APPROVE");
   const [modalOpen, setModalOpen] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
+
+  function handleHomeSubmit(prompt: string) {
+    const q = prompt.toLowerCase().trim();
+    if (!q) return;
+    if (q.includes("adversarial") || q.includes("agent") || q.includes("stress")) {
+      setActiveTab("dossier");
+      setStatusFilter("ALL");
+      void triggerRun("adversarial", "agent");
+    } else if (q.includes("reconcile") || q.includes("dev") || q.includes("batch")) {
+      setActiveTab("dossier");
+      setStatusFilter("ALL");
+      void triggerRun("dev", "rules-only");
+    } else if (q.includes("approval") || q.includes("approve")) {
+      setStatusFilter(CaseStatus.APPROVAL_REQUIRED);
+      setActiveTab("approval_queue");
+    } else if (q.includes("resolved") || q.includes("verified")) {
+      setStatusFilter(CaseStatus.VERIFIED_RESOLVED);
+      setActiveTab("verified_resolved");
+    } else if (q.includes("unresolved")) {
+      setStatusFilter(CaseStatus.UNRESOLVED);
+      setActiveTab("unresolved");
+    } else if (q.includes("audit") || q.includes("log") || q.includes("trail")) {
+      setActiveTab("audit");
+    } else if (q.includes("evidence") || q.includes("graph") || q.includes("chain")) {
+      setActiveTab("evidence");
+    } else if (q.includes("ledger") || q.includes("dry")) {
+      setActiveTab("ledger");
+    } else {
+      setSearchQuery(prompt);
+      setActiveTab("dossier");
+    }
+    setHomePrompt("");
+  }
 
   /* ----------------------------- fetching ------------------------- */
 
@@ -198,54 +241,54 @@ export default function ControlRoomPage() {
         body: JSON.stringify({ dataset_profile: profile, mode, force: true }),
       });
       if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as { detail?: string };
-        throw new Error(err.detail ?? `batch failed (${res.status})`);
+        const err = (await res.json()) as { detail?: string };
+        throw new Error(err.detail ?? `Reconciliation failed: ${res.status}`);
       }
-      const run = (await res.json()) as ReconcileResponse;
-      setActiveRunId(run.run_id);
-      await Promise.all([loadRuns(), loadCases(run.run_id)]);
+      const data = (await res.json()) as ReconcileResponse;
       setToast({
         kind: "success",
-        message: `Batch complete · ${run.run_id}${run.reused ? " (idempotent replay)" : ""}`,
+        message: `Batch ${shortHash(data.run_id)} complete · status: ${data.status}`,
       });
+      await loadRuns();
     } catch (e) {
       setToast({
         kind: "error",
-        message: `Reconciliation failed: ${e instanceof Error ? e.message : String(e)}`,
+        message: e instanceof Error ? e.message : "Run failed.",
       });
     } finally {
       setRunning(false);
     }
   }
 
-  async function confirmAuthority(reviewerId: string, notes: string) {
-    if (!selectedCaseId) return;
+  async function confirmAuthority(proofId: string, notes?: string) {
+    if (!caseDetail) return;
     setActionBusy(true);
     try {
-      const endpoint = modalAction === "APPROVE" ? "approve" : "reject";
-      const res = await fetch(`/api/v1/cases/${selectedCaseId}/${endpoint}`, {
+      const path = modalAction === "APPROVE" ? "approve" : "reject";
+      const res = await fetch(`/api/v1/cases/${caseDetail.case.case_id}/${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reviewer_id: reviewerId, notes }),
+        body: JSON.stringify({
+          proof_id: proofId,
+          reviewer_id: "Merchant Controller (UI)",
+          notes: notes ?? `${modalAction} authorized via dashboard`,
+        }),
       });
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as { detail?: string };
-        throw new Error(err.detail ?? `action failed (${res.status})`);
+        throw new Error(err.detail ?? "Action failed");
       }
-      setModalOpen(false);
       setToast({
         kind: "success",
-        message:
-          modalAction === "APPROVE"
-            ? `Simulated correction applied to ${selectedCaseId}`
-            : `${selectedCaseId} preserved as unresolved`,
+        message: `Case ${caseDetail.case.case_id} ${modalAction === "APPROVE" ? "approved" : "rejected"} cleanly.`,
       });
+      setModalOpen(false);
+      await selectCase(caseDetail.case.case_id);
       if (activeRunId) await loadCases(activeRunId);
-      await selectCase(selectedCaseId);
     } catch (e) {
       setToast({
         kind: "error",
-        message: e instanceof Error ? e.message : String(e),
+        message: e instanceof Error ? e.message : "Authority submission failed",
       });
     } finally {
       setActionBusy(false);
@@ -254,24 +297,8 @@ export default function ControlRoomPage() {
 
   /* ----------------------------- derived -------------------------- */
 
-  const activeRun = runs.find((r) => r.run_id === activeRunId);
-  const telemetry = activeRun ? telemetryFromRun(activeRun) : null;
-
-  /* ----------------------------- chrome --------------------------- */
-
-  const apiPill = (
-    <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 shadow-2xs">
-      <span aria-hidden className={`h-2 w-2 rounded-full ${apiOk === false ? "bg-rose-500" : apiOk ? "bg-emerald-500 animate-pulse-dot" : "bg-slate-400"}`} />
-      {apiOk === false ? "API offline" : apiOk ? "API online" : "Connecting"}
-    </span>
-  );
-
-  const syntheticPill = (
-    <span className="hidden md:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 shadow-2xs">
-      <IconShield size={12} className="text-blue-600" />
-      Tenant argus-demo · Synthetic data only
-    </span>
-  );
+  const activeRun = runs.find((r) => r.run_id === activeRunId) ?? runs[0];
+  const telemetry = activeRun ? telemetryFromRun(activeRun) : undefined;
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#f8fafc] text-slate-900 antialiased font-sans" suppressHydrationWarning>
@@ -333,16 +360,17 @@ export default function ControlRoomPage() {
                 setStatusFilter("ALL");
                 setCategoryFilter("ALL");
                 setSearchQuery("");
-                setActiveTab("investigation");
+                setActiveTab("home");
               }}
               title="Home"
-              className={`group flex h-10 w-full items-center rounded-xl transition-all duration-150 overflow-hidden ${statusFilter === "ALL" && categoryFilter === "ALL" && activeTab === "investigation"
-                ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
-                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                }`}
+              className={`group flex h-10 w-full items-center rounded-xl transition-all duration-150 overflow-hidden ${
+                activeTab === "home"
+                  ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                  : "text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+              }`}
             >
               <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-                <IconHome size={18} className="text-slate-700 transition-transform duration-200 group-hover:scale-110 group-hover:text-blue-600" />
+                <IconHome size={18} />
               </div>
               <div
                 className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
@@ -381,13 +409,17 @@ export default function ControlRoomPage() {
             >
               <div className="min-h-0 space-y-0.5 overflow-hidden">
                 <button
-                  onClick={() => void triggerRun("dev", "rules-only")}
+                  onClick={() => {
+                    setActiveTab("dossier");
+                    setStatusFilter("ALL");
+                    void triggerRun("dev", "rules-only");
+                  }}
                   disabled={running || booting}
                   title="Reconcile Dev"
                   className="group flex h-10 w-full items-center rounded-xl text-slate-700 hover:bg-slate-100/80 hover:text-slate-900 transition-all disabled:opacity-50 overflow-hidden"
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-                    <IconBolt size={17} className="text-slate-700 transition-transform duration-300 group-hover:scale-120 group-hover:text-amber-500 group-hover:rotate-12" />
+                    <IconBolt size={17} />
                   </div>
                   <div
                     className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
@@ -398,13 +430,17 @@ export default function ControlRoomPage() {
                 </button>
 
                 <button
-                  onClick={() => void triggerRun("adversarial", "agent")}
+                  onClick={() => {
+                    setActiveTab("dossier");
+                    setStatusFilter("ALL");
+                    void triggerRun("adversarial", "agent");
+                  }}
                   disabled={running || booting}
                   title="AI Adversarial"
                   className="group flex h-10 w-full items-center rounded-xl text-slate-700 hover:bg-slate-100/80 hover:text-slate-900 transition-all disabled:opacity-50 overflow-hidden"
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-                    <IconRoute size={17} className="text-slate-700 transition-transform duration-300 group-hover:scale-115 group-hover:text-purple-600 group-hover:rotate-12" />
+                    <IconRoute size={17} />
                   </div>
                   <div
                     className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
@@ -415,15 +451,23 @@ export default function ControlRoomPage() {
                 </button>
 
                 <button
-                  onClick={() => setStatusFilter(CaseStatus.APPROVAL_REQUIRED)}
+                  onClick={() => {
+                    setCategoryFilter("ALL");
+                    setSearchQuery("");
+                    setStatusFilter(CaseStatus.APPROVAL_REQUIRED);
+                    setActiveTab("approval_queue");
+                    const match = cases.find((c) => c.status === CaseStatus.APPROVAL_REQUIRED);
+                    if (match) void selectCase(match.case_id);
+                  }}
                   title="Approval Queue"
-                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${statusFilter === CaseStatus.APPROVAL_REQUIRED
-                    ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
-                    : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                    }`}
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${
+                    activeTab === "approval_queue"
+                      ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                      : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
+                  }`}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-                    <IconShield size={17} className="text-amber-600 transition-transform duration-200 group-hover:scale-115 group-hover:-translate-y-0.5" />
+                    <IconShield size={17} />
                   </div>
                   <div
                     className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
@@ -434,15 +478,23 @@ export default function ControlRoomPage() {
                 </button>
 
                 <button
-                  onClick={() => setStatusFilter(CaseStatus.VERIFIED_RESOLVED)}
+                  onClick={() => {
+                    setCategoryFilter("ALL");
+                    setSearchQuery("");
+                    setStatusFilter(CaseStatus.VERIFIED_RESOLVED);
+                    setActiveTab("verified_resolved");
+                    const match = cases.find((c) => c.status === CaseStatus.VERIFIED_RESOLVED);
+                    if (match) void selectCase(match.case_id);
+                  }}
                   title="Verified Resolved"
-                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${statusFilter === CaseStatus.VERIFIED_RESOLVED
-                    ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
-                    : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                    }`}
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${
+                    activeTab === "verified_resolved"
+                      ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                      : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
+                  }`}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-                    <IconCheck size={17} className="text-emerald-600 transition-transform duration-200 group-hover:scale-120 group-hover:text-emerald-500" />
+                    <IconCheck size={17} />
                   </div>
                   <div
                     className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
@@ -453,15 +505,23 @@ export default function ControlRoomPage() {
                 </button>
 
                 <button
-                  onClick={() => setStatusFilter(CaseStatus.UNRESOLVED)}
+                  onClick={() => {
+                    setCategoryFilter("ALL");
+                    setSearchQuery("");
+                    setStatusFilter(CaseStatus.UNRESOLVED);
+                    setActiveTab("unresolved");
+                    const match = cases.find((c) => c.status === CaseStatus.UNRESOLVED);
+                    if (match) void selectCase(match.case_id);
+                  }}
                   title="Unresolved Cases"
-                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${statusFilter === CaseStatus.UNRESOLVED
-                    ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
-                    : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                    }`}
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${
+                    activeTab === "unresolved"
+                      ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                      : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
+                  }`}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-                    <IconFlag size={17} className="text-rose-600 transition-transform duration-200 group-hover:scale-120 group-hover:rotate-12 group-hover:text-rose-500" />
+                    <IconFlag size={17} />
                   </div>
                   <div
                     className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
@@ -502,15 +562,19 @@ export default function ControlRoomPage() {
             >
               <div className="min-h-0 space-y-0.5 overflow-hidden">
                 <button
-                  onClick={() => setActiveTab("investigation")}
+                  onClick={() => {
+                    setStatusFilter("ALL");
+                    setActiveTab("dossier");
+                  }}
                   title="Case Dossier"
-                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "investigation"
-                    ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
-                    : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                    }`}
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${
+                    activeTab === "dossier"
+                      ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                      : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
+                  }`}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-                    <IconLayers size={17} className="text-slate-700 transition-transform duration-200 group-hover:scale-115 group-hover:text-blue-600" />
+                    <IconLayers size={17} />
                   </div>
                   <div
                     className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
@@ -523,13 +587,14 @@ export default function ControlRoomPage() {
                 <button
                   onClick={() => setActiveTab("evidence")}
                   title="Evidence Trace"
-                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "evidence"
-                    ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
-                    : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                    }`}
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${
+                    activeTab === "evidence"
+                      ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                      : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
+                  }`}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-                    <IconRoute size={17} className="text-slate-700 transition-transform duration-200 group-hover:scale-115 group-hover:text-indigo-600 group-hover:rotate-12" />
+                    <IconRoute size={17} />
                   </div>
                   <div
                     className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
@@ -540,12 +605,16 @@ export default function ControlRoomPage() {
                 </button>
 
                 <button
-                  onClick={() => setActiveTab("investigation")}
+                  onClick={() => setActiveTab("ledger")}
                   title="Ledger Dry-Run"
-                  className="group flex h-10 w-full items-center rounded-xl text-slate-700 hover:bg-slate-100/80 hover:text-slate-900 transition-all overflow-hidden"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${
+                    activeTab === "ledger"
+                      ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                      : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
+                  }`}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-                    <IconScale size={17} className="text-slate-700 transition-transform duration-200 group-hover:scale-115 group-hover:text-teal-600 group-hover:rotate-6" />
+                    <IconScale size={17} />
                   </div>
                   <div
                     className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
@@ -558,13 +627,14 @@ export default function ControlRoomPage() {
                 <button
                   onClick={() => setActiveTab("audit")}
                   title="Audit Trail"
-                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "audit"
-                    ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
-                    : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                    }`}
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${
+                    activeTab === "audit"
+                      ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                      : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
+                  }`}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-                    <IconScroll size={17} className="text-slate-700 transition-transform duration-200 group-hover:scale-115 group-hover:text-cyan-600 group-hover:-translate-y-0.5" />
+                    <IconScroll size={17} />
                   </div>
                   <div
                     className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
@@ -585,7 +655,7 @@ export default function ControlRoomPage() {
             className="group flex h-10 w-full items-center rounded-xl text-slate-700 overflow-hidden"
           >
             <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-              <IconActivity size={17} className="text-emerald-600 transition-transform duration-300 group-hover:scale-120 group-hover:text-emerald-500" />
+              <IconActivity size={17} />
             </div>
             <div
               className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
@@ -604,7 +674,7 @@ export default function ControlRoomPage() {
             className="group flex h-10 w-full items-center rounded-xl text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-all overflow-hidden"
           >
             <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-              <IconPresentation size={17} className="text-slate-700 transition-transform duration-200 group-hover:scale-115 group-hover:text-blue-600" />
+              <IconPresentation size={17} />
             </div>
             <div
               className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
@@ -620,7 +690,7 @@ export default function ControlRoomPage() {
             className="group flex h-10 w-full items-center rounded-xl text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-all overflow-hidden"
           >
             <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-              <IconBookOpen size={17} className="text-slate-700 transition-transform duration-200 group-hover:scale-115 group-hover:text-indigo-600" />
+              <IconBookOpen size={17} />
             </div>
             <div
               className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
@@ -632,252 +702,757 @@ export default function ControlRoomPage() {
         </div>
       </aside>
 
-      {/* ============================ Main Dashboard Area ============================ */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#f8fafc]">
-        {/* Top Header Bar */}
-        <header className="z-20 flex h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <h1 className="flex items-baseline gap-2 whitespace-nowrap text-[15px] font-bold text-slate-900">
-              Argus Control
-              <span className="font-mono text-[11px] font-medium text-slate-500">
-                · Reconciliation Room
-              </span>
+      {/* Main Content Area */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Minimalist Top Header */}
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white/95 px-6 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <h1 className="text-sm font-semibold tracking-tight text-slate-900">
+              Argus Control <span className="font-normal text-slate-400">· Financial Flight Recorder</span>
             </h1>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            {syntheticPill}
-            {apiPill}
-            <button
-              onClick={() => void triggerRun("dev", "rules-only")}
-              disabled={running || booting}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-800 shadow-2xs hover:bg-slate-50 hover:border-slate-300 transition-all disabled:opacity-50"
+          <div className="flex items-center gap-3">
+            <span className="hidden items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 sm:inline-flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+              Tenant argus-demo · Synthetic data only
+            </span>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${
+                apiOk === true
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : apiOk === false
+                    ? "border-rose-200 bg-rose-50 text-rose-800"
+                    : "border-slate-200 bg-slate-50 text-slate-600"
+              }`}
             >
-              {running ? (
-                <span aria-hidden className="h-3 w-3 animate-spin rounded-full border-2 border-slate-400 border-t-slate-800" />
-              ) : (
-                <IconBolt size={13} className="text-amber-600" />
-              )}
-              {running ? "Reconciling…" : "Reconcile dev"}
-            </button>
-            <button
-              onClick={() => void triggerRun("adversarial", "agent")}
-              disabled={running || booting}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-slate-800 transition-all disabled:opacity-50"
-            >
-              <IconRoute size={13} className="text-blue-300" />
-              AI adversarial batch
-            </button>
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  apiOk === true
+                    ? "bg-emerald-500 animate-pulse-dot"
+                    : apiOk === false
+                      ? "bg-rose-500"
+                      : "bg-slate-400"
+                }`}
+              />
+              {apiOk === true ? "API connected" : apiOk === false ? "API offline" : "Checking API…"}
+            </span>
           </div>
         </header>
 
-        {/* Telemetry Strip (7 Clean Metric KPI Cards) */}
-        {booting && (
-          <div className="grid shrink-0 grid-cols-2 gap-3 border-b border-slate-200 bg-white px-6 py-3 sm:grid-cols-3 xl:grid-cols-7">
-            {Array.from({ length: 7 }).map((_, i) => (
-              <Skeleton key={i} className="h-14" />
-            ))}
-          </div>
-        )}
+        {/* ============================ Distinct Dedicated Views ============================ */}
+        {activeTab === "home" && (
+          <div className="flex flex-1 flex-col items-center justify-center p-6 sm:p-12 overflow-y-auto">
+            <div className="w-full max-w-2xl mx-auto space-y-8 animate-fade">
+              {/* Minimal Greeting Header */}
+              <div className="text-center space-y-2">
+                <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900 font-sans">
+                  Let&apos;s reconcile.
+                </h2>
+                <p className="text-sm font-medium text-slate-500">
+                  Deterministic financial flight recorder with bounded AI exception investigation.
+                </p>
+              </div>
 
-        {!booting && telemetry && (
-          <div className="grid shrink-0 grid-cols-2 gap-x-4 gap-y-3 border-b border-slate-200 bg-white px-6 py-3 sm:grid-cols-3 xl:grid-cols-7">
-            <Metric
-              label="Active batch"
-              value={shortHash(telemetry.runId, 18)}
-              mono={false}
-              sub={
-                <span className="inline-flex items-center gap-1.5">
-                  <span className={`rounded px-1 py-px font-mono text-[9px] uppercase tracking-wide ${telemetry.mode === "agent" ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-slate-100 text-slate-600"}`}>
-                    {telemetry.mode}
-                  </span>
-                  {telemetry.status.toLowerCase()}
-                </span>
-              }
-            />
-            <Metric
-              label="Eligible records"
-              value={formatCount(telemetry.eligible)}
-              sub={
-                telemetry.quarantined !== undefined
-                  ? `${formatCount(telemetry.quarantined)} quarantined`
-                  : undefined
-              }
-            />
-            <Metric label="Deterministic match rate" tone="positive" value={telemetry.matchRate} />
-            <Metric
-              label="Exception cases"
-              tone="warning"
-              value={formatCount(telemetry.casesCount)}
-              sub={`${cases.length} in queue`}
-            />
-            <Metric
-              label="Residual variance"
-              tone="critical"
-              value={telemetry.residualVariance !== undefined ? formatINR(telemetry.residualVariance) : "\u2014"}
-            />
-            <Metric
-              label="Throughput"
-              value={
-                telemetry.recordsPerSecond !== undefined
-                  ? `${formatCount(Math.round(telemetry.recordsPerSecond))} rec/s`
-                  : "\u2014"
-              }
-              sub={
-                telemetry.totalSeconds !== undefined
-                  ? `${telemetry.totalSeconds.toFixed(2)} s total`
-                  : undefined
-              }
-            />
-            <Metric
-              label="Economic integrity"
-              value={
-                telemetry.econHash ? (
-                  <span title={telemetry.econHash}>{shortHash(telemetry.econHash)}</span>
-                ) : (
-                  "\u2014"
-                )
-              }
-              tone={telemetry.econHash ? "positive" : "default"}
-              sub={telemetry.econHash ? "SHA-256 · sealed" : "unsigned output"}
-            />
-          </div>
-        )}
+              {/* Central Command / Prompt Input Box (Matching reference image) */}
+              <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300 transition-all">
+                <input
+                  type="text"
+                  value={homePrompt}
+                  onChange={(e) => setHomePrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && homePrompt.trim()) {
+                      handleHomeSubmit(homePrompt);
+                    }
+                  }}
+                  placeholder="Ask anything, investigate exceptions, or run batches..."
+                  className="w-full text-base font-medium placeholder:text-slate-400 focus:outline-none bg-transparent px-2 pt-1 pb-4 text-slate-900"
+                />
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100/80">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      title="Add dataset or policy rule"
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-slate-800 hover:bg-slate-100 transition-colors"
+                    >
+                      <IconPlus size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab("dossier");
+                        setStatusFilter("ALL");
+                        void triggerRun("dev", "rules-only");
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50/80 px-3 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-100 transition-colors"
+                    >
+                      <IconPlug size={13} />
+                      Connect datasets
+                    </button>
+                  </div>
 
-        {!booting && !telemetry && (
-          <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-6">
-            <Panel className="mx-auto max-w-md p-6 text-center shadow-sm">
-              <p className="text-sm font-bold text-slate-900">No batches recorded yet</p>
-              <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
-                Run a reconciliation batch to populate the flight recorder. The
-                deterministic pipeline works without any model key configured.
-              </p>
-              <div className="mt-4 flex justify-center gap-2.5">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      title="Voice command"
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-slate-800 hover:bg-slate-100 transition-colors"
+                    >
+                      <IconMic size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (homePrompt.trim()) handleHomeSubmit(homePrompt);
+                        else {
+                          setActiveTab("dossier");
+                          setStatusFilter("ALL");
+                          void triggerRun("dev", "rules-only");
+                        }
+                      }}
+                      title="Submit command"
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 hover:bg-slate-800 text-white shadow-xs transition-transform duration-150 active:scale-95"
+                    >
+                      <IconArrowUp size={16} className="text-white" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3 Minimal Suggestion Action Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+                {/* Card 1: Reconcile Dev */}
                 <button
-                  onClick={() => void triggerRun("dev", "rules-only")}
-                  disabled={running}
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800"
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("dossier");
+                    setStatusFilter("ALL");
+                    void triggerRun("dev", "rules-only");
+                  }}
+                  className="group flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-5 text-left shadow-2xs hover:border-slate-300 hover:shadow-md transition-all duration-200"
                 >
-                  Reconcile dev batch
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-900 transition-colors mb-4">
+                    <IconBolt size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 transition-colors">
+                      Reconcile Dev Batch
+                    </h3>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                      Simulate synthetic records and run deterministic matching
+                    </p>
+                  </div>
+                </button>
+
+                {/* Card 2: Exception Queue */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStatusFilter("ALL");
+                    setActiveTab("dossier");
+                  }}
+                  className="group flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-5 text-left shadow-2xs hover:border-slate-300 hover:shadow-md transition-all duration-200"
+                >
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-900 transition-colors mb-4">
+                    <IconLayers size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 transition-colors">
+                      Exception Queue
+                    </h3>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                      Review bounded AI hypotheses & approval queue
+                    </p>
+                  </div>
+                </button>
+
+                {/* Card 3: AI Adversarial */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("dossier");
+                    setStatusFilter("ALL");
+                    void triggerRun("adversarial", "agent");
+                  }}
+                  className="group flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-5 text-left shadow-2xs hover:border-slate-300 hover:shadow-md transition-all duration-200"
+                >
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-900 transition-colors mb-4">
+                    <IconRoute size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 transition-colors">
+                      AI Adversarial Batch
+                    </h3>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                      Stress-test boundary cases & simulate corrections
+                    </p>
+                  </div>
                 </button>
               </div>
-            </Panel>
+
+              {/* Optional Active Batch Pill */}
+              {telemetry && (
+                <div className="flex justify-center pt-2">
+                  <button
+                    onClick={() => setActiveTab("dossier")}
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors"
+                  >
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse-dot" />
+                    Active Batch {shortHash(telemetry.runId, 12)} · {telemetry.matchRate} Match Rate · {cases.length} cases
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
-        {/* ============================ Workspace =========================== */}
-        <div className="flex min-h-0 flex-1">
-          <CaseRail
-            cases={cases}
-            loading={booting}
-            selectedCaseId={selectedCaseId}
-            onSelect={(id) => {
-              setActiveTab("investigation");
-              void selectCase(id);
-            }}
-            statusFilter={statusFilter}
-            onStatusFilter={setStatusFilter}
-            categoryFilter={categoryFilter}
-            onCategoryFilter={setCategoryFilter}
-            searchQuery={searchQuery}
-            onSearchQuery={setSearchQuery}
-          />
-
-          <main className="min-w-0 flex-1 overflow-y-auto bg-[#f8fafc]">
-            {!caseDetail ? (
-              <div className="flex h-full items-center justify-center p-8">
-                <div className="max-w-sm text-center">
-                  <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-400 shadow-sm">
-                    <IconScroll size={22} />
+        {/* ============================ Approval Queue View ============================ */}
+        {activeTab === "approval_queue" && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b border-amber-200/70 bg-amber-50/60 px-6 py-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-100 text-amber-700 shadow-2xs">
+                  <IconShield size={17} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold text-slate-900">Human Approval Queue</h2>
+                    <span className="rounded-full bg-amber-200/80 px-2 py-0.5 text-[11px] font-bold text-amber-900">
+                      {cases.filter((c) => c.status === CaseStatus.APPROVAL_REQUIRED).length} Pending Sign-off
+                    </span>
                   </div>
-                  <p className="text-sm font-bold text-slate-800">No case file open</p>
-                  <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
-                    Select an exception from the queue to open its dossier,
-                    hypotheses, deterministic proof, and audit trail.
+                  <p className="text-xs text-slate-600">
+                    Zero financial corrections apply without explicit human authorization. Review dry-run deltas before granting sign-off.
                   </p>
-                  {apiOk === false && (
-                    <button
-                      onClick={() => void loadRuns()}
-                      className="mx-auto mt-4 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50"
-                    >
-                      <IconRefresh size={13} /> Retry connection
-                    </button>
-                  )}
                 </div>
               </div>
-            ) : (
-              <div className="space-y-4 p-6">
-                {/* Case Header */}
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
-                    <span className="select-all font-mono text-base font-bold tracking-tight text-slate-900">
-                      {caseDetail.case.case_id}
-                    </span>
-                    <span aria-hidden className="text-slate-300">/</span>
-                    <span
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold"
-                      style={{ color: categoryMeta(caseDetail.case.category).hex }}
-                    >
-                      {categoryMeta(caseDetail.case.category).icon}
-                      {categoryMeta(caseDetail.case.category).label}
-                    </span>
-                    <StatusBadge status={caseDetail.case.status} />
-                  </div>
+            </div>
 
-                  <nav aria-label="Workspace views" className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5">
-                    {(
-                      [
-                        ["investigation", "Investigation", <IconShield key="i" size={13} />],
-                        ["evidence", "Evidence trace", <IconRoute key="e" size={13} />],
-                        ["audit", `Audit (${auditTrail.length})`, <IconScroll key="a" size={13} />],
-                      ] as Array<[Tab, string, ReactNode]>
-                    ).map(([tab, label, icon]) => (
-                      <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        aria-current={activeTab === tab ? "page" : undefined}
-                        className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${activeTab === tab
-                          ? "bg-white text-slate-900 shadow-sm"
-                          : "text-slate-500 hover:text-slate-900"
-                          }`}
-                      >
-                        {icon}
-                        {label}
-                      </button>
-                    ))}
-                  </nav>
+            <div className="flex min-h-0 flex-1">
+              <CaseRail
+                cases={cases.filter((c) => c.status === CaseStatus.APPROVAL_REQUIRED)}
+                loading={booting}
+                selectedCaseId={selectedCaseId}
+                onSelect={(id) => void selectCase(id)}
+                statusFilter={CaseStatus.APPROVAL_REQUIRED}
+                categoryFilter={categoryFilter}
+                onCategoryFilter={setCategoryFilter}
+                searchQuery={searchQuery}
+                onSearchQuery={setSearchQuery}
+                title="Approval Cases"
+                hideStatusFilters={true}
+              />
+              <main className="min-w-0 flex-1 overflow-y-auto bg-[#f8fafc] p-6">
+                {caseDetail && caseDetail.case.status === CaseStatus.APPROVAL_REQUIRED ? (
+                  <CaseWorkspace
+                    detail={caseDetail}
+                    onApprove={() => {
+                      setModalAction("APPROVE");
+                      setModalOpen(true);
+                    }}
+                    onReject={() => {
+                      setModalAction("REJECT");
+                      setModalOpen(true);
+                    }}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-center p-8">
+                    <div className="max-w-sm">
+                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-amber-500 shadow-sm">
+                        <IconShield size={22} />
+                      </div>
+                      <p className="text-sm font-bold text-slate-800">No Pending Approvals</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        All cases requiring human approval have been authorized or rejected.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </main>
+            </div>
+          </div>
+        )}
+
+        {/* ============================ Verified Resolved View ============================ */}
+        {activeTab === "verified_resolved" && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b border-emerald-200/70 bg-emerald-50/60 px-6 py-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 shadow-2xs">
+                  <IconCheck size={17} />
                 </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold text-slate-900">Verified Resolutions</h2>
+                    <span className="rounded-full bg-emerald-200/80 px-2 py-0.5 text-[11px] font-bold text-emerald-900">
+                      {cases.filter((c) => c.status === CaseStatus.VERIFIED_RESOLVED).length} Verified Closed
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    Exceptions closed with 100% deterministic verifier PASS, cited rule versions, and evidence hashes.
+                  </p>
+                </div>
+              </div>
+            </div>
 
-                {/* Tab Content */}
-                {activeTab === "investigation" && (
-                  <div className="animate-fade">
-                    <CaseWorkspace
-                      detail={caseDetail}
-                      onApprove={() => {
-                        setModalAction("APPROVE");
-                        setModalOpen(true);
-                      }}
-                      onReject={() => {
-                        setModalAction("REJECT");
-                        setModalOpen(true);
-                      }}
-                    />
+            <div className="flex min-h-0 flex-1">
+              <CaseRail
+                cases={cases.filter((c) => c.status === CaseStatus.VERIFIED_RESOLVED)}
+                loading={booting}
+                selectedCaseId={selectedCaseId}
+                onSelect={(id) => void selectCase(id)}
+                statusFilter={CaseStatus.VERIFIED_RESOLVED}
+                categoryFilter={categoryFilter}
+                onCategoryFilter={setCategoryFilter}
+                searchQuery={searchQuery}
+                onSearchQuery={setSearchQuery}
+                title="Verified Cases"
+                hideStatusFilters={true}
+              />
+              <main className="min-w-0 flex-1 overflow-y-auto bg-[#f8fafc] p-6">
+                {caseDetail && caseDetail.case.status === CaseStatus.VERIFIED_RESOLVED ? (
+                  <CaseWorkspace
+                    detail={caseDetail}
+                    onApprove={() => {
+                      setModalAction("APPROVE");
+                      setModalOpen(true);
+                    }}
+                    onReject={() => {
+                      setModalAction("REJECT");
+                      setModalOpen(true);
+                    }}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-center p-8">
+                    <div className="max-w-sm">
+                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-emerald-500 shadow-sm">
+                        <IconCheck size={22} />
+                      </div>
+                      <p className="text-sm font-bold text-slate-800">No Verified Cases in View</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Run a reconciliation batch to inspect verified exceptions.
+                      </p>
+                    </div>
                   </div>
                 )}
-                {activeTab === "evidence" && (
-                  <div className="animate-fade">
-                    <EvidenceChain evidence={caseDetail.case.evidence} />
+              </main>
+            </div>
+          </div>
+        )}
+
+        {/* ============================ Unresolved Cases View ============================ */}
+        {activeTab === "unresolved" && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b border-rose-200/70 bg-rose-50/60 px-6 py-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-100 text-rose-700 shadow-2xs">
+                  <IconFlag size={17} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold text-slate-900">Unresolved Exceptions & Ambiguities</h2>
+                    <span className="rounded-full bg-rose-200/80 px-2 py-0.5 text-[11px] font-bold text-rose-900">
+                      {cases.filter((c) => c.status === CaseStatus.UNRESOLVED).length} Unresolved
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    Cases left deliberately unresolved due to inconclusive evidence. Ambiguity cannot be overridden by AI confidence.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex min-h-0 flex-1">
+              <CaseRail
+                cases={cases.filter((c) => c.status === CaseStatus.UNRESOLVED)}
+                loading={booting}
+                selectedCaseId={selectedCaseId}
+                onSelect={(id) => void selectCase(id)}
+                statusFilter={CaseStatus.UNRESOLVED}
+                categoryFilter={categoryFilter}
+                onCategoryFilter={setCategoryFilter}
+                searchQuery={searchQuery}
+                onSearchQuery={setSearchQuery}
+                title="Unresolved Cases"
+                hideStatusFilters={true}
+              />
+              <main className="min-w-0 flex-1 overflow-y-auto bg-[#f8fafc] p-6">
+                {caseDetail && caseDetail.case.status === CaseStatus.UNRESOLVED ? (
+                  <CaseWorkspace
+                    detail={caseDetail}
+                    onApprove={() => {
+                      setModalAction("APPROVE");
+                      setModalOpen(true);
+                    }}
+                    onReject={() => {
+                      setModalAction("REJECT");
+                      setModalOpen(true);
+                    }}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-center p-8">
+                    <div className="max-w-sm">
+                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-rose-500 shadow-sm">
+                        <IconFlag size={22} />
+                      </div>
+                      <p className="text-sm font-bold text-slate-800">No Unresolved Cases in View</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        All exceptions in the current batch have verified or completed.
+                      </p>
+                    </div>
                   </div>
                 )}
-                {activeTab === "audit" && (
-                  <div className="animate-fade">
-                    <AuditLog events={auditTrail} />
-                  </div>
-                )}
+              </main>
+            </div>
+          </div>
+        )}
+
+        {/* ============================ Case Dossier View ============================ */}
+        {activeTab === "dossier" && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {/* Telemetry Strip */}
+            {!booting && telemetry && (
+              <div className="grid shrink-0 grid-cols-2 gap-x-4 gap-y-3 border-b border-slate-200 bg-white px-6 py-3 sm:grid-cols-3 xl:grid-cols-7">
+                <Metric
+                  label="Active batch"
+                  value={shortHash(telemetry.runId, 18)}
+                  mono={false}
+                  sub={
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={`rounded px-1 py-px font-mono text-[9px] uppercase tracking-wide ${telemetry.mode === "agent" ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-slate-100 text-slate-600"}`}>
+                        {telemetry.mode}
+                      </span>
+                      {telemetry.status.toLowerCase()}
+                    </span>
+                  }
+                />
+                <Metric
+                  label="Eligible records"
+                  value={formatCount(telemetry.eligible)}
+                  sub={
+                    telemetry.quarantined !== undefined
+                      ? `${formatCount(telemetry.quarantined)} quarantined`
+                      : undefined
+                  }
+                />
+                <Metric label="Deterministic match rate" tone="positive" value={telemetry.matchRate} />
+                <Metric
+                  label="Exception cases"
+                  tone="warning"
+                  value={formatCount(telemetry.casesCount)}
+                  sub={`${cases.length} in queue`}
+                />
+                <Metric
+                  label="Residual variance"
+                  tone="critical"
+                  value={telemetry.residualVariance !== undefined ? formatINR(telemetry.residualVariance) : "\u2014"}
+                />
+                <Metric
+                  label="Throughput"
+                  value={
+                    telemetry.recordsPerSecond !== undefined
+                      ? `${formatCount(Math.round(telemetry.recordsPerSecond))} rec/s`
+                      : "\u2014"
+                  }
+                  sub={
+                    telemetry.totalSeconds !== undefined
+                      ? `${telemetry.totalSeconds.toFixed(2)} s total`
+                      : undefined
+                  }
+                />
+                <Metric
+                  label="Economic integrity"
+                  value={
+                    telemetry.econHash ? (
+                      <span title={telemetry.econHash}>{shortHash(telemetry.econHash)}</span>
+                    ) : (
+                      "\u2014"
+                    )
+                  }
+                  tone={telemetry.econHash ? "positive" : "default"}
+                  sub={telemetry.econHash ? "SHA-256 · sealed" : "unsigned output"}
+                />
               </div>
             )}
-          </main>
-        </div>
+
+            <div className="flex min-h-0 flex-1">
+              <CaseRail
+                cases={cases}
+                loading={booting}
+                selectedCaseId={selectedCaseId}
+                onSelect={(id) => void selectCase(id)}
+                statusFilter={statusFilter}
+                onStatusFilter={setStatusFilter}
+                categoryFilter={categoryFilter}
+                onCategoryFilter={setCategoryFilter}
+                searchQuery={searchQuery}
+                onSearchQuery={setSearchQuery}
+                title="Exception Queue"
+                hideStatusFilters={false}
+              />
+              <main className="min-w-0 flex-1 overflow-y-auto bg-[#f8fafc] p-6">
+                {caseDetail ? (
+                  <CaseWorkspace
+                    detail={caseDetail}
+                    onApprove={() => {
+                      setModalAction("APPROVE");
+                      setModalOpen(true);
+                    }}
+                    onReject={() => {
+                      setModalAction("REJECT");
+                      setModalOpen(true);
+                    }}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-center p-8">
+                    <div className="max-w-sm">
+                      <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-400 shadow-sm">
+                        <IconScroll size={22} />
+                      </div>
+                      <p className="text-sm font-bold text-slate-800">No case file open</p>
+                      <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
+                        Select an exception from the queue to open its dossier, hypotheses, and deterministic proof.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </main>
+            </div>
+          </div>
+        )}
+
+        {/* ============================ Evidence Trace View ============================ */}
+        {activeTab === "evidence" && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b border-indigo-200/70 bg-indigo-50/60 px-6 py-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 shadow-2xs">
+                  <IconRoute size={17} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold text-slate-900">Interactive Evidence Trace Graph</h2>
+                    {caseDetail && (
+                      <span className="font-mono text-xs font-bold text-indigo-900 bg-indigo-100 px-2 py-0.5 rounded">
+                        {caseDetail.case.case_id}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    Cryptographically linked chain of Gateway Events, Settlement Batches, Bank Feeds, and Rule Validations.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex min-h-0 flex-1">
+              <CaseRail
+                cases={cases}
+                loading={booting}
+                selectedCaseId={selectedCaseId}
+                onSelect={(id) => void selectCase(id)}
+                statusFilter="ALL"
+                categoryFilter={categoryFilter}
+                onCategoryFilter={setCategoryFilter}
+                searchQuery={searchQuery}
+                onSearchQuery={setSearchQuery}
+                title="Trace Selector"
+                hideStatusFilters={true}
+              />
+              <main className="min-w-0 flex-1 overflow-y-auto bg-[#f8fafc] p-6">
+                {caseDetail ? (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-bold text-slate-900">{caseDetail.case.case_id}</span>
+                        <StatusBadge status={caseDetail.case.status} />
+                      </div>
+                      <span className="text-xs text-slate-500 font-medium">
+                        {caseDetail.case.evidence.length} Cited Evidence Artifacts
+                      </span>
+                    </div>
+                    <EvidenceChain evidence={caseDetail.case.evidence} />
+                  </div>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-center p-8">
+                    <div className="max-w-sm">
+                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-indigo-500 shadow-sm">
+                        <IconRoute size={22} />
+                      </div>
+                      <p className="text-sm font-bold text-slate-800">Select a Case to Trace Evidence</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Choose an exception from the list to visualize its cryptographic evidence nodes.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </main>
+            </div>
+          </div>
+        )}
+
+        {/* ============================ Ledger Dry-Run View ============================ */}
+        {activeTab === "ledger" && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b border-teal-200/70 bg-teal-50/60 px-6 py-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-100 text-teal-700 shadow-2xs">
+                  <IconScale size={17} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold text-slate-900">Ledger Simulation & Dry-Run Inspector</h2>
+                    {caseDetail && (
+                      <span className="font-mono text-xs font-bold text-teal-900 bg-teal-100 px-2 py-0.5 rounded">
+                        {caseDetail.case.case_id}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    Pre-calculated ledger deltas in signed integer paise. Live ledger entries are never modified directly.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex min-h-0 flex-1">
+              <CaseRail
+                cases={cases}
+                loading={booting}
+                selectedCaseId={selectedCaseId}
+                onSelect={(id) => void selectCase(id)}
+                statusFilter="ALL"
+                categoryFilter={categoryFilter}
+                onCategoryFilter={setCategoryFilter}
+                searchQuery={searchQuery}
+                onSearchQuery={setSearchQuery}
+                title="Ledger Cases"
+                hideStatusFilters={true}
+              />
+              <main className="min-w-0 flex-1 overflow-y-auto bg-[#f8fafc] p-6">
+                {caseDetail?.dry_run ? (
+                  <div className="space-y-6">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                      <h3 className="text-sm font-bold text-slate-900 mb-2">Simulated Correction Proposal</h3>
+                      <p className="text-xs text-slate-600 mb-4">{caseDetail.proof?.claim ?? "Deterministic ledger dry-run simulation"}</p>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-slate-100 pt-4">
+                        <div className="rounded-xl bg-slate-50 p-3">
+                          <span className="text-[11px] font-semibold text-slate-500 uppercase">Adjustment Delta</span>
+                          <p className="text-base font-bold text-slate-900 font-mono mt-1">
+                            {formatINR(caseDetail.dry_run.proposed_delta_paise)}
+                          </p>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 p-3">
+                          <span className="text-[11px] font-semibold text-slate-500 uppercase">Target Ledger Entry</span>
+                          <p className="text-xs font-mono font-bold text-slate-800 mt-1">
+                            {caseDetail.dry_run.target_ledger_entry_id ?? "New Simulated Correction"}
+                          </p>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 p-3">
+                          <span className="text-[11px] font-semibold text-slate-500 uppercase">Target Account</span>
+                          <p className="text-xs font-mono font-bold text-slate-800 mt-1">
+                            {caseDetail.dry_run.account_code ?? "DEFAULT_SETTLEMENT"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {caseDetail.case.status === CaseStatus.APPROVAL_REQUIRED && caseDetail.proof && (
+                        <div className="mt-6 flex justify-end gap-3 border-t border-slate-100 pt-4">
+                          <button
+                            onClick={() => {
+                              setModalAction("REJECT");
+                              setModalOpen(true);
+                            }}
+                            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                          >
+                            Reject Proposal
+                          </button>
+                          <button
+                            onClick={() => {
+                              setModalAction("APPROVE");
+                              setModalOpen(true);
+                            }}
+                            className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-xs transition-colors"
+                          >
+                            Authorize Simulated Correction
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-center p-8">
+                    <div className="max-w-sm">
+                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-teal-500 shadow-sm">
+                        <IconScale size={22} />
+                      </div>
+                      <p className="text-sm font-bold text-slate-800">No Ledger Correction Required</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        This case does not have a proposed ledger adjustment or has completed.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </main>
+            </div>
+          </div>
+        )}
+
+        {/* ============================ Audit Trail View ============================ */}
+        {activeTab === "audit" && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="flex items-center justify-between border-b border-cyan-200/70 bg-cyan-50/60 px-6 py-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-100 text-cyan-700 shadow-2xs">
+                  <IconScroll size={17} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold text-slate-900">Cryptographic Flight Recorder Log</h2>
+                    <span className="rounded-full bg-cyan-200/80 px-2 py-0.5 text-[11px] font-bold text-cyan-900">
+                      {auditTrail.length} Append-Only Events
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    Immutable sequence of verification passes, AI hypotheses, and human approval signatures.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex min-h-0 flex-1">
+              <CaseRail
+                cases={cases}
+                loading={booting}
+                selectedCaseId={selectedCaseId}
+                onSelect={(id) => void selectCase(id)}
+                statusFilter="ALL"
+                categoryFilter={categoryFilter}
+                onCategoryFilter={setCategoryFilter}
+                searchQuery={searchQuery}
+                onSearchQuery={setSearchQuery}
+                title="Audit Selector"
+                hideStatusFilters={true}
+              />
+              <main className="min-w-0 flex-1 overflow-y-auto bg-[#f8fafc] p-6">
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-900">Case Audit Trail</span>
+                      {caseDetail && <span className="font-mono text-xs text-slate-500 font-semibold">{caseDetail.case.case_id}</span>}
+                    </div>
+                    {telemetry?.econHash && (
+                      <span className="font-mono text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                        SHA-256: {shortHash(telemetry.econHash, 14)}
+                      </span>
+                    )}
+                  </div>
+                  <AuditLog events={auditTrail} />
+                </div>
+              </main>
+            </div>
+          </div>
+        )}
 
         {/* ============================ Overlays ============================ */}
         {modalOpen && caseDetail && (
