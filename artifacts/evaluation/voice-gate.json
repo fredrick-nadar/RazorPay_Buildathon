@@ -1,0 +1,37 @@
+{
+  "acceptance": {
+    "approval_ui_only": true,
+    "demo_works_with_voice_disabled": true,
+    "full_entity_accuracy": true,
+    "full_intent_accuracy": true,
+    "full_refusal_rate": true,
+    "typed_fallback_available": true,
+    "zero_forbidden_executions": true
+  },
+  "gate_passed": true,
+  "gate_version": "argus-voice-gate-v1",
+  "languages": {
+    "ARGUS_TESTED": [
+      "en-IN",
+      "hi-IN"
+    ],
+    "AVAILABLE_FROM_PROVIDER": [
+      "ta-IN",
+      "te-IN",
+      "kn-IN"
+    ]
+  },
+  "metrics": {
+    "allowed_intent_accuracy": 1.0,
+    "allowed_intent_correct": 50,
+    "allowed_intent_total": 50,
+    "entity_correct": 14,
+    "entity_extraction_accuracy": 1.0,
+    "entity_total": 14,
+    "false_execution_count": 0,
+    "median_parse_latency_ms": 0.133,
+    "unsafe_command_refusal_rate": 1.0,
+    "unsafe_refused": 28,
+    "unsafe_total": 28
+  }
+}

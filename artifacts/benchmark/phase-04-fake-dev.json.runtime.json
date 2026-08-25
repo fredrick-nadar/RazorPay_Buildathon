@@ -5148,7 +5148,7 @@
       {
         "case_id": "case-c9aa7339d62d",
         "category": "AMBIGUOUS_EVIDENCE",
-        "duration_ms": 2.81,
+        "duration_ms": 2.472,
         "outcome": "UNRESOLVED",
         "retries_used": 0,
         "tool_calls_used": 5
@@ -5156,7 +5156,7 @@
       {
         "case_id": "case-a7b551d1b818",
         "category": "AMBIGUOUS_EVIDENCE",
-        "duration_ms": 0.286,
+        "duration_ms": 0.303,
         "outcome": "UNRESOLVED",
         "retries_used": 0,
         "tool_calls_used": 5
@@ -5164,7 +5164,7 @@
       {
         "case_id": "case-492f56f74715",
         "category": "AMBIGUOUS_EVIDENCE",
-        "duration_ms": 0.24,
+        "duration_ms": 0.22,
         "outcome": "UNRESOLVED",
         "retries_used": 0,
         "tool_calls_used": 5
@@ -5247,7 +5247,7 @@
       "SKIPPED": 9,
       "UNRESOLVED": 3
     },
-    "total_duration_ms": 3.435,
+    "total_duration_ms": 3.093,
     "total_retries": 0,
     "total_tool_calls": 15
   },
@@ -9415,11 +9415,11 @@
     "numerator": 273
   },
   "timing_metrics": {
-    "ingest_seconds": 0.012313,
-    "reconcile_seconds": 0.021464,
-    "records_per_second": 4726.59,
-    "total_seconds": 0.059662,
-    "verify_seconds": 0.001262
+    "ingest_seconds": 0.013218,
+    "reconcile_seconds": 0.020361,
+    "records_per_second": 4872.77,
+    "total_seconds": 0.057873,
+    "verify_seconds": 0.001412
   },
   "unaccounted_record_keys": [],
   "verification": {
@@ -9445,9 +9445,9 @@
     "dry_run_abs_variance_after_paise": 0,
     "dry_run_count": 9,
     "latency_ms": {
-      "max_case_ms": 0.042,
-      "median_case_ms": 0.027,
-      "verify_total_ms": 1.262
+      "max_case_ms": 0.049,
+      "median_case_ms": 0.033,
+      "verify_total_ms": 1.412
     },
     "passing_proof_completeness": {
       "denominator": 9,

@@ -1,14 +1,25 @@
 @import "tailwindcss";
 
 /* ------------------------------------------------------------------ */
-/* ARGUS CONTROL — instrument-grade design tokens                      */
+/* ARGUS CONTROL — Clean, Minimal, Bright & Professional Design Tokens */
 /* ------------------------------------------------------------------ */
 
 :root {
-  --ink-0: #08090b;
-  --ink-1: #0b0b0e;
-  --ink-2: #101013;
-  --brass: #e6b45c;
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --primary: #0f172a;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #64748b;
+  --muted-foreground: #64748b;
+  --accent: #2563eb;
+  --accent-foreground: #ffffff;
+  --ring: #94a3b8;
 }
 
 html,
@@ -17,36 +28,28 @@ body {
 }
 
 body {
-  background-color: var(--ink-0);
-  color: #e4e4e7;
+  background-color: var(--background);
+  color: var(--foreground);
   font-feature-settings: "cv02", "cv03", "cv04", "ss01";
 }
 
-/* Blueprint grid + horizon glow, kept at whisper contrast */
+/* Minimal clean backdrop */
 .app-backdrop {
+  background-color: #f8fafc;
   background-image:
-    radial-gradient(1200px 420px at 50% -180px, rgba(230, 180, 92, 0.055), transparent 62%),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.022) 1px, transparent 1px),
-    linear-gradient(to right, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
-  background-size:
-    100% 100%,
-    44px 44px,
-    44px 44px;
+    linear-gradient(to right, rgba(226, 232, 240, 0.4) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(226, 232, 240, 0.4) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
 
-/* Hairline top accent on the shell */
+/* Hairline clean top accent on the shell */
 .app-shell::before {
   content: "";
   position: fixed;
   inset: 0 0 auto 0;
   z-index: 50;
-  height: 2px;
-  background: linear-gradient(
-    to right,
-    transparent,
-    rgba(230, 180, 92, 0.55),
-    transparent
-  );
+  height: 1px;
+  background: #e2e8f0;
   pointer-events: none;
 }
 
@@ -55,28 +58,27 @@ body {
 /* ------------------------------------------------------------------ */
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.09);
+  background: #cbd5e1;
   border-radius: 9999px;
-  border: 2px solid var(--ink-0);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: #94a3b8;
 }
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  scrollbar-color: #cbd5e1 transparent;
 }
 
 ::selection {
-  background: rgba(230, 180, 92, 0.28);
-  color: #fff7e8;
+  background: #dbeafe;
+  color: #1e3a8a;
 }
 
 /* ------------------------------------------------------------------ */
@@ -95,7 +97,7 @@ body {
 @keyframes rise-in {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.985);
+    transform: translateY(8px) scale(0.99);
   }
   to {
     opacity: 1;
@@ -104,25 +106,36 @@ body {
 }
 
 .animate-fade {
-  animation: fade-in 0.18s ease-out both;
+  animation: fade-in 0.15s ease-out both;
+}
+
+.animate-rise {
+  animation: rise-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes pulse-dot {
   0%,
   100% {
     opacity: 1;
+    transform: scale(1);
   }
   50% {
-    opacity: 0.35;
+    opacity: 0.4;
+    transform: scale(0.85);
   }
 }
 
 .animate-pulse-dot {
-  animation: pulse-dot 2.2s ease-in-out infinite;
+  animation: pulse-dot 2s ease-in-out infinite;
 }
 
-.animate-rise {
-  animation: rise-in 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+@keyframes voice-wave-bar {
+  0%, 100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1.35);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -14,6 +14,7 @@ from app.api.routes_meta import router as meta_router
 from app.api.routes_runs import router as runs_router
 from app.config import APP_NAME, Settings, get_settings
 from app.persistence.database import open_database
+from app.voice.api import router as voice_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -37,6 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(meta_router)
     app.include_router(runs_router)
     app.include_router(cases_router)
+    app.include_router(voice_router)
     return app
 
 

@@ -1,6 +1,7 @@
 /**
  * Case workspace: investigation dossier — summary, hypotheses, proof
  * package, dry-run ledger preview, and the authority action surface.
+ * Clean, minimal, bright & professional.
  */
 
 "use client";
@@ -33,16 +34,16 @@ function Figure({
 }) {
   const color =
     tone === "brass"
-      ? "text-[#e6b45c]"
+      ? "text-amber-700"
       : tone === "positive"
-        ? "text-emerald-300"
-        : "text-zinc-100";
+        ? "text-emerald-700"
+        : "text-slate-900";
   return (
-    <div className="rounded-xl border border-white/[0.055] bg-black/35 px-3.5 py-3">
-      <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+    <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-3 shadow-none">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
         {label}
       </div>
-      <div className={`mt-1.5 font-mono text-[15px] font-semibold tabular-nums tracking-tight ${color}`}>
+      <div className={`mt-1.5 font-mono text-[16px] font-bold tabular-nums tracking-tight ${color}`}>
         {value}
       </div>
     </div>
@@ -58,7 +59,7 @@ function CaseOverview({ detail }: { detail: CaseDetail }) {
         Case dossier
       </SectionLabel>
 
-      <p className="mt-3 text-[13px] leading-relaxed text-zinc-300">{c.summary}</p>
+      <p className="mt-3 text-sm leading-relaxed text-slate-700">{c.summary}</p>
 
       <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
         <Figure label="Initial variance" value={formatINR(c.variance_paise)} tone="brass" />
@@ -71,13 +72,13 @@ function CaseOverview({ detail }: { detail: CaseDetail }) {
       </div>
 
       {(c.reason_codes.length > 0 || c.evidence.length > 0) && (
-        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-white/[0.05] pt-3 text-[10.5px]">
-          <span className="inline-flex items-center gap-1.5" style={{ color: cat.hex }}>
+        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-100 pt-3 text-xs">
+          <span className="inline-flex items-center gap-1.5 font-semibold" style={{ color: cat.hex }}>
             {cat.icon}
             <span className="uppercase tracking-wider">{cat.label}</span>
           </span>
-          <span className="font-mono text-zinc-600">opened {formatUtc(c.opened_at_utc)}</span>
-          <span className="font-mono text-zinc-600">updated {formatUtc(c.updated_at_utc)}</span>
+          <span className="font-mono text-slate-500">opened {formatUtc(c.opened_at_utc)}</span>
+          <span className="font-mono text-slate-500">updated {formatUtc(c.updated_at_utc)}</span>
           {c.reason_codes.map((rc) => (
             <Badge key={rc} tone="neutral">
               {rc}
@@ -115,8 +116,8 @@ function Hypotheses({ detail }: { detail: CaseDetail }) {
     <Panel className="p-5">
       <SectionLabel
         right={
-          <span className="text-[10px] text-zinc-600">
-            falsified deterministically · no model arithmetic
+          <span className="text-[10.5px] font-medium text-slate-500">
+            Falsified deterministically · No model arithmetic
           </span>
         }
       >
@@ -124,7 +125,7 @@ function Hypotheses({ detail }: { detail: CaseDetail }) {
       </SectionLabel>
 
       {detail.hypotheses.length === 0 ? (
-        <p className="mt-4 text-xs leading-relaxed text-zinc-500">
+        <p className="mt-4 text-xs leading-relaxed text-slate-500">
           No hypothesis was recorded for this case.
         </p>
       ) : (
@@ -134,19 +135,19 @@ function Hypotheses({ detail }: { detail: CaseDetail }) {
             return (
               <li
                 key={h.hypothesis_id}
-                className="flex items-start justify-between gap-4 rounded-xl border border-white/[0.055] bg-black/30 px-4 py-3 transition-colors hover:border-white/[0.1]"
+                className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 transition-colors hover:border-slate-300 hover:bg-slate-50"
               >
                 <div className="min-w-0 space-y-1.5">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="select-all font-mono text-[10.5px] font-semibold text-[#e6b45c]/90">
+                    <span className="select-all font-mono text-xs font-bold text-blue-700">
                       {h.hypothesis_id}
                     </span>
-                    <span aria-hidden className="text-zinc-700">·</span>
-                    <span className="font-mono text-[10px] uppercase tracking-wide text-zinc-500">
+                    <span aria-hidden className="text-slate-300">·</span>
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-slate-500">
                       {humanize(h.category)}
                     </span>
                   </div>
-                  <p className="text-xs leading-relaxed text-zinc-200">{h.claim}</p>
+                  <p className="text-xs font-medium leading-relaxed text-slate-800">{h.claim}</p>
                   {h.reason_codes.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 pt-0.5">
                       {h.reason_codes.map((rc) => (
@@ -183,7 +184,7 @@ function ProofCard({ detail }: { detail: CaseDetail }) {
         <SectionLabel accent>
           <IconShield size={13} /> Proof package
         </SectionLabel>
-        <p className="mt-4 text-xs leading-relaxed text-zinc-500">
+        <p className="mt-4 text-xs leading-relaxed text-slate-500">
           No deterministic proof exists yet. A case cannot be resolved without a
           verifier PASS — ambiguity is preserved, never overridden.
         </p>
@@ -194,7 +195,7 @@ function ProofCard({ detail }: { detail: CaseDetail }) {
   const pass = proof.verifier_status === "PASS";
   return (
     <Panel
-      className={`p-5 ${pass ? "border-emerald-400/[0.14]" : "border-white/[0.07]"}`}
+      className={`p-5 ${pass ? "border-emerald-200" : "border-slate-200"}`}
     >
       <SectionLabel
         accent={pass}
@@ -207,49 +208,49 @@ function ProofCard({ detail }: { detail: CaseDetail }) {
         <IconShield size={13} /> Proof package
       </SectionLabel>
 
-      <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 rounded-xl border border-white/[0.055] bg-black/30 p-4 text-[11.5px] sm:grid-cols-2">
+      <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-xs sm:grid-cols-2">
         <div>
-          <dt className="text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-500">Verifier rule</dt>
-          <dd className="mt-1 select-all break-all font-mono text-zinc-200">
+          <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Verifier rule</dt>
+          <dd className="mt-1 select-all break-all font-mono font-semibold text-slate-800">
             {proof.verifier_rule_id}
-            <span className="ml-1.5 rounded bg-white/[0.06] px-1 py-px text-[9.5px] text-zinc-400">
+            <span className="ml-1.5 rounded bg-slate-200/80 px-1 py-0.5 text-[10px] text-slate-700">
               {proof.verifier_rule_version}
             </span>
           </dd>
         </div>
         <div>
-          <dt className="text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-500">Authority decision</dt>
-          <dd className="mt-1 font-mono uppercase tracking-wide text-zinc-200">
+          <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Authority decision</dt>
+          <dd className="mt-1 font-mono font-semibold uppercase tracking-wide text-slate-800">
             {proof.authority_decision.replaceAll("_", " ")}
           </dd>
         </div>
         <div>
-          <dt className="text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+          <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
             Supported evidence ({proof.supported_evidence.length})
           </dt>
-          <dd className="mt-1 select-all break-all font-mono text-[10.5px] leading-relaxed text-emerald-300/80">
+          <dd className="mt-1 select-all break-all font-mono text-[11px] font-semibold leading-relaxed text-emerald-700">
             {proof.supported_evidence.join("  ") || "\u2014"}
           </dd>
         </div>
         <div>
-          <dt className="text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+          <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
             Conflicting evidence ({proof.conflicting_evidence.length})
           </dt>
-          <dd className="mt-1 select-all break-all font-mono text-[10.5px] leading-relaxed text-rose-300/80">
+          <dd className="mt-1 select-all break-all font-mono text-[11px] font-semibold leading-relaxed text-rose-700">
             {proof.conflicting_evidence.join("  ") || "\u2014"}
           </dd>
         </div>
       </dl>
 
       {proof.rejected_alternatives.length > 0 && (
-        <div className="mt-3 rounded-xl border border-rose-400/[0.12] bg-rose-950/20 p-3.5">
-          <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-rose-300/80">
+        <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50/50 p-3.5">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-rose-800">
             Rejected alternatives ({proof.rejected_alternatives.length})
           </div>
           <ul className="mt-2 space-y-1">
             {proof.rejected_alternatives.map((alt, i) => (
-              <li key={i} className="flex items-center gap-2 font-mono text-[10.5px] text-zinc-400">
-                <IconX size={10} className="shrink-0 text-rose-400/70" />
+              <li key={i} className="flex items-center gap-2 font-mono text-xs text-rose-900">
+                <IconX size={11} className="shrink-0 text-rose-600" />
                 <span className="truncate">{JSON.stringify(alt)}</span>
               </li>
             ))}
@@ -258,13 +259,13 @@ function ProofCard({ detail }: { detail: CaseDetail }) {
       )}
 
       {proof.equations.length > 0 && (
-        <div className="mt-3 rounded-xl border border-cyan-400/[0.1] bg-cyan-950/15 p-3.5">
-          <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-300/80">
+        <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50/50 p-3.5">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-blue-800">
             Deterministic equations ({proof.equations.length})
           </div>
           <ul className="mt-2 space-y-1.5">
             {proof.equations.map((eq, i) => (
-              <li key={i} className="select-all break-all font-mono text-[10.5px] leading-relaxed text-zinc-300">
+              <li key={i} className="select-all break-all font-mono text-xs font-semibold leading-relaxed text-slate-800">
                 {JSON.stringify(eq)}
               </li>
             ))}
@@ -272,12 +273,12 @@ function ProofCard({ detail }: { detail: CaseDetail }) {
         </div>
       )}
 
-      <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-white/[0.055] bg-black/40 px-3.5 py-2.5">
+      <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
         <div className="min-w-0">
-          <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
             Canonical hash · SHA-256
           </div>
-          <div className="mt-0.5 select-all truncate font-mono text-[10.5px] text-zinc-400" title={proof.canonical_hash}>
+          <div className="mt-0.5 select-all truncate font-mono text-xs text-slate-700" title={proof.canonical_hash}>
             {proof.canonical_hash}
           </div>
         </div>
@@ -299,7 +300,7 @@ function DryRunConsole({
   detail: CaseDetail;
   onApprove: () => void;
   onReject: () => void;
-}) {
+  }) {
   const c = detail.case;
   const dry = detail.dry_run;
   const sim = detail.simulated_correction;
@@ -312,7 +313,7 @@ function DryRunConsole({
         </SectionLabel>
 
         {!dry && (
-          <p className="mt-4 text-xs leading-relaxed text-zinc-500">
+          <p className="mt-4 text-xs leading-relaxed text-slate-500">
             No dry-run preview exists for this case. Corrections are simulated
             against the sandbox ledger only after a verifier PASS.
           </p>
@@ -321,48 +322,48 @@ function DryRunConsole({
         {dry && (
           <>
             {/* Before → after */}
-            <div className="mt-4 overflow-hidden rounded-xl border border-white/[0.055]">
-              <div className="grid grid-cols-[1fr_auto_1fr] items-stretch divide-x divide-white/[0.055] bg-black/30">
+            <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+              <div className="grid grid-cols-[1fr_auto_1fr] items-stretch divide-x divide-slate-200 bg-slate-50">
                 <div className="px-4 py-3.5 text-center">
-                  <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                     Variance before
                   </div>
-                  <div className="mt-1.5 font-mono text-lg font-semibold tabular-nums text-[#e6b45c]">
+                  <div className="mt-1.5 font-mono text-lg font-bold tabular-nums text-amber-700">
                     {formatINR(dry.variance_before_paise)}
                   </div>
                 </div>
-                <div className="flex items-center px-2 text-zinc-600">
-                  <svg width="22" height="12" viewBox="0 0 22 12" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden>
+                <div className="flex items-center px-2 text-slate-400">
+                  <svg width="22" height="12" viewBox="0 0 22 12" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
                     <path d="M0 6h17" />
                     <path d="m14 1.5 4.5 4.5L14 10.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </div>
                 <div className="px-4 py-3.5 text-center">
-                  <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                     Variance after
                   </div>
                   <div
-                    className={`mt-1.5 font-mono text-lg font-semibold tabular-nums ${
-                      dry.variance_after_paise === 0 ? "text-emerald-300" : "text-rose-300"
+                    className={`mt-1.5 font-mono text-lg font-bold tabular-nums ${
+                      dry.variance_after_paise === 0 ? "text-emerald-700" : "text-rose-700"
                     }`}
                   >
                     {formatINR(dry.variance_after_paise)}
                   </div>
                 </div>
               </div>
-              <div className="flex items-center justify-between border-t border-white/[0.055] bg-black/20 px-4 py-2">
-                <span className="text-[10px] uppercase tracking-wider text-zinc-600">
+              <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-2">
+                <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-500">
                   Proposed signed entry
                 </span>
                 <span
-                  className={`font-mono text-[11.5px] font-semibold ${
-                    dry.proposed_delta_paise < 0 ? "text-rose-300" : "text-emerald-300"
+                  className={`font-mono text-xs font-bold ${
+                    dry.proposed_delta_paise < 0 ? "text-rose-700" : "text-emerald-700"
                   }`}
                 >
                   {dry.proposed_delta_paise < 0 ? "\u2212" : "+"}
                   {formatINR(Math.abs(dry.proposed_delta_paise)).replace("\u2212", "")}
                   {dry.account_code && (
-                    <span className="ml-2 select-all rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[9.5px] text-zinc-400">
+                    <span className="ml-2 select-all rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-700">
                       {dry.account_code}
                     </span>
                   )}
@@ -373,14 +374,14 @@ function DryRunConsole({
             {dry.warnings.length > 0 && (
               <ul className="mt-3 space-y-1">
                 {dry.warnings.map((w, i) => (
-                  <li key={i} className="rounded-lg border border-amber-400/[0.14] bg-amber-950/20 px-3 py-2 text-[11px] text-amber-200/90">
+                  <li key={i} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
                     {w}
                   </li>
                 ))}
               </ul>
             )}
 
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[9.5px] text-zinc-600">
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] text-slate-500">
               <span>preview {formatUtc(dry.created_at_utc)}</span>
               <span>simulation only · no external writes</span>
             </div>
@@ -389,47 +390,47 @@ function DryRunConsole({
 
         {/* Authority actions */}
         {c.status === CaseStatus.APPROVAL_REQUIRED && (
-          <div className="mt-5 space-y-2.5 border-t border-white/[0.05] pt-4">
+          <div className="mt-5 space-y-2.5 border-t border-slate-100 pt-4">
             <button
               onClick={onApprove}
-              className="group flex w-full items-center justify-center gap-2 rounded-xl border border-[#e6b45c]/25 bg-gradient-to-b from-[#e6b45c]/[0.16] to-[#e6b45c]/[0.07] py-3 text-xs font-bold tracking-wide text-[#f2d492] shadow-[0_10px_28px_-14px_rgba(230,180,92,0.55)] transition-all hover:border-[#e6b45c]/45 hover:from-[#e6b45c]/[0.24] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#e6b45c] active:scale-[0.99]"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-xs font-bold tracking-wide text-white shadow-sm transition-all hover:bg-slate-800 active:scale-[0.99]"
             >
               <IconShield size={14} />
               Authorize &amp; apply simulated correction
             </button>
             <button
               onClick={onReject}
-              className="w-full rounded-xl border border-white/[0.08] bg-white/[0.02] py-2.5 text-xs font-semibold text-zinc-400 transition-colors hover:border-rose-400/25 hover:bg-rose-950/25 hover:text-rose-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#e6b45c]"
+              className="w-full rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-semibold text-slate-700 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700"
             >
               Reject · preserve as unresolved
             </button>
-            <p className="pt-1 text-center text-[9.5px] leading-relaxed tracking-wide text-zinc-600">
+            <p className="pt-1 text-center text-[10px] font-medium leading-relaxed tracking-wide text-slate-500">
               Human authorization is required for every non-zero ledger delta.
             </p>
           </div>
         )}
 
         {c.status === CaseStatus.SIMULATED_APPLIED && sim && (
-          <div className="mt-5 space-y-2.5 rounded-xl border border-violet-400/[0.18] bg-violet-950/25 p-4">
-            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-violet-300">
-              <IconCheck size={13} />
+          <div className="mt-5 space-y-2.5 rounded-xl border border-purple-200 bg-purple-50/70 p-4">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-purple-900">
+              <IconCheck size={14} className="text-purple-700" />
               Simulated correction applied
             </div>
-            <dl className="space-y-1 font-mono text-[10.5px] text-zinc-400">
+            <dl className="space-y-1 font-mono text-xs text-purple-950">
               <div className="flex justify-between gap-3">
-                <dt className="text-zinc-600">Correction</dt>
-                <dd className="select-all truncate">{sim.correction_id}</dd>
+                <dt className="text-purple-700">Correction</dt>
+                <dd className="select-all truncate font-semibold">{sim.correction_id}</dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-zinc-600">Approval</dt>
-                <dd className="select-all truncate">{sim.approval_id}</dd>
+                <dt className="text-purple-700">Approval</dt>
+                <dd className="select-all truncate font-semibold">{sim.approval_id}</dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-zinc-600">Applied</dt>
+                <dt className="text-purple-700">Applied</dt>
                 <dd>{formatUtc(sim.applied_at_utc)}</dd>
               </div>
             </dl>
-            <p className="border-t border-white/[0.06] pt-2 text-[9.5px] leading-relaxed text-zinc-500">
+            <p className="border-t border-purple-200/60 pt-2 text-[10.5px] leading-relaxed text-purple-800">
               A new linked SIMULATED_CORRECTION entry was created. Imported
               records remain immutable.
             </p>
@@ -437,12 +438,12 @@ function DryRunConsole({
         )}
 
         {c.status === CaseStatus.UNRESOLVED && (
-          <div className="mt-5 rounded-xl border border-rose-400/[0.16] bg-rose-950/20 p-4">
-            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-rose-300">
+          <div className="mt-5 rounded-xl border border-rose-200 bg-rose-50/80 p-4">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-rose-900">
               <FlagGlyph />
               Preserved as unresolved
             </div>
-            <p className="mt-2 text-[11px] leading-relaxed text-zinc-400">
+            <p className="mt-2 text-xs leading-relaxed text-rose-950 font-medium">
               The evidence does not uniquely identify one valid explanation.
               ARGUS does not guess — this case stays open for human inspection
               rather than forcing an unverifiable closure.
@@ -451,8 +452,8 @@ function DryRunConsole({
         )}
 
         {(c.status === CaseStatus.VERIFIED_RESOLVED || c.status === CaseStatus.INVESTIGATING || c.status === CaseStatus.OPEN) && (
-          <div className="mt-4 flex items-center gap-2 border-t border-white/[0.05] pt-3 text-[10px] text-zinc-600">
-            <IconScroll size={12} />
+          <div className="mt-4 flex items-center gap-2 border-t border-slate-100 pt-3 text-[11px] font-medium text-slate-500">
+            <IconScroll size={13} />
             <span>Status: {c.status.replaceAll("_", " ").toLowerCase()} · awaiting deterministic pipeline progress</span>
           </div>
         )}
@@ -463,7 +464,7 @@ function DryRunConsole({
 
 function FlagGlyph() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M5 21V4.5C8 3 10.5 3 12 4.5s4 1.5 7 0V15c-3 1.5-5.5 1.5-7 0s-4-1.5-7 0" />
     </svg>
   );

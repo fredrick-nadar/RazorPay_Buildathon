@@ -9307,11 +9307,11 @@
     "numerator": 273
   },
   "timing_metrics": {
-    "ingest_seconds": 0.01367,
-    "reconcile_seconds": 0.015976,
-    "records_per_second": 5028.89,
-    "total_seconds": 0.056076,
-    "verify_seconds": 0.00128
+    "ingest_seconds": 0.012347,
+    "reconcile_seconds": 0.0147,
+    "records_per_second": 5158.11,
+    "total_seconds": 0.054671,
+    "verify_seconds": 0.001393
   },
   "unaccounted_record_keys": [],
   "verification": {
@@ -9337,9 +9337,9 @@
     "dry_run_abs_variance_after_paise": 0,
     "dry_run_count": 9,
     "latency_ms": {
-      "max_case_ms": 0.042,
+      "max_case_ms": 0.047,
       "median_case_ms": 0.029,
-      "verify_total_ms": 1.28
+      "verify_total_ms": 1.393
     },
     "passing_proof_completeness": {
       "denominator": 9,

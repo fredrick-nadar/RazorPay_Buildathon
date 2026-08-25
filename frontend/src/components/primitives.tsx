@@ -1,6 +1,6 @@
 /**
  * Control-room UI primitives: panels, badges, chips, skeletons, toasts.
- * Pure presentation; no financial truth logic.
+ * Pure presentation; clean, minimal, bright & professional.
  */
 
 "use client";
@@ -22,7 +22,7 @@ export function Panel({
 }) {
   return (
     <section
-      className={`rounded-2xl border border-white/[0.07] bg-[#101013]/90 shadow-[0_1px_0_rgba(255,255,255,0.03)_inset,0_18px_40px_-24px_rgba(0,0,0,0.9)] ${className}`}
+      className={`rounded-xl border border-slate-200 bg-white shadow-sm transition-all ${className}`}
     >
       {children}
     </section>
@@ -41,8 +41,8 @@ export function SectionLabel({
   return (
     <div className="flex items-center justify-between gap-3">
       <h2
-        className={`flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] ${
-          accent ? "text-[#e6b45c]" : "text-zinc-400"
+        className={`flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider ${
+          accent ? "text-blue-600" : "text-slate-700"
         }`}
       >
         {children}
@@ -71,28 +71,28 @@ export function Metric({
 }) {
   const toneClass =
     tone === "positive"
-      ? "text-emerald-300"
+      ? "text-emerald-600"
       : tone === "warning"
-        ? "text-[#e6b45c]"
+        ? "text-amber-600"
         : tone === "critical"
-          ? "text-rose-300"
+          ? "text-rose-600"
           : tone === "accent"
-            ? "text-cyan-300"
-            : "text-zinc-100";
+            ? "text-blue-600"
+            : "text-slate-900";
   return (
-    <div className="min-w-0">
-      <div className="text-[9.5px] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+    <div className="min-w-0 rounded-lg border border-slate-100 bg-white p-3 shadow-sm hover:border-slate-200 transition-all">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
         {label}
       </div>
       <div
-        className={`mt-1 truncate text-[15px] font-semibold leading-none tracking-tight ${toneClass} ${
+        className={`mt-1.5 truncate text-[16px] font-bold leading-none tracking-tight ${toneClass} ${
           mono ? "font-mono tabular-nums" : ""
         }`}
       >
         {value}
       </div>
       {sub != null && (
-        <div className="mt-1 truncate text-[10px] text-zinc-500">{sub}</div>
+        <div className="mt-1 truncate text-[10.5px] font-medium text-slate-500">{sub}</div>
       )}
     </div>
   );
@@ -103,13 +103,13 @@ export function Metric({
 /* ------------------------------------------------------------------ */
 
 const BADGE_TONES = {
-  neutral: "border-white/10 bg-white/[0.04] text-zinc-300",
-  brass: "border-[#e6b45c]/30 bg-[#e6b45c]/[0.08] text-[#e6b45c]",
-  positive: "border-emerald-400/25 bg-emerald-400/[0.08] text-emerald-300",
-  warning: "border-amber-400/25 bg-amber-400/[0.08] text-amber-300",
-  critical: "border-rose-400/25 bg-rose-400/[0.08] text-rose-300",
-  info: "border-cyan-400/25 bg-cyan-400/[0.08] text-cyan-300",
-  violet: "border-violet-400/25 bg-violet-400/[0.08] text-violet-300",
+  neutral: "border-slate-200 bg-slate-100/90 text-slate-700",
+  brass: "border-amber-200 bg-amber-50 text-amber-800",
+  positive: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  warning: "border-amber-200 bg-amber-50 text-amber-800",
+  critical: "border-rose-200 bg-rose-50 text-rose-800",
+  info: "border-blue-200 bg-blue-50 text-blue-800",
+  violet: "border-purple-200 bg-purple-50 text-purple-800",
 } as const;
 
 export type BadgeTone = keyof typeof BADGE_TONES;
@@ -127,7 +127,7 @@ export function Badge({
 }) {
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-[3px] text-[10px] font-semibold uppercase tracking-[0.08em] ${BADGE_TONES[tone]} ${className}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10.5px] font-semibold tracking-wide ${BADGE_TONES[tone]} ${className}`}
     >
       {icon}
       {children}
@@ -155,13 +155,13 @@ export function CopyChip({ value, label }: { value: string; label?: string }) {
       }}
       title={label ?? `Copy ${value}`}
       aria-label={label ?? `Copy ${value}`}
-      className="group inline-flex items-center gap-1.5 rounded-md border border-white/[0.06] bg-black/40 px-2 py-1 font-mono text-[10.5px] text-zinc-400 transition-colors hover:border-white/20 hover:text-zinc-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#e6b45c]"
+      className="group inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[10.5px] text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
     >
       <span className="max-w-[26ch] truncate">{label ?? value}</span>
       {copied ? (
-        <IconCheck size={11} className="text-emerald-400" />
+        <IconCheck size={11} className="text-emerald-600" />
       ) : (
-        <IconCopy size={11} className="opacity-50 group-hover:opacity-90" />
+        <IconCopy size={11} className="text-slate-400 group-hover:text-slate-600" />
       )}
     </button>
   );
@@ -175,7 +175,7 @@ export function Skeleton({ className = "" }: { className?: string }) {
   return (
     <div
       aria-hidden
-      className={`animate-pulse rounded-lg bg-white/[0.055] ${className}`}
+      className={`animate-pulse rounded-lg bg-slate-200/80 ${className}`}
     />
   );
 }
@@ -206,22 +206,22 @@ export function Toast({
   return (
     <div
       role="status"
-      className={`fixed bottom-5 right-5 z-[70] flex max-w-md items-start gap-3 rounded-xl border px-4 py-3 text-xs shadow-2xl backdrop-blur-xl animate-rise ${
+      className={`fixed bottom-5 right-5 z-[70] flex max-w-md items-start gap-3 rounded-xl border bg-white p-4 text-xs shadow-xl animate-rise ${
         isError
-          ? "border-rose-400/30 bg-rose-950/80 text-rose-100"
-          : "border-emerald-400/30 bg-emerald-950/80 text-emerald-100"
+          ? "border-rose-200 text-rose-900"
+          : "border-emerald-200 text-emerald-900"
       }`}
     >
-      <span className="mt-[1px] shrink-0">
-        {isError ? <IconX size={14} /> : <IconCheck size={14} />}
+      <span className={`mt-0.5 shrink-0 ${isError ? "text-rose-600" : "text-emerald-600"}`}>
+        {isError ? <IconX size={15} /> : <IconCheck size={15} />}
       </span>
-      <p className="leading-relaxed">{toast.message}</p>
+      <p className="font-medium leading-relaxed">{toast.message}</p>
       <button
         onClick={onDismiss}
         aria-label="Dismiss notification"
-        className="ml-2 shrink-0 opacity-60 transition-opacity hover:opacity-100"
+        className="ml-2 shrink-0 text-slate-400 transition-colors hover:text-slate-700"
       >
-        <IconX size={12} />
+        <IconX size={13} />
       </button>
     </div>
   );

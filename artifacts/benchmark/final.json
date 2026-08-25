@@ -198,8 +198,8 @@
     },
     "throughput": {
       "eligible_records": 1880,
-      "reconcile_seconds": 0.08469,
-      "records_per_second": 9859.51
+      "reconcile_seconds": 0.07118,
+      "records_per_second": 11250.57
     },
     "totals_comparison": {
       "equal": true,
@@ -287,9 +287,9 @@
         "dry_run_abs_variance_after_paise": 0,
         "dry_run_count": 18,
         "latency_ms": {
-          "max_case_ms": 0.049,
-          "median_case_ms": 0.026,
-          "verify_total_ms": 5.157
+          "max_case_ms": 0.046,
+          "median_case_ms": 0.024,
+          "verify_total_ms": 5.003
         },
         "passing_proof_completeness": {
           "denominator": 18,
@@ -786,11 +786,11 @@
     },
     "discrepancies": [],
     "duplicate_corrections_detected": 0,
-    "first_duration_s": 0.1831,
+    "first_duration_s": 0.1613,
     "first_economic_hash": "69c89e71cbf7b7cc39934069f0962bb3837d2a7c3fae7c275a8eedd7b476f31e",
     "first_run_id": "run-0201d96fceb44b7a",
     "is_idempotent": true,
-    "replay_duration_s": 0.1834,
+    "replay_duration_s": 0.1539,
     "replay_economic_hash": "69c89e71cbf7b7cc39934069f0962bb3837d2a7c3fae7c275a8eedd7b476f31e",
     "replay_run_id": "run-0201d96fceb44b7a"
   },

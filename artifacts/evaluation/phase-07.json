@@ -2,21 +2,21 @@
   "phase": 7,
   "phase_name": "Frozen Holdout Benchmark and Hardening",
   "status": "PASS",
-  "started_at_utc": "2026-08-24T19:30:50+00:00",
-  "finished_at_utc": "2026-08-24T19:31:58+00:00",
+  "started_at_utc": "2026-08-25T06:33:53+00:00",
+  "finished_at_utc": "2026-08-25T06:35:03+00:00",
   "environment": {
     "python": "Python 3.12.9",
     "node": "v22.13.1",
     "npm": "11.1.0",
     "platform": "Windows-11-10.0.26200-SP0",
-    "git": "git version 2.55.0.windows.5; HEAD 720f57a170acbb18245a85d703d732451ce861f6"
+    "git": "git version 2.55.0.windows.5; HEAD b81b56f52b12ba4bc33f024e60144c403281e593"
   },
   "commands": [
     {
       "name": "preflight-backend-imports",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -c import fastapi, uvicorn, pydantic_settings, pytest, ruff, mypy, httpx",
       "status": "PASS",
-      "duration_s": 0.6,
+      "duration_s": 0.59,
       "summary": "exit code 0",
       "gate_blocking": true
     },
@@ -32,7 +32,7 @@
       "name": "backend-ruff-check",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m ruff check backend",
       "status": "PASS",
-      "duration_s": 0.09,
+      "duration_s": 0.08,
       "summary": "All checks passed!",
       "gate_blocking": true
     },
@@ -40,31 +40,31 @@
       "name": "backend-ruff-format",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m ruff format --check backend",
       "status": "PASS",
-      "duration_s": 0.08,
-      "summary": "101 files already formatted",
+      "duration_s": 0.07,
+      "summary": "116 files already formatted",
       "gate_blocking": true
     },
     {
       "name": "backend-mypy",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m mypy",
       "status": "PASS",
-      "duration_s": 0.28,
-      "summary": "Success: no issues found in 61 source files",
+      "duration_s": 0.35,
+      "summary": "Success: no issues found in 72 source files",
       "gate_blocking": true
     },
     {
       "name": "backend-pytest",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-07-2ld042ts -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-07-zxo8v7gn -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 10.75,
-      "summary": "277 passed, 1 warning in 10.30s",
+      "duration_s": 8.56,
+      "summary": "319 passed, 1 warning in 8.14s",
       "gate_blocking": true
     },
     {
       "name": "frontend-lint",
       "command": "cmd /c npm --prefix frontend run lint",
       "status": "PASS",
-      "duration_s": 3.2,
+      "duration_s": 3.12,
       "summary": "> eslint .",
       "gate_blocking": true
     },
@@ -72,7 +72,7 @@
       "name": "frontend-typecheck",
       "command": "cmd /c npm --prefix frontend run typecheck",
       "status": "PASS",
-      "duration_s": 1.66,
+      "duration_s": 2.0,
       "summary": "> tsc --noEmit",
       "gate_blocking": true
     },
@@ -80,15 +80,15 @@
       "name": "frontend-test",
       "command": "cmd /c npm --prefix frontend run test",
       "status": "PASS",
-      "duration_s": 1.16,
-      "summary": "\u001b[2m   Duration \u001b[22m 404ms\u001b[2m (transform 33ms, setup 0ms, collect 36ms, tests 4ms, environment 0ms, prepare 175ms)\u001b[22m",
+      "duration_s": 1.13,
+      "summary": "\u001b[2m   Duration \u001b[22m 391ms\u001b[2m (transform 33ms, setup 0ms, collect 34ms, tests 4ms, environment 0ms, prepare 176ms)\u001b[22m",
       "gate_blocking": true
     },
     {
       "name": "frontend-build",
       "command": "cmd /c npm --prefix frontend run build",
       "status": "PASS",
-      "duration_s": 12.89,
+      "duration_s": 14.29,
       "summary": "○  (Static)  prerendered as static content",
       "gate_blocking": true
     },
@@ -96,7 +96,7 @@
       "name": "backend-boot-health",
       "command": "uvicorn boot + GET /api/v1/health,/version",
       "status": "PASS",
-      "duration_s": 1.15,
+      "duration_s": 1.1,
       "summary": "health ok, persistence sqlite ok, api v1",
       "gate_blocking": true
     },
@@ -104,7 +104,7 @@
       "name": "frontend-boot-home",
       "command": "next start boot + GET /",
       "status": "PASS",
-      "duration_s": 0.88,
+      "duration_s": 0.87,
       "summary": "home page served with ARGUS CONTROL heading",
       "gate_blocking": true
     },
@@ -128,39 +128,39 @@
       "name": "optional-e2e-playwright",
       "command": "cmd /c npm --prefix frontend run test:e2e",
       "status": "PASS",
-      "duration_s": 2.82,
-      "summary": "  1 passed (2.1s)",
+      "duration_s": 6.8,
+      "summary": "  2 passed (6.0s)",
       "gate_blocking": false
     },
     {
       "name": "dataset-generate-dev",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/generate_dataset.py --profile dev --seed 4104 --output-root D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-19zmixzz",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/generate_dataset.py --profile dev --seed 4104 --output-root D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-9s_x_fsq",
       "status": "PASS",
-      "duration_s": 0.11,
-      "summary": "generated in 13 ms",
+      "duration_s": 0.1,
+      "summary": "generated in 11 ms",
       "gate_blocking": true
     },
     {
       "name": "dataset-reproducibility-dev",
-      "command": "compare D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-19zmixzz\\dev vs D:\\Programming\\RazorPay_Buildathon\\datasets\\dev",
+      "command": "compare D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-9s_x_fsq\\dev vs D:\\Programming\\RazorPay_Buildathon\\datasets\\dev",
       "status": "PASS",
-      "duration_s": 0.03,
+      "duration_s": 0.07,
       "summary": "byte-identical regeneration of inputs, labels, and manifests",
       "gate_blocking": true
     },
     {
       "name": "dataset-generate-adversarial",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/generate_dataset.py --profile adversarial --seed 4105 --output-root D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-19zmixzz",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/generate_dataset.py --profile adversarial --seed 4105 --output-root D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-9s_x_fsq",
       "status": "PASS",
-      "duration_s": 0.1,
-      "summary": "generated in 8 ms",
+      "duration_s": 0.09,
+      "summary": "generated in 7 ms",
       "gate_blocking": true
     },
     {
       "name": "dataset-reproducibility-adversarial",
-      "command": "compare D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-19zmixzz\\adversarial vs D:\\Programming\\RazorPay_Buildathon\\datasets\\adversarial",
+      "command": "compare D:\\Programming\\RazorPay_Buildathon\\tmp\\verify-phase-01-datasets-9s_x_fsq\\adversarial vs D:\\Programming\\RazorPay_Buildathon\\datasets\\adversarial",
       "status": "PASS",
-      "duration_s": 0.02,
+      "duration_s": 0.01,
       "summary": "byte-identical regeneration of inputs, labels, and manifests",
       "gate_blocking": true
     },
@@ -168,16 +168,16 @@
       "name": "check-label-isolation",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/check_label_isolation.py",
       "status": "PASS",
-      "duration_s": 0.19,
+      "duration_s": 0.18,
       "summary": "label firewall holds: runtime code cannot reach ground-truth labels",
       "gate_blocking": true
     },
     {
       "name": "dataset-tests",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_dataset_generation.py backend/tests/unit/test_dataset_injectors.py backend/tests/unit/test_label_isolation.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-01-5ma29xbn -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_dataset_generation.py backend/tests/unit/test_dataset_injectors.py backend/tests/unit/test_label_isolation.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-01-7huatexx -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 1.44,
-      "summary": "55 passed in 1.09s",
+      "duration_s": 1.34,
+      "summary": "55 passed in 0.98s",
       "gate_blocking": true
     },
     {
@@ -190,57 +190,57 @@
     },
     {
       "name": "unit-tests-migration",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_migration.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-dif5puys\\unit-tests-migration -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_migration.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-5jumoju3\\unit-tests-migration -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 0.76,
-      "summary": "9 passed in 0.39s",
+      "duration_s": 0.77,
+      "summary": "9 passed in 0.35s",
       "gate_blocking": true
     },
     {
       "name": "unit-tests-normalization",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_normalization.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-dif5puys\\unit-tests-normalization -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_normalization.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-5jumoju3\\unit-tests-normalization -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 0.71,
-      "summary": "16 passed in 0.33s",
+      "duration_s": 0.68,
+      "summary": "16 passed in 0.31s",
       "gate_blocking": true
     },
     {
       "name": "unit-tests-reconciliation",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_reconciliation_matching.py backend/tests/unit/test_reconciliation_cases.py backend/tests/unit/test_reconciliation_totals.py backend/tests/unit/test_reconciliation_graph.py backend/tests/unit/test_reconciliation_idempotency.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-dif5puys\\unit-tests-reconciliation -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_reconciliation_matching.py backend/tests/unit/test_reconciliation_cases.py backend/tests/unit/test_reconciliation_totals.py backend/tests/unit/test_reconciliation_graph.py backend/tests/unit/test_reconciliation_idempotency.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-5jumoju3\\unit-tests-reconciliation -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 2.17,
-      "summary": "43 passed in 1.81s",
+      "duration_s": 2.08,
+      "summary": "43 passed in 1.74s",
       "gate_blocking": true
     },
     {
       "name": "unit-tests-benchmark-evaluator",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_benchmark_evaluator.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-dif5puys\\unit-tests-benchmark-evaluator -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_benchmark_evaluator.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-5jumoju3\\unit-tests-benchmark-evaluator -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 1.37,
-      "summary": "10 passed in 1.01s",
+      "duration_s": 1.34,
+      "summary": "10 passed in 0.97s",
       "gate_blocking": true
     },
     {
       "name": "integration-rules-only-run",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/integration/test_rules_only_run.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-dif5puys\\integration-rules-only-run -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/integration/test_rules_only_run.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-5jumoju3\\integration-rules-only-run -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 1.33,
-      "summary": "6 passed in 0.94s",
+      "duration_s": 1.25,
+      "summary": "6 passed in 0.90s",
       "gate_blocking": true
     },
     {
       "name": "adversarial-tests",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/adversarial/test_phase2_adversarial.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-dif5puys\\adversarial-tests -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/adversarial/test_phase2_adversarial.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-02-5jumoju3\\adversarial-tests -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 0.63,
-      "summary": "14 passed in 0.25s",
+      "duration_s": 0.58,
+      "summary": "14 passed in 0.24s",
       "gate_blocking": true
     },
     {
       "name": "benchmark-rules-only-dev",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/run_benchmark.py --dataset datasets/dev --mode rules-only --output artifacts/benchmark/phase-02-dev.json",
       "status": "PASS",
-      "duration_s": 0.71,
+      "duration_s": 0.51,
       "summary": "[run_benchmark] PASS",
       "gate_blocking": true
     },
@@ -256,48 +256,48 @@
       "name": "phase2-gate-assertions",
       "command": "evaluator-side phase 2 acceptance assertions",
       "status": "PASS",
-      "duration_s": 0.09,
+      "duration_s": 0.1,
       "summary": "dev precision 1.0 (explicit denominators); 282 eligible; 12 cases 3x4 matched one-to-one on anchors; idempotent rerun; graph valid; adversarial 64 eligible, 2 quarantined, 1 duplicate, 3 cases",
       "gate_blocking": true
     },
     {
       "name": "scope-safety",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_scope_safety.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-03-qv9z9uej\\scope-safety -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_scope_safety.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-03-6nyjoqbq\\scope-safety -p no:cacheprovider",
       "status": "PASS",
       "duration_s": 0.5,
-      "summary": "3 passed in 0.14s",
+      "summary": "3 passed in 0.15s",
       "gate_blocking": true
     },
     {
       "name": "unit-tests-verifier",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_verifier_phase3.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-03-qv9z9uej\\unit-tests-verifier -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_verifier_phase3.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-03-6nyjoqbq\\unit-tests-verifier -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 0.79,
-      "summary": "6 passed in 0.40s",
+      "duration_s": 0.73,
+      "summary": "6 passed in 0.38s",
       "gate_blocking": true
     },
     {
       "name": "unit-tests-migration-v3",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_migration.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-03-qv9z9uej\\unit-tests-migration-v3 -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_migration.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-03-6nyjoqbq\\unit-tests-migration-v3 -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 0.73,
-      "summary": "9 passed in 0.37s",
+      "duration_s": 0.7,
+      "summary": "9 passed in 0.35s",
       "gate_blocking": true
     },
     {
       "name": "unit-tests-benchmark-evaluator-v3",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_benchmark_evaluator.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-03-qv9z9uej\\unit-tests-benchmark-evaluator-v3 -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_benchmark_evaluator.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-03-6nyjoqbq\\unit-tests-benchmark-evaluator-v3 -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 1.4,
-      "summary": "10 passed in 1.04s",
+      "duration_s": 1.33,
+      "summary": "10 passed in 0.96s",
       "gate_blocking": true
     },
     {
       "name": "integration-dry-run",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/integration/test_dry_run.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-03-qv9z9uej\\integration-dry-run -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/integration/test_dry_run.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-03-6nyjoqbq\\integration-dry-run -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 0.67,
-      "summary": "1 passed in 0.31s",
+      "duration_s": 0.64,
+      "summary": "1 passed in 0.29s",
       "gate_blocking": true
     },
     {
@@ -312,7 +312,7 @@
       "name": "benchmark-rules-only-phase3-adversarial",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/run_benchmark.py --dataset datasets/adversarial --mode rules-only --output artifacts/benchmark/phase-03-adversarial.json",
       "status": "PASS",
-      "duration_s": 0.58,
+      "duration_s": 0.44,
       "summary": "[run_benchmark] PASS",
       "gate_blocking": true
     },
@@ -326,7 +326,7 @@
     },
     {
       "name": "unit-tests-investigator-tools",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_investigator_tools.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-04-uxrccovv\\unit-tests-investigator-tools -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_investigator_tools.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-04-8i286rlp\\unit-tests-investigator-tools -p no:cacheprovider",
       "status": "PASS",
       "duration_s": 0.52,
       "summary": "17 passed in 0.16s",
@@ -334,33 +334,33 @@
     },
     {
       "name": "unit-tests-investigator-schemas",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_investigator_schemas.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-04-uxrccovv\\unit-tests-investigator-schemas -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_investigator_schemas.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-04-8i286rlp\\unit-tests-investigator-schemas -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 0.54,
-      "summary": "15 passed in 0.17s",
+      "duration_s": 0.48,
+      "summary": "15 passed in 0.14s",
       "gate_blocking": true
     },
     {
       "name": "unit-tests-investigator-engine",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_investigator_engine.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-04-uxrccovv\\unit-tests-investigator-engine -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_investigator_engine.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-04-8i286rlp\\unit-tests-investigator-engine -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 1.01,
-      "summary": "11 passed in 0.62s",
+      "duration_s": 0.98,
+      "summary": "11 passed in 0.59s",
       "gate_blocking": true
     },
     {
       "name": "adversarial-tests-investigator-boundaries",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/adversarial/test_investigator_boundaries.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-04-uxrccovv\\adversarial-tests-investigator-boundaries -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/adversarial/test_investigator_boundaries.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-04-8i286rlp\\adversarial-tests-investigator-boundaries -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 0.55,
-      "summary": "9 passed in 0.18s",
+      "duration_s": 0.56,
+      "summary": "9 passed in 0.19s",
       "gate_blocking": true
     },
     {
       "name": "scope-safety-phase4",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_scope_safety.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-04-uxrccovv\\scope-safety-phase4 -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_scope_safety.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-04-8i286rlp\\scope-safety-phase4 -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 0.5,
+      "duration_s": 0.47,
       "summary": "3 passed in 0.15s",
       "gate_blocking": true
     },
@@ -376,7 +376,7 @@
       "name": "benchmark-agent-fake-phase4-adversarial",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/run_benchmark.py --dataset datasets/adversarial --mode agent --provider fake --output artifacts/benchmark/phase-04-fake-adversarial.json",
       "status": "PASS",
-      "duration_s": 0.52,
+      "duration_s": 0.44,
       "summary": "[run_benchmark] PASS",
       "gate_blocking": true
     },
@@ -384,32 +384,32 @@
       "name": "phase4-gate-assertions",
       "command": "evaluator-side phase 4 acceptance assertions",
       "status": "PASS",
-      "duration_s": 0.05,
+      "duration_s": 0.12,
       "summary": "fake-provider dev outcome/delta 12/12; false passes 0; escalation 3/3; proofs 9/9; dry-run error 0; investigation summary persisted; adversarial 3/3 unresolved; firewall covers investigator",
       "gate_blocking": true
     },
     {
       "name": "unit-tests-corrections-application",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_corrections_application.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-05-3uscmz7d\\unit-tests-corrections-application -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_corrections_application.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-05-1_mt85p_\\unit-tests-corrections-application -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 0.66,
-      "summary": "3 passed in 0.30s",
+      "duration_s": 0.62,
+      "summary": "3 passed in 0.25s",
       "gate_blocking": true
     },
     {
       "name": "unit-tests-audit-service",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_audit_service.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-05-3uscmz7d\\unit-tests-audit-service -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_audit_service.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-05-1_mt85p_\\unit-tests-audit-service -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 0.57,
-      "summary": "2 passed in 0.20s",
+      "duration_s": 0.54,
+      "summary": "2 passed in 0.19s",
       "gate_blocking": true
     },
     {
       "name": "integration-golden-flow",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/integration/test_golden_flow.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-05-3uscmz7d\\integration-golden-flow -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/integration/test_golden_flow.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-05-1_mt85p_\\integration-golden-flow -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 0.99,
-      "summary": "1 passed, 1 warning in 0.54s",
+      "duration_s": 1.02,
+      "summary": "1 passed, 1 warning in 0.64s",
       "gate_blocking": true
     },
     {
@@ -422,33 +422,33 @@
     },
     {
       "name": "unit-tests-failure-injector",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_failure_injector.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-06-41mih69p\\unit-tests-failure-injector -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_failure_injector.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-06-1ugsefr1\\unit-tests-failure-injector -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 0.62,
-      "summary": "5 passed in 0.21s",
+      "duration_s": 0.53,
+      "summary": "5 passed in 0.18s",
       "gate_blocking": true
     },
     {
       "name": "unit-tests-razorpay-adapter",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_razorpay_adapter.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-06-41mih69p\\unit-tests-razorpay-adapter -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit/test_razorpay_adapter.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-06-1ugsefr1\\unit-tests-razorpay-adapter -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 0.58,
-      "summary": "7 passed in 0.20s",
+      "duration_s": 0.51,
+      "summary": "7 passed in 0.17s",
       "gate_blocking": true
     },
     {
       "name": "adversarial-tests-event-failures",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/adversarial/test_event_failures.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-06-41mih69p\\adversarial-tests-event-failures -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/adversarial/test_event_failures.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-06-1ugsefr1\\adversarial-tests-event-failures -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 1.48,
-      "summary": "5 passed in 1.09s",
+      "duration_s": 1.45,
+      "summary": "5 passed in 1.08s",
       "gate_blocking": true
     },
     {
       "name": "benchmark-adversarial-failure-lab",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/run_benchmark.py --dataset datasets/adversarial --mode failure-lab",
       "status": "PASS",
-      "duration_s": 0.79,
+      "duration_s": 0.56,
       "summary": "[run_benchmark] PASS",
       "gate_blocking": true
     },
@@ -464,8 +464,8 @@
       "name": "dataset-generate-holdout",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/generate_dataset.py --profile holdout --unfreeze-holdout --force",
       "status": "PASS",
-      "duration_s": 0.14,
-      "summary": "generated in 36 ms",
+      "duration_s": 0.12,
+      "summary": "generated in 33 ms",
       "gate_blocking": true
     },
     {
@@ -478,17 +478,17 @@
     },
     {
       "name": "unit-tests-hardening-battery",
-      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/hardening/test_hardening_battery.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-07-w1ixg19s\\unit-tests-hardening-battery -p no:cacheprovider",
+      "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe -m pytest backend/tests/hardening/test_hardening_battery.py -q --basetemp D:\\Programming\\RazorPay_Buildathon\\tmp\\pytest-phase-07-f27nqx4y\\unit-tests-hardening-battery -p no:cacheprovider",
       "status": "PASS",
-      "duration_s": 1.49,
-      "summary": "10 passed in 1.10s",
+      "duration_s": 1.21,
+      "summary": "10 passed in 0.86s",
       "gate_blocking": true
     },
     {
       "name": "benchmark-rules-only-holdout",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/run_benchmark.py --dataset datasets/holdout --mode rules-only --output artifacts/benchmark/phase-07-holdout-rules-only.json",
       "status": "PASS",
-      "duration_s": 0.82,
+      "duration_s": 0.81,
       "summary": "[run_benchmark] PASS",
       "gate_blocking": true
     },
@@ -496,7 +496,7 @@
       "name": "benchmark-final-agent-holdout",
       "command": "D:\\Programming\\RazorPay_Buildathon\\.venv\\Scripts\\python.exe scripts/run_benchmark.py --dataset datasets/holdout --mode agent --provider fake --output artifacts/benchmark/final.json",
       "status": "PASS",
-      "duration_s": 1.31,
+      "duration_s": 1.14,
       "summary": "[run_benchmark] PASS",
       "gate_blocking": true
     },
@@ -510,7 +510,7 @@
     }
   ],
   "counts": {
-    "backend_tests_passed": 277,
+    "backend_tests_passed": 319,
     "backend_tests_failed": 0,
     "backend_tests_skipped": 0,
     "dataset_tests_passed": 55,
@@ -618,8 +618,8 @@
         },
         "throughput": {
           "eligible_records": 282,
-          "reconcile_seconds": 0.015976,
-          "records_per_second": 5028.89
+          "reconcile_seconds": 0.0147,
+          "records_per_second": 5158.11
         },
         "graph": {
           "edge_count": 297,
@@ -688,8 +688,8 @@
         },
         "throughput": {
           "eligible_records": 64,
-          "reconcile_seconds": 0.007555,
-          "records_per_second": 1644.47
+          "reconcile_seconds": 0.007069,
+          "records_per_second": 1817.43
         },
         "graph": {
           "edge_count": 69,
@@ -845,7 +845,7 @@
             {
               "case_id": "case-c9aa7339d62d",
               "category": "AMBIGUOUS_EVIDENCE",
-              "duration_ms": 2.81,
+              "duration_ms": 2.472,
               "outcome": "UNRESOLVED",
               "retries_used": 0,
               "tool_calls_used": 5
@@ -853,7 +853,7 @@
             {
               "case_id": "case-a7b551d1b818",
               "category": "AMBIGUOUS_EVIDENCE",
-              "duration_ms": 0.286,
+              "duration_ms": 0.303,
               "outcome": "UNRESOLVED",
               "retries_used": 0,
               "tool_calls_used": 5
@@ -861,7 +861,7 @@
             {
               "case_id": "case-492f56f74715",
               "category": "AMBIGUOUS_EVIDENCE",
-              "duration_ms": 0.24,
+              "duration_ms": 0.22,
               "outcome": "UNRESOLVED",
               "retries_used": 0,
               "tool_calls_used": 5
@@ -944,7 +944,7 @@
             "SKIPPED": 9,
             "UNRESOLVED": 3
           },
-          "total_duration_ms": 3.435,
+          "total_duration_ms": 3.093,
           "total_retries": 0,
           "total_tool_calls": 15
         }
@@ -989,7 +989,7 @@
             {
               "case_id": "case-2b182da32f80",
               "category": "AMBIGUOUS_EVIDENCE",
-              "duration_ms": 2.792,
+              "duration_ms": 2.299,
               "outcome": "UNRESOLVED",
               "retries_used": 0,
               "tool_calls_used": 5
@@ -997,7 +997,7 @@
             {
               "case_id": "case-1297deaa29f5",
               "category": "AMBIGUOUS_EVIDENCE",
-              "duration_ms": 0.309,
+              "duration_ms": 0.219,
               "outcome": "UNRESOLVED",
               "retries_used": 0,
               "tool_calls_used": 3
@@ -1005,7 +1005,7 @@
             {
               "case_id": "case-38653c3abc78",
               "category": "AMBIGUOUS_EVIDENCE",
-              "duration_ms": 0.256,
+              "duration_ms": 0.19,
               "outcome": "UNRESOLVED",
               "retries_used": 0,
               "tool_calls_used": 7
@@ -1015,7 +1015,7 @@
           "status_counts": {
             "UNRESOLVED": 3
           },
-          "total_duration_ms": 3.458,
+          "total_duration_ms": 2.778,
           "total_retries": 0,
           "total_tool_calls": 15
         }

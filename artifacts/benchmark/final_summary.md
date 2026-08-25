@@ -18,7 +18,7 @@
 | **Money-Weighted Dry-Run Error** | **₹0.00** | 0 paise | **PASS (0 paise)** |
 | **Proof Completeness** | **18 / 18** | 100% complete | **PASS** |
 | **Ambiguous Case Escalation** | **100.0%** | 5 / 5 | **PASS** |
-| **Reconciliation Throughput** | **9,859.51 rec/s** | Sub-second batch execution | **PASS** |
+| **Reconciliation Throughput** | **11,250.57 rec/s** | Sub-second batch execution | **PASS** |
 
 ---
 

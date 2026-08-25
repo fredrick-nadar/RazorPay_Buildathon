@@ -1,531 +1,394 @@
-"use client";
+﻿import Link from "next/link";
 
-/**
- * ARGUS CONTROL control room.
- *
- * Renders backend results only: no financial truth logic lives here and no
- * metric is displayed unless the API produced it. Loading, empty, partial
- * failure, and retry states are first-class (PRD §13.4).
- */
+import "./landing.css";
+import "./landing-sections.css";
+import { LandingNav } from "../components/landing-nav";
+import { LandingVideo } from "../components/landing-video";
+import { LandingArrow } from "../components/landing-arrow";
 
-import { useCallback, useEffect, useState } from "react";
-import type { ReactNode } from "react";
-import type {
-  AuditLogItem,
-  CaseDetail,
-  CaseSummary,
-  ReconcileResponse,
-  RunListItem,
-} from "../lib/types";
-import { formatCount, formatINR, formatRate, shortHash } from "../lib/format";
-import { CaseRail, categoryMeta, StatusBadge } from "../components/case-rail";
-import { CaseWorkspace } from "../components/case-workspace";
-import { EvidenceChain } from "../components/evidence-chain";
-import { AuditLog } from "../components/audit-log";
-import { ApprovalModal } from "../components/approval-modal";
-import {
-  IconAperture,
-  IconBolt,
-  IconRefresh,
-  IconRoute,
-  IconScroll,
-  IconShield,
-} from "../components/icons";
-import { Metric, Panel, Skeleton, Toast, type ToastState } from "../components/primitives";
+const CAPABILITIES = [
+  {
+    index: "01",
+    title: "Deterministic reconciliation",
+    body: "Payments, refunds, settlements, bank credits and ledger entries are matched by identifiers and arithmetic — signed integer paise, idempotent, immutable source provenance. No row is ever silently dropped.",
+  },
+  {
+    index: "02",
+    title: "Financial flight recorder",
+    body: "A typed evidence graph links every recorded amount across systems and shows exactly where the chain breaks — proven, hypothesised, or rejected. Certainty is never implied beyond the stored state.",
+  },
+  {
+    index: "03",
+    title: "Bounded AI investigation",
+    body: "One investigator inspects residual exceptions and tests competing hypotheses through read-only tools. It can never resolve a case, approve a correction, or touch the ledger.",
+  },
+  {
+    index: "04",
+    title: "Proof-carrying corrections",
+    body: "Every proposed fix ships with equations, cited evidence and a deterministic verifier PASS — previewed as a dry-run, applied only after explicit human approval.",
+  },
+] as const;
 
-/* ------------------------------------------------------------------ */
-/* Defensive readers for the open-ended run summary object             */
-/* ------------------------------------------------------------------ */
 
-type Summary = Record<string, unknown>;
+const EXCEPTION_CLASSES = [
+  "Duplicate ledger posting",
+  "Missing refund posting",
+  "Settlement timing shift",
+  "Ambiguous evidence",
+] as const;
 
-function num(obj: Summary | undefined, key: string): number | undefined {
-  const v = obj?.[key];
-  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
-}
+const TRUST_ITEMS = [
+  {
+    title: "No resolution without proof",
+    body: "Every accepted explanation requires a deterministic verifier PASS with cited evidence IDs and rule versions.",
+  },
+  {
+    title: "Dry-run first",
+    body: "Corrections are previewed against a sandbox ledger — variance before and after — before anything is allowed to change.",
+  },
+  {
+    title: "Humans hold authority",
+    body: "Every non-zero ledger delta requires explicit human approval. Voice is never an approval channel.",
+  },
+  {
+    title: "Append-only audit",
+    body: "Every decision is hashed into a tamper-evident trail, from first import to simulated application.",
+  },
+] as const;
 
-function str(obj: Summary | undefined, key: string): string | undefined {
-  const v = obj?.[key];
-  return typeof v === "string" && v.length > 0 ? v : undefined;
-}
+const BENCHMARK_STATS = [
+  {
+    value: "100.0%",
+    label: "Match precision",
+    denom: "1,124 / 1,124 deterministic matches · frozen holdout",
+  },
+  {
+    value: "1,880",
+    label: "Records reconciled",
+    denom: "one deterministic batch · ≥ 500 track target",
+  },
+  {
+    value: "0",
+    label: "False verifier passes",
+    denom: "0 / 23 labelled exception cases",
+  },
+  {
+    value: "0",
+    label: "Duplicate adjustments",
+    denom: "measured across independent replay databases",
+  },
+] as const;
 
-function childObj(obj: Summary | undefined, key: string): Summary | undefined {
-  const v = obj?.[key];
-  return v !== null && typeof v === "object" ? (v as Summary) : undefined;
-}
-
-interface RunTelemetry {
-  runId: string;
-  status: string;
-  mode: string;
-  eligible?: number;
-  matched?: number;
-  matchRate: string;
-  casesCount?: number;
-  quarantined?: number;
-  residualVariance?: number;
-  grossVolume?: number;
-  recordsPerSecond?: number;
-  totalSeconds?: number;
-  econHash?: string;
-}
-
-function telemetryFromRun(run: RunListItem): RunTelemetry {
-  const s = run.summary ?? {};
-  const rate = childObj(s, "runtime_match_rate");
-  const totals = childObj(s, "financial_control_totals");
-  const timing = childObj(s, "timing_metrics");
-  return {
-    runId: run.run_id,
-    status: run.status,
-    mode: str(s, "mode") ?? "rules-only",
-    eligible: num(s, "eligible_record_count"),
-    matched: num(s, "matched_record_count"),
-    matchRate: formatRate(num(rate, "numerator") ?? NaN, num(rate, "denominator") ?? NaN),
-    casesCount: num(s, "cases_count"),
-    quarantined: num(s, "quarantined_row_count"),
-    residualVariance: num(totals, "residual_abs_variance_paise"),
-    grossVolume: num(totals, "payment_gross_paise"),
-    recordsPerSecond: num(timing, "records_per_second"),
-    totalSeconds: num(timing, "total_seconds"),
-    econHash: str(s, "economic_output_hash"),
-  };
-}
-
-/* ------------------------------------------------------------------ */
-/* Page                                                                */
-/* ------------------------------------------------------------------ */
-
-type Tab = "investigation" | "evidence" | "audit";
-
-export default function ControlRoomPage() {
-  const [runs, setRuns] = useState<RunListItem[]>([]);
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
-  const [cases, setCases] = useState<CaseSummary[]>([]);
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
-  const [caseDetail, setCaseDetail] = useState<CaseDetail | null>(null);
-  const [auditTrail, setAuditTrail] = useState<AuditLogItem[]>([]);
-
-  const [activeTab, setActiveTab] = useState<Tab>("investigation");
-  const [statusFilter, setStatusFilter] = useState("ALL");
-  const [categoryFilter, setCategoryFilter] = useState("ALL");
-  const [searchQuery, setSearchQuery] = useState("");
-
-  const [booting, setBooting] = useState(true);
-  const [running, setRunning] = useState(false);
-  const [actionBusy, setActionBusy] = useState(false);
-  const [apiOk, setApiOk] = useState<boolean | null>(null);
-
-  const [modalAction, setModalAction] = useState<"APPROVE" | "REJECT">("APPROVE");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [toast, setToast] = useState<ToastState | null>(null);
-
-  /* ----------------------------- fetching ------------------------- */
-
-  const selectCase = useCallback(async (caseId: string) => {
-    setSelectedCaseId(caseId);
-    try {
-      const [detailRes, auditRes] = await Promise.all([
-        fetch(`/api/v1/cases/${caseId}`),
-        fetch(`/api/v1/cases/${caseId}/audit`),
-      ]);
-      if (detailRes.ok) setCaseDetail((await detailRes.json()) as CaseDetail);
-      if (auditRes.ok) setAuditTrail((await auditRes.json()) as AuditLogItem[]);
-    } catch {
-      /* partial view stays usable; toast surfaces hard failures elsewhere */
-    }
-  }, []);
-
-  const loadCases = useCallback(
-    async (runId: string) => {
-      try {
-        const res = await fetch(`/api/v1/runs/${runId}/cases`);
-        if (!res.ok) return;
-        const data = (await res.json()) as CaseSummary[];
-        setCases(data);
-        void selectCase(data[0]?.case_id ?? "");
-      } catch {
-        /* keep previous case list */
-      }
-    },
-    [selectCase],
-  );
-
-  const loadRuns = useCallback(async (): Promise<boolean> => {
-    try {
-      const res = await fetch("/api/v1/runs");
-      if (!res.ok) throw new Error(String(res.status));
-      const data = (await res.json()) as RunListItem[];
-      setRuns(data);
-      setApiOk(true);
-      if (data.length > 0 && data[0]) {
-        setActiveRunId(data[0].run_id);
-        await loadCases(data[0].run_id);
-      }
-      return true;
-    } catch {
-      setApiOk(false);
-      return false;
-    }
-  }, [loadCases]);
-
-  useEffect(() => {
-    void loadRuns().finally(() => setBooting(false));
-  }, [loadRuns]);
-
-  async function triggerRun(profile: "dev" | "adversarial", mode: "rules-only" | "agent") {
-    setRunning(true);
-    try {
-      const res = await fetch("/api/v1/runs/reconcile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dataset_profile: profile, mode, force: true }),
-      });
-      if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as { detail?: string };
-        throw new Error(err.detail ?? `batch failed (${res.status})`);
-      }
-      const run = (await res.json()) as ReconcileResponse;
-      setActiveRunId(run.run_id);
-      await Promise.all([loadRuns(), loadCases(run.run_id)]);
-      setToast({
-        kind: "success",
-        message: `Batch complete · ${run.run_id}${run.reused ? " (idempotent replay)" : ""}`,
-      });
-    } catch (e) {
-      setToast({
-        kind: "error",
-        message: `Reconciliation failed: ${e instanceof Error ? e.message : String(e)}`,
-      });
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  async function confirmAuthority(reviewerId: string, notes: string) {
-    if (!selectedCaseId) return;
-    setActionBusy(true);
-    try {
-      const endpoint = modalAction === "APPROVE" ? "approve" : "reject";
-      const res = await fetch(`/api/v1/cases/${selectedCaseId}/${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reviewer_id: reviewerId, notes }),
-      });
-      if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as { detail?: string };
-        throw new Error(err.detail ?? `action failed (${res.status})`);
-      }
-      setModalOpen(false);
-      setToast({
-        kind: "success",
-        message:
-          modalAction === "APPROVE"
-            ? `Simulated correction applied to ${selectedCaseId}`
-            : `${selectedCaseId} preserved as unresolved`,
-      });
-      if (activeRunId) await loadCases(activeRunId);
-      await selectCase(selectedCaseId);
-    } catch (e) {
-      setToast({
-        kind: "error",
-        message: e instanceof Error ? e.message : String(e),
-      });
-    } finally {
-      setActionBusy(false);
-    }
-  }
-
-  /* ----------------------------- derived -------------------------- */
-
-  const activeRun = runs.find((r) => r.run_id === activeRunId);
-  const telemetry = activeRun ? telemetryFromRun(activeRun) : null;
-
-  /* ----------------------------- chrome --------------------------- */
-
-  const apiPill = (
-    <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-black/40 px-3 py-1.5 text-[10px] font-medium text-zinc-400">
-      <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${apiOk === false ? "bg-rose-400" : apiOk ? "bg-emerald-400 animate-pulse-dot" : "bg-zinc-500"}`} />
-      {apiOk === false ? "API offline" : apiOk ? "API online" : "Connecting"}
-    </span>
-  );
-
-  const syntheticPill = (
-    <span className="hidden md:inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-black/40 px-3 py-1.5 text-[10px] font-medium text-zinc-500">
-      <IconShield size={11} className="text-[#e6b45c]/80" />
-      Tenant argus-demo · Synthetic data only
-    </span>
-  );
-
+export default function LandingPage() {
   return (
-    <div className="app-shell flex h-screen flex-col overflow-hidden bg-[#08090b] text-zinc-200">
-      <div className="app-backdrop flex h-full flex-col">
-        {/* ============================ Top bar ============================ */}
-        <header className="z-20 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-3">
-          <div className="flex min-w-0 items-center gap-3.5">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#e6b45c]/25 bg-gradient-to-b from-[#e6b45c]/[0.14] to-transparent text-[#e6b45c] shadow-[0_0_28px_-8px_rgba(230,180,92,0.45)]">
-              <IconAperture size={19} />
-            </div>
-            <div className="min-w-0">
-              <h1 className="flex items-baseline gap-2 whitespace-nowrap font-serif text-[18px] font-bold italic leading-none tracking-tight text-zinc-50">
-                Argus{" "}
-                <span className="font-sans text-[10px] font-semibold not-italic tracking-[0.34em] text-zinc-500">
-                  CONTROL
-                </span>
-              </h1>
-              <p className="mt-1 hidden whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.24em] text-zinc-600 sm:block">
-                Financial flight recorder · reconciliation control room
-              </p>
-            </div>
-          </div>
+    <div className="landing">
+      <div className="scroll-progress" aria-hidden="true">
+        <span></span>
+      </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {syntheticPill}
-            {apiPill}
-            <button
-              onClick={() => void triggerRun("dev", "rules-only")}
-              disabled={running || booting}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.09] bg-white/[0.03] px-3.5 py-2 text-[11px] font-semibold text-zinc-200 transition-all hover:border-white/20 hover:bg-white/[0.06] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#e6b45c] disabled:cursor-wait disabled:opacity-50"
-            >
-              {running ? (
-                <span aria-hidden className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-200" />
-              ) : (
-                <IconBolt size={13} className="text-[#e6b45c]" />
-              )}
-              {running ? "Reconciling…" : "Reconcile dev"}
-            </button>
-            <button
-              onClick={() => void triggerRun("adversarial", "agent")}
-              disabled={running || booting}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.09] bg-white/[0.03] px-3.5 py-2 text-[11px] font-semibold text-zinc-200 transition-all hover:border-white/20 hover:bg-white/[0.06] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#e6b45c] disabled:cursor-wait disabled:opacity-50"
-            >
-              <IconRoute size={13} className="text-cyan-300" />
-              AI adversarial batch
-            </button>
-          </div>
-        </header>
-
-        {/* ========================= Telemetry strip ======================== */}
-        {booting && (
-          <div className="grid shrink-0 grid-cols-2 gap-3 border-b border-white/[0.06] px-5 py-3 sm:grid-cols-3 xl:grid-cols-7">
-            {Array.from({ length: 7 }).map((_, i) => (
-              <Skeleton key={i} className="h-11" />
-            ))}
-          </div>
-        )}
-
-        {!booting && telemetry && (
-          <div className="grid shrink-0 grid-cols-2 gap-x-5 gap-y-3 border-b border-white/[0.06] px-5 py-3.5 sm:grid-cols-3 xl:grid-cols-7">
-            <Metric
-              label="Active batch"
-              value={shortHash(telemetry.runId, 18)}
-              mono={false}
-              sub={
-                <span className="inline-flex items-center gap-1.5">
-                  <span className={`rounded px-1 py-px font-mono text-[9px] uppercase tracking-wide ${telemetry.mode === "agent" ? "bg-cyan-400/10 text-cyan-300" : "bg-white/[0.06] text-zinc-400"}`}>
-                    {telemetry.mode}
-                  </span>
-                  {telemetry.status.toLowerCase()}
-                </span>
-              }
-            />
-            <Metric
-              label="Eligible records"
-              value={formatCount(telemetry.eligible)}
-              sub={
-                telemetry.quarantined !== undefined
-                  ? `${formatCount(telemetry.quarantined)} quarantined`
-                  : undefined
-              }
-            />
-            <Metric label="Deterministic match rate" tone="positive" value={telemetry.matchRate} />
-            <Metric
-              label="Exception cases"
-              tone="warning"
-              value={formatCount(telemetry.casesCount)}
-              sub={`${cases.length} in queue`}
-            />
-            <Metric
-              label="Residual variance"
-              tone="critical"
-              value={telemetry.residualVariance !== undefined ? formatINR(telemetry.residualVariance) : "\u2014"}
-            />
-            <Metric
-              label="Throughput"
-              value={
-                telemetry.recordsPerSecond !== undefined
-                  ? `${formatCount(Math.round(telemetry.recordsPerSecond))} rec/s`
-                  : "\u2014"
-              }
-              sub={
-                telemetry.totalSeconds !== undefined
-                  ? `${telemetry.totalSeconds.toFixed(2)} s total`
-                  : undefined
-              }
-            />
-            <Metric
-              label="Economic integrity"
-              value={
-                telemetry.econHash ? (
-                  <span title={telemetry.econHash}>{shortHash(telemetry.econHash)}</span>
-                ) : (
-                  "\u2014"
-                )
-              }
-              tone={telemetry.econHash ? "positive" : "default"}
-              sub={telemetry.econHash ? "SHA-256 · sealed" : "unsigned output"}
-            />
-          </div>
-        )}
-
-        {!booting && !telemetry && (
-          <div className="shrink-0 border-b border-white/[0.06] px-5 py-4">
-            <Panel className="mx-auto max-w-md p-5 text-center animate-rise">
-              <p className="text-sm font-semibold text-zinc-200">No batches recorded yet</p>
-              <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">
-                Run a reconciliation batch to populate the flight recorder. The
-                deterministic pipeline works without any model key configured.
-              </p>
-              <div className="mt-4 flex justify-center gap-2.5">
-                <button
-                  onClick={() => void triggerRun("dev", "rules-only")}
-                  disabled={running}
-                  className="rounded-lg bg-gradient-to-b from-[#f0c878] to-[#d9a24a] px-4 py-2 text-xs font-bold text-black shadow-lg transition hover:from-[#f4cf88]"
-                >
-                  Reconcile dev batch
-                </button>
-              </div>
-            </Panel>
-          </div>
-        )}
-
-        {/* ============================ Workspace =========================== */}
-        <div className="flex min-h-0 flex-1">
-          <CaseRail
-            cases={cases}
-            loading={booting}
-            selectedCaseId={selectedCaseId}
-            onSelect={(id) => {
-              setActiveTab("investigation");
-              void selectCase(id);
-            }}
-            statusFilter={statusFilter}
-            onStatusFilter={setStatusFilter}
-            categoryFilter={categoryFilter}
-            onCategoryFilter={setCategoryFilter}
-            searchQuery={searchQuery}
-            onSearchQuery={setSearchQuery}
-          />
-
-          <main className="min-w-0 flex-1 overflow-y-auto">
-            {!caseDetail ? (
-              <div className="flex h-full items-center justify-center p-8">
-                <div className="max-w-sm text-center">
-                  <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.07] bg-white/[0.03] text-zinc-500">
-                    <IconScroll size={20} />
-                  </div>
-                  <p className="text-sm font-semibold text-zinc-300">No case file open</p>
-                  <p className="mt-1.5 text-xs leading-relaxed text-zinc-600">
-                    Select an exception from the queue to open its dossier,
-                    hypotheses, deterministic proof, and audit trail.
-                  </p>
-                  {apiOk === false && (
-                    <button
-                      onClick={() => void loadRuns()}
-                      className="mx-auto mt-4 inline-flex items-center gap-1.5 rounded-lg border border-white/[0.09] bg-white/[0.03] px-3.5 py-2 text-xs font-semibold text-zinc-200 transition hover:bg-white/[0.06]"
-                    >
-                      <IconRefresh size={13} /> Retry connection
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4 p-5">
-                {/* Case header */}
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
-                    <span className="select-all font-mono text-base font-bold tracking-tight text-[#ecd9ae]">
-                      {caseDetail.case.case_id}
-                    </span>
-                    <span aria-hidden className="text-zinc-700">/</span>
-                    <span
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold"
-                      style={{ color: categoryMeta(caseDetail.case.category).hex }}
-                    >
-                      {categoryMeta(caseDetail.case.category).icon}
-                      {categoryMeta(caseDetail.case.category).label}
-                    </span>
-                    <StatusBadge status={caseDetail.case.status} />
-                  </div>
-
-                  <nav aria-label="Workspace views" className="flex rounded-xl border border-white/[0.08] bg-black/40 p-1">
-                    {(
-                      [
-                        ["investigation", "Investigation", <IconShield key="i" size={12} />],
-                        ["evidence", "Evidence trace", <IconRoute key="e" size={12} />],
-                        ["audit", `Audit (${auditTrail.length})`, <IconScroll key="a" size={12} />],
-                      ] as Array<[Tab, string, ReactNode]>
-                    ).map(([tab, label, icon]) => (
-                      <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        aria-current={activeTab === tab ? "page" : undefined}
-                        className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[11px] font-semibold transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-[#e6b45c] ${
-                          activeTab === tab
-                            ? "bg-white/[0.08] text-zinc-100 shadow-inner"
-                            : "text-zinc-500 hover:text-zinc-300"
-                        }`}
-                      >
-                        {icon}
-                        {label}
-                      </button>
-                    ))}
-                  </nav>
-                </div>
-
-                {/* Tab content */}
-                {activeTab === "investigation" && (
-                  <div className="animate-fade">
-                    <CaseWorkspace
-                      detail={caseDetail}
-                      onApprove={() => {
-                        setModalAction("APPROVE");
-                        setModalOpen(true);
-                      }}
-                      onReject={() => {
-                        setModalAction("REJECT");
-                        setModalOpen(true);
-                      }}
-                    />
-                  </div>
-                )}
-                {activeTab === "evidence" && (
-                  <div className="animate-fade">
-                    <EvidenceChain evidence={caseDetail.case.evidence} />
-                  </div>
-                )}
-                {activeTab === "audit" && (
-                  <div className="animate-fade">
-                    <AuditLog events={auditTrail} />
-                  </div>
-                )}
-              </div>
-            )}
-          </main>
+      <div className="page">
+        <div className="bg" aria-hidden="true">
+          <LandingVideo />
         </div>
 
-        {/* ============================ Overlays ============================ */}
-        {modalOpen && caseDetail && (
-          <ApprovalModal
-            detail={caseDetail}
-            action={modalAction}
-            busy={actionBusy}
-            onClose={() => setModalOpen(false)}
-            onConfirm={(rid, notes) => void confirmAuthority(rid, notes)}
-          />
-        )}
-        <Toast toast={toast} onDismiss={() => setToast(null)} />
+        <LandingNav />
+
+        <section className="hero">
+          <div className="badge wipe" style={{ "--d": "0.18s" } as React.CSSProperties}>
+            <span className="badge__mark" aria-hidden="true" />
+            Financial flight recorder · Merchant reconciliation
+          </div>
+
+          <h1 className="headline">
+            <span className="headline__mask">
+              <span className="headline__rise" style={{ "--d": "0.26s" } as React.CSSProperties}>
+                Every financial record
+              </span>
+            </span>
+            <span className="headline__mask">
+              <span
+                className="headline__rise headline__line"
+                style={{ "--d": "0.4s" } as React.CSSProperties}
+              >
+                <span className="headline__muted">deserves an&nbsp;</span>
+                <span className="headline__accent" data-text="evidence trail.">
+                  evidence trail.
+                </span>
+              </span>
+            </span>
+          </h1>
+
+          <div className="actions">
+
+            <a className="btn btn--ghost wipe" style={{ "--d": "0.66s" } as React.CSSProperties} href="#workflow">
+              <span className="btn__label">See the workflow</span>
+            </a>
+          </div>
+        </section>
+
+        <div className="lede">
+          <p className="lede__rise" style={{ "--d": "0.78s" } as React.CSSProperties}>
+            ARGUS CONTROL deterministically reconciles payments, refunds, settlements, bank credits
+            and ledger entries — investigates the residual exceptions with one bounded AI, verifies
+            every explanation with code, and leaves ambiguous cases unresolved.
+          </p>
+        </div>
       </div>
+
+      <main className="below">
+        <section id="platform" className="section section--what">
+          <div className="section__head">
+            <p className="kicker">
+              <span className="kicker__mark" aria-hidden="true" />
+              What ARGUS does
+            </p>
+            <h2 className="section__title">A financial flight recorder for merchant reconciliation.</h2>
+            <p className="section__sub">
+              ARGUS reconstructs the evidence path behind recorded amounts across payments, refunds,
+              settlements, bank credits and ledger entries — investigates where the chain breaks,
+              and refuses to close a case it cannot prove.
+            </p>
+          </div>
+
+          <div className="cap-grid">
+            {CAPABILITIES.map((cap) => (
+              <article className="cap" key={cap.index}>
+                <span className="cap__index">{cap.index}</span>
+                <h3>{cap.title}</h3>
+                <p>{cap.body}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="workflow" className="section section--workflow">
+          <div className="section__head">
+            <p className="kicker">
+              <span className="kicker__mark" aria-hidden="true" />
+              How it works
+            </p>
+            <h2 className="section__title">One finance loop, proven end to end.</h2>
+            <p className="section__sub">
+              Clean records reconcile by identifiers and arithmetic. Whatever remains becomes a
+              typed case — investigated by a bounded AI, verified by deterministic code, and only
+              ever corrected through a previewed, human-approved simulation. Ambiguity is never
+              forced closed.
+            </p>
+          </div>
+
+          <div className="flow-scroll">
+            <svg
+              className="flow"
+              viewBox="0 0 1240 640"
+              role="img"
+              aria-label="Workflow graph: five source record types flow into normalize, then reconcile. Clean records match deterministically. Residual variance becomes an exception case, investigated by a bounded AI, checked by a deterministic verifier. A PASS leads to dry-run, approval and a simulated entry; an inconclusive result stays unresolved; a fail returns for re-investigation."
+            >
+              {/* ---------- edges (packets travel beneath nodes) ---------- */}
+              <g className="edges">
+                <path className="edge" d="M160 62 C 230 62, 215 242, 280 242" />
+                <path className="edge" d="M160 152 C 225 152, 215 242, 280 242" />
+                <path className="edge" d="M160 242 L 280 242" />
+                <path className="edge" d="M160 332 C 225 332, 215 242, 280 242" />
+                <path className="edge" d="M160 422 C 230 422, 215 242, 280 242" />
+                <path className="edge edge--main" d="M460 242 L 520 242" />
+                <path className="edge edge--ok" d="M710 242 C 745 242, 725 110, 760 110" />
+                <path className="edge edge--warn" d="M710 242 C 745 242, 725 374, 760 374" />
+                <path className="edge" d="M960 374 L 1000 374" />
+                <path className="edge edge--info" d="M1100 406 L 1100 464" />
+                <path className="edge edge--ok" d="M1000 486 L 980 486" />
+                <path className="edge edge--bad" d="M1100 508 L 1100 568" />
+                <path className="edge edge--fail" d="M1210 486 C 1236 486, 1236 374, 1210 374" />
+              </g>
+
+              {/* ---------- travelling packets ---------- */}
+              <g className="packets" aria-hidden="true">
+                <circle className="packet packet--blue" r="5">
+                  <animateMotion
+                    dur="5s"
+                    repeatCount="indefinite"
+                    path="M160 242 L 280 242 L 520 242 C 745 242, 725 110, 760 110 L 860 110"
+                  />
+                </circle>
+                <circle className="packet packet--amber" r="5">
+                  <animateMotion
+                    dur="6s"
+                    repeatCount="indefinite"
+                    path="M710 242 C 745 242, 725 374, 760 374 L 1000 374 L 1100 374 L 1100 486 L 980 486"
+                  />
+                </circle>
+              </g>
+
+              {/* ---------- edge labels ---------- */}
+              <g className="edge-labels">
+                <text x="618" y="96">identifier + arithmetic</text>
+                <text x="600" y="322">residual variance</text>
+                <text x="928" y="440">deterministic check</text>
+                <text x="866" y="500">PASS</text>
+                <text x="1112" y="545">INCONCLUSIVE</text>
+                <text x="1128" y="436">FAIL · re-investigate</text>
+              </g>
+
+              {/* ---------- nodes ---------- */}
+              <g className="nodes">
+                <g className="gnode gnode--src">
+                  <rect x="20" y="40" width="140" height="44" />
+                  <text x="90" y="67">PAYMENT</text>
+                </g>
+                <g className="gnode gnode--src">
+                  <rect x="20" y="130" width="140" height="44" />
+                  <text x="90" y="157">REFUND</text>
+                </g>
+                <g className="gnode gnode--src">
+                  <rect x="20" y="220" width="140" height="44" />
+                  <text x="90" y="247">SETTLEMENT</text>
+                </g>
+                <g className="gnode gnode--src">
+                  <rect x="20" y="310" width="140" height="44" />
+                  <text x="90" y="337">BANK ENTRY</text>
+                </g>
+                <g className="gnode gnode--src">
+                  <rect x="20" y="400" width="140" height="44" />
+                  <text x="90" y="427">LEDGER ENTRY</text>
+                </g>
+
+                <g className="gnode gnode--stage">
+                  <rect x="280" y="210" width="180" height="64" style={{ animationDelay: "0s" }} />
+                  <text x="370" y="238">NORMALIZE</text>
+                  <text className="sub" x="370" y="258">validate · quarantine · hash</text>
+                </g>
+                <g className="gnode gnode--stage">
+                  <rect x="520" y="210" width="180" height="64" style={{ animationDelay: "0.8s" }} />
+                  <text x="610" y="238">RECONCILE</text>
+                  <text className="sub" x="610" y="258">match hierarchy · consumption</text>
+                </g>
+                <g className="gnode gnode--ok">
+                  <rect x="760" y="78" width="200" height="64" style={{ animationDelay: "1.6s" }} />
+                  <text x="860" y="106">MATCHED</text>
+                  <text className="sub" x="860" y="126">control totals · evidence graph</text>
+                </g>
+                <g className="gnode gnode--warn">
+                  <rect x="760" y="342" width="200" height="64" style={{ animationDelay: "1.6s" }} />
+                  <text x="860" y="370">EXCEPTION CASE</text>
+                  <text className="sub" x="860" y="390">typed · variance scoped</text>
+                </g>
+                <g className="gnode gnode--ai">
+                  <rect x="1000" y="342" width="200" height="64" style={{ animationDelay: "2.6s" }} />
+                  <text x="1100" y="370">AI INVESTIGATOR</text>
+                  <text className="sub" x="1100" y="390">bounded · read-only tools</text>
+                </g>
+                <g className="gnode gnode--info">
+                  <rect x="1000" y="464" width="200" height="44" style={{ animationDelay: "3.4s" }} />
+                  <text x="1100" y="491">DETERMINISTIC VERIFIER</text>
+                </g>
+                <g className="gnode gnode--pass">
+                  <rect x="740" y="464" width="240" height="44" style={{ animationDelay: "4.4s" }} />
+                  <text x="860" y="485">DRY-RUN → APPROVAL</text>
+                  <text className="sub" x="860" y="500">new simulated entry · audit</text>
+                </g>
+                <g className="gnode gnode--bad">
+                  <rect x="1000" y="568" width="200" height="44" style={{ animationDelay: "5s" }} />
+                  <text x="1100" y="589">UNRESOLVED</text>
+                  <text className="sub" x="1100" y="604">missing evidence stated</text>
+                </g>
+              </g>
+            </svg>
+          </div>
+
+          <ul className="flow-legend">
+            <li><span className="dot dot--ok" /> Deterministic</li>
+            <li><span className="dot dot--warn" /> Exception</li>
+            <li><span className="dot dot--ai" /> AI + verification</li>
+            <li><span className="dot dot--pass" /> Approval + simulation</li>
+            <li><span className="dot dot--bad" /> Honest unresolved</li>
+          </ul>
+
+        </section>
+
+        <section className="section section--principle">
+          <p className="kicker kicker--dark">
+            <span className="kicker__mark kicker__mark--warm" aria-hidden="true" />
+            The operating principle
+          </p>
+          <h2 className="principle__title">
+            Rules for calculation. AI for investigation. Verification for closure. Humans for
+            ambiguity.
+          </h2>
+
+          <div className="classes">
+            <p className="classes__label">Every residual discrepancy becomes a typed case</p>
+            <ul className="classes__list">
+              {EXCEPTION_CLASSES.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            <p className="classes__note">
+              Two valid explanations and no discriminator? The case stays{" "}
+              <strong>UNRESOLVED</strong> — ARGUS refuses to guess and states exactly which evidence
+              is missing and what a human should inspect next.
+            </p>
+          </div>
+        </section>
+
+        <section id="safety" className="section section--trust">
+          <div className="section__head">
+            <p className="kicker">
+              <span className="kicker__mark" aria-hidden="true" />
+              Safety by construction
+            </p>
+            <h2 className="section__title">Nothing changes without proof, preview and a person.</h2>
+          </div>
+
+          <div className="trust-grid">
+            {TRUST_ITEMS.map((item) => (
+              <div className="trust" key={item.title}>
+                <h3>{item.title}</h3>
+                <p>{item.body}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section id="benchmark" className="section section--benchmark">
+          <div className="section__head">
+            <p className="kicker">
+              <span className="kicker__mark" aria-hidden="true" />
+              Measured, not claimed
+            </p>
+            <h2 className="section__title">The benchmark runner publishes every denominator.</h2>
+          </div>
+
+          <dl className="bench-grid">
+            {BENCHMARK_STATS.map((stat) => (
+              <div className="bench" key={stat.label}>
+                <dd>{stat.value}</dd>
+                <dt>{stat.label}</dt>
+                <span>{stat.denom}</span>
+              </div>
+            ))}
+          </dl>
+
+          <p className="bench__note">
+            Produced by <code>scripts/run_benchmark.py</code> on the frozen synthetic holdout —
+            artifact <code>artifacts/benchmark/final.json</code>. Prototype · synthetic data only ·
+            no real money moves.
+          </p>
+
+          <div className="cta">
+            <h2 className="cta__title">See every correction before it happens.</h2>
+            <div className="actions">
+              <Link className="btn btn--nav" href="/dashboard">
+                <span className="btn__label">Open Control Room</span>
+                <span className="btn__icon" aria-hidden="true">
+                  <LandingArrow />
+                </span>
+              </Link>
+              <a className="btn btn--ghost" href="#workflow">
+                <span className="btn__label">Replay the workflow</span>
+              </a>
+            </div>
+          </div>
+        </section>
+      </main>
     </div>
   );
 }

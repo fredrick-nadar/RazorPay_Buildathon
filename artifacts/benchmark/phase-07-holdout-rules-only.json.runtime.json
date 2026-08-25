@@ -56697,11 +56697,11 @@
     "numerator": 1864
   },
   "timing_metrics": {
-    "ingest_seconds": 0.0701,
-    "reconcile_seconds": 0.062967,
-    "records_per_second": 10941.5,
-    "total_seconds": 0.171823,
-    "verify_seconds": 0.005162
+    "ingest_seconds": 0.059386,
+    "reconcile_seconds": 0.064707,
+    "records_per_second": 11486.0,
+    "total_seconds": 0.163678,
+    "verify_seconds": 0.005828
   },
   "unaccounted_record_keys": [],
   "verification": {
@@ -56727,9 +56727,9 @@
     "dry_run_abs_variance_after_paise": 0,
     "dry_run_count": 18,
     "latency_ms": {
-      "max_case_ms": 0.051,
-      "median_case_ms": 0.026,
-      "verify_total_ms": 5.162
+      "max_case_ms": 0.066,
+      "median_case_ms": 0.032,
+      "verify_total_ms": 5.828
     },
     "passing_proof_completeness": {
       "denominator": 18,
