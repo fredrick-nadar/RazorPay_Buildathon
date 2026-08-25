@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "motion/react";
 import { Wave } from "@/components/ui/wave";
 
 type VoiceStatus =
@@ -240,6 +241,7 @@ export function VoiceController() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [dashboardTab, setDashboardTab] = useState<string>("home");
 
   useEffect(() => {
     void (async () => {
@@ -564,26 +566,335 @@ export function VoiceController() {
     void runParseAndExecute(text);
   }, [typed, runParseAndExecute]);
 
+  useEffect(() => {
+    function onTabChange(event: Event) {
+      const custom = event as CustomEvent<{ tab: string }>;
+      if (custom.detail?.tab) {
+        setDashboardTab(custom.detail.tab);
+      }
+    }
+    function onVoiceCommand(event: Event) {
+      const custom = event as CustomEvent<{ text: string }>;
+      if (custom.detail?.text) {
+        void runParseAndExecute(custom.detail.text);
+      }
+    }
+    function onVoiceMicToggle() {
+      if (status === "listening") {
+        stopListening();
+      } else {
+        startListening();
+      }
+    }
+
+    window.addEventListener("argus-dashboard-tab", onTabChange);
+    window.addEventListener("argus-voice-command", onVoiceCommand);
+    window.addEventListener("argus-voice-mic-toggle", onVoiceMicToggle);
+
+    return () => {
+      window.removeEventListener("argus-dashboard-tab", onTabChange);
+      window.removeEventListener("argus-voice-command", onVoiceCommand);
+      window.removeEventListener("argus-voice-mic-toggle", onVoiceMicToggle);
+    };
+  }, [runParseAndExecute, startListening, stopListening, status]);
+
   const busy = status === "parsing" || status === "listening";
 
   if (pathname === "/") {
     return null;
   }
 
+  const isOuterPage = pathname !== "/dashboard" || dashboardTab !== "home" || open;
+
   return (
     <div className="pointer-events-none fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-3 w-full max-w-2xl px-4">
       {/* ================= Drawer Popover (Active Result / Refusal / Confirmation) ================= */}
-      {open && (
-        <div
-          className="pointer-events-auto w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl transition-all duration-300 animate-rise text-slate-900"
-          role="dialog"
-          aria-label="ARGUS Voice Copilot"
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 bg-slate-50/70">
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-900 shadow-xs">
-                <svg viewBox="0 0 42 34" className="w-4 h-3.5" fill="currentColor" aria-hidden>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            key="argus-copilot-drawer"
+            initial={{ opacity: 0, y: 30, scale: 0.94, filter: "blur(8px)" }}
+            animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+            exit={{ opacity: 0, y: 24, scale: 0.94, filter: "blur(6px)" }}
+            transition={{
+              type: "spring",
+              stiffness: 400,
+              damping: 28,
+              mass: 0.7,
+            }}
+            className="pointer-events-auto w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl text-slate-900"
+            role="dialog"
+            aria-label="ARGUS Voice Copilot"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 bg-slate-50/70">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-900 shadow-xs">
+                  <svg viewBox="0 0 42 34" className="w-4 h-3.5" fill="currentColor" aria-hidden>
+                    <polygon points="12,0 30,0 33.2,3.2 15.2,3.2" />
+                    <polygon points="14.6,5.6 32.6,5.6 35.8,8.8 17.8,8.8" />
+                    <polygon points="17.2,11.2 35.2,11.2 38.4,14.4 20.4,14.4" />
+                    <polygon points="3.2,16.8 21.2,16.8 24.4,20 6.4,20" />
+                    <polygon points="5.8,22.4 23.8,22.4 27,25.6 9,25.6" />
+                    <polygon points="8.4,28 26.4,28 29.6,31.2 11.6,31.2" />
+                  </svg>
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-bold tracking-tight text-slate-900">ARGUS Copilot</p>
+                    <span className="rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                      Sarvam AI Voice Engine
+                    </span>
+                  </div>
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">Read · Brief · Navigate Only</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value)}
+                  aria-label="Voice language"
+                  suppressHydrationWarning
+                  className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 focus:outline-none focus:border-slate-400"
+                >
+                  {LANGUAGES.map((option) => (
+                    <option key={option.code} value={option.code}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setMuted((m) => !m)}
+                  aria-label={muted ? "Unmute voice responses" : "Mute voice responses"}
+                  suppressHydrationWarning
+                  className={`rounded-lg p-1.5 transition-colors ${
+                    muted ? "text-slate-400 hover:text-slate-600" : "text-emerald-600 hover:text-emerald-700"
+                  } hover:bg-slate-100`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                    {muted ? (
+                      <>
+                        <line x1="23" y1="9" x2="17" y2="15" />
+                        <line x1="17" y1="9" x2="23" y2="15" />
+                      </>
+                    ) : (
+                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    )}
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setOpen(false)}
+                  aria-label="Close voice panel"
+                  suppressHydrationWarning
+                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="m6 6 12 12M18 6 6 18" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3 p-4">
+              {/* Quick Action Prompt Chips */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mr-1">Quick Prompts:</span>
+                {PRESET_PROMPTS.map((chip) => (
+                  <button
+                    key={chip.text}
+                    onClick={() => void runParseAndExecute(chip.text)}
+                    disabled={busy}
+                    suppressHydrationWarning
+                    className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-200 hover:text-slate-900 disabled:opacity-40"
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Listening / Wave animation state */}
+              {status === "listening" && (
+                <div className="relative overflow-hidden rounded-xl border border-blue-200 bg-blue-50/70 p-3.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Wave className="w-8 h-5 text-blue-600" />
+                      <p className="text-xs font-bold text-blue-900">Listening to your voice (Sarvam AI)…</p>
+                    </div>
+                    <button
+                      onClick={stopListening}
+                      suppressHydrationWarning
+                      className="text-xs font-bold text-blue-700 hover:text-blue-900 px-2 py-1 rounded bg-white border border-blue-200 shadow-2xs"
+                    >
+                      Done / Stop
+                    </button>
+                  </div>
+                  {transcript && (
+                    <p className="mt-2 text-xs italic font-medium text-slate-800 bg-white rounded-lg p-2.5 border border-blue-100 shadow-2xs">
+                      &ldquo;{transcript}&rdquo;
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Parsing State */}
+              {status === "parsing" && (
+                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-medium text-slate-700">
+                  <Wave className="w-6 h-4 text-blue-600" />
+                  <span>Interpreting intent & checking safety policy…</span>
+                </div>
+              )}
+
+              {/* Refused State (Financial Safety Boundary Guardrail) */}
+              {status === "refused" && parse?.status === "REFUSED" && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50/90 p-3.5 text-rose-900" role="alert">
+                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-rose-700">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="8" x2="12" y2="12" />
+                      <line x1="12" y1="16" x2="12.01" y2="16" />
+                    </svg>
+                    Financial Safety Refusal · {parse.forbidden_intent?.replace(/_/g, " ").toLowerCase()}
+                  </div>
+                  <p className="mt-1.5 text-xs font-semibold leading-relaxed text-slate-900">{parse.message}</p>
+                  <div className="mt-2 rounded bg-white p-2 text-[10.5px] font-medium text-slate-600 border border-rose-200">
+                    ⚠️ Per PRD financial safety rules, corrections and money movements can only be approved through the human UI approval panel.
+                  </div>
+                </div>
+              )}
+
+              {/* Confirmation State */}
+              {status === "confirm" && parse && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800">Confirmation Required</p>
+                  <p className="mt-1 text-xs font-medium text-slate-800">{parse.message}</p>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={() => void runParseAndExecute(parse.transcript, true)}
+                      suppressHydrationWarning
+                      className="rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-slate-800"
+                    >
+                      Confirm & Execute
+                    </button>
+                    <button
+                      onClick={() => setStatus("idle")}
+                      suppressHydrationWarning
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Execution Result State */}
+              {status === "result" && execution && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                        {execution.intent?.replace(/_/g, " ").toLowerCase() ?? "Result"}
+                      </p>
+                      {latencyMs !== null && (
+                        <span className="rounded-full border border-emerald-200 bg-white px-2 py-0.5 font-mono text-[9px] font-semibold text-emerald-700">
+                          {latencyMs} ms
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() =>
+                        playAudioOrSpeak(
+                          execution.message,
+                          language,
+                          execution.audio_base64,
+                          execution.content_type || "audio/wav",
+                        )
+                      }
+                      suppressHydrationWarning
+                      className="flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-900"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                      </svg>
+                      Replay Audio
+                    </button>
+                  </div>
+                  <p className="mt-1.5 text-xs font-medium leading-relaxed text-slate-900">{execution.message}</p>
+                  {execution.cases && execution.cases.length > 0 && (
+                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                      {execution.cases.slice(0, 6).map((c) => (
+                        <span
+                          key={c.case_id}
+                          className="rounded-md border border-slate-200 bg-white px-2 py-0.5 font-mono text-[10.5px] font-semibold text-slate-800 shadow-2xs"
+                        >
+                          {c.case_id} · {c.status}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Error / Recovery notice */}
+              {error && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-900">
+                  <p>{error}</p>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ================= Center Floating Pill (Buttery Deform & Reform) ================= */}
+      <AnimatePresence>
+        {isOuterPage && (
+          <motion.div
+            key="argus-floating-pill"
+            initial={{
+              opacity: 0,
+              y: 35,
+              scaleX: 0.85,
+              scaleY: 0.7,
+              filter: "blur(10px)",
+              borderRadius: "40px",
+            }}
+            animate={{
+              opacity: 1,
+              y: 0,
+              scaleX: 1,
+              scaleY: 1,
+              filter: "blur(0px)",
+              borderRadius: "9999px",
+            }}
+            exit={{
+              opacity: 0,
+              y: 32,
+              scaleX: 0.82,
+              scaleY: 0.65,
+              filter: "blur(10px)",
+              borderRadius: "40px",
+            }}
+            transition={{
+              type: "spring",
+              stiffness: 380,
+              damping: 24,
+              mass: 0.6,
+            }}
+            className="pointer-events-auto relative w-full group"
+          >
+            {/* Pill Body */}
+            <div className="relative flex items-center justify-between gap-2.5 rounded-full border border-slate-200 bg-white/95 px-3 py-2 shadow-xl backdrop-blur-md transition-all duration-200 hover:border-slate-300">
+              {/* Brand Icon (6 Slanted Lines) */}
+              <button
+                onClick={() => setOpen((prev) => !prev)}
+                aria-label="Toggle ARGUS Voice Copilot"
+                suppressHydrationWarning
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-900 transition-all hover:bg-slate-100 hover:scale-105"
+              >
+                <svg viewBox="0 0 42 34" className="w-5 h-4 text-slate-900" fill="currentColor" aria-hidden>
                   <polygon points="12,0 30,0 33.2,3.2 15.2,3.2" />
                   <polygon points="14.6,5.6 32.6,5.6 35.8,8.8 17.8,8.8" />
                   <polygon points="17.2,11.2 35.2,11.2 38.4,14.4 20.4,14.4" />
@@ -591,292 +902,66 @@ export function VoiceController() {
                   <polygon points="5.8,22.4 23.8,22.4 27,25.6 9,25.6" />
                   <polygon points="8.4,28 26.4,28 29.6,31.2 11.6,31.2" />
                 </svg>
-              </span>
-              <div>
-                <div className="flex items-center gap-2">
-                  <p className="text-xs font-bold tracking-tight text-slate-900">ARGUS Copilot</p>
-                  <span className="rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-                    Sarvam AI Voice Engine
-                  </span>
-                </div>
-                <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">Read · Brief · Navigate Only</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <select
-                value={language}
-                onChange={(event) => setLanguage(event.target.value)}
-                aria-label="Voice language"
-                suppressHydrationWarning
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 focus:outline-none focus:border-slate-400"
-              >
-                {LANGUAGES.map((option) => (
-                  <option key={option.code} value={option.code}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={() => setMuted((m) => !m)}
-                aria-label={muted ? "Unmute voice responses" : "Mute voice responses"}
-                suppressHydrationWarning
-                className={`rounded-lg p-1.5 transition-colors ${
-                  muted ? "text-slate-400 hover:text-slate-600" : "text-emerald-600 hover:text-emerald-700"
-                } hover:bg-slate-100`}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                  {muted ? (
-                    <>
-                      <line x1="23" y1="9" x2="17" y2="15" />
-                      <line x1="17" y1="9" x2="23" y2="15" />
-                    </>
-                  ) : (
-                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                  )}
-                </svg>
               </button>
-              <button
-                onClick={() => setOpen(false)}
-                aria-label="Close voice panel"
-                suppressHydrationWarning
-                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <path d="m6 6 12 12M18 6 6 18" />
-                </svg>
-              </button>
-            </div>
-          </div>
 
-          <div className="space-y-3 p-4">
-            {/* Quick Action Prompt Chips */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mr-1">Quick Prompts:</span>
-              {PRESET_PROMPTS.map((chip) => (
-                <button
-                  key={chip.text}
-                  onClick={() => void runParseAndExecute(chip.text)}
-                  disabled={busy}
+              {/* Integrated Natural Language Input */}
+              <div className="flex flex-1 items-center min-w-0">
+                <input
+                  ref={inputRef}
+                  value={typed}
+                  onChange={(event) => setTyped(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") submitTyped();
+                  }}
+                  onFocus={() => setOpen(true)}
+                  placeholder="Ask or command ARGUS... (or push mic)"
+                  aria-label="Voice or typed command"
                   suppressHydrationWarning
-                  className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-200 hover:text-slate-900 disabled:opacity-40"
+                  className="w-full bg-transparent px-2 text-xs font-medium text-slate-900 placeholder-slate-400 focus:outline-none"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {/* Run Button (visible if user typed something) */}
+                {typed.trim() && (
+                  <button
+                    onClick={submitTyped}
+                    disabled={busy}
+                    suppressHydrationWarning
+                    className="flex h-8 items-center justify-center rounded-full bg-slate-900 px-3 text-xs font-bold text-white transition hover:bg-slate-800 disabled:opacity-40"
+                  >
+                    Send
+                  </button>
+                )}
+
+                {/* Push-to-Talk Mic Button */}
+                <button
+                  onClick={status === "listening" ? stopListening : startListening}
+                  disabled={busy && status !== "listening"}
+                  aria-label={status === "listening" ? "Stop listening" : "Start push-to-talk voice copilot"}
+                  suppressHydrationWarning
+                  className={`flex h-9 w-9 items-center justify-center rounded-full border transition-all ${
+                    status === "listening"
+                      ? "border-blue-600 bg-blue-600 text-white animate-pulse shadow-md shadow-blue-500/30"
+                      : "border-slate-200 bg-slate-100 text-slate-700 hover:border-slate-300 hover:bg-slate-200 hover:text-slate-900 hover:scale-105"
+                  }`}
                 >
-                  {chip.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Listening / Wave animation state */}
-            {status === "listening" && (
-              <div className="relative overflow-hidden rounded-xl border border-blue-200 bg-blue-50/70 p-3.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Wave className="w-8 h-5 text-blue-600" />
-                    <p className="text-xs font-bold text-blue-900">Listening to your voice (Sarvam AI)…</p>
-                  </div>
-                  <button
-                    onClick={stopListening}
-                    suppressHydrationWarning
-                    className="text-xs font-bold text-blue-700 hover:text-blue-900 px-2 py-1 rounded bg-white border border-blue-200 shadow-2xs"
-                  >
-                    Done / Stop
-                  </button>
-                </div>
-                {transcript && (
-                  <p className="mt-2 text-xs italic font-medium text-slate-800 bg-white rounded-lg p-2.5 border border-blue-100 shadow-2xs">
-                    &ldquo;{transcript}&rdquo;
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* Parsing State */}
-            {status === "parsing" && (
-              <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-medium text-slate-700">
-                <Wave className="w-6 h-4 text-blue-600" />
-                <span>Interpreting intent & checking safety policy…</span>
-              </div>
-            )}
-
-            {/* Refused State (Financial Safety Boundary Guardrail) */}
-            {status === "refused" && parse?.status === "REFUSED" && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50/90 p-3.5 text-rose-900" role="alert">
-                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-rose-700">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="10" />
-                    <line x1="12" y1="8" x2="12" y2="12" />
-                    <line x1="12" y1="16" x2="12.01" y2="16" />
-                  </svg>
-                  Financial Safety Refusal · {parse.forbidden_intent?.replace(/_/g, " ").toLowerCase()}
-                </div>
-                <p className="mt-1.5 text-xs font-semibold leading-relaxed text-slate-900">{parse.message}</p>
-                <div className="mt-2 rounded bg-white p-2 text-[10.5px] font-medium text-slate-600 border border-rose-200">
-                  ⚠️ Per PRD financial safety rules, corrections and money movements can only be approved through the human UI approval panel.
-                </div>
-              </div>
-            )}
-
-            {/* Confirmation State */}
-            {status === "confirm" && parse && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800">Confirmation Required</p>
-                <p className="mt-1 text-xs font-medium text-slate-800">{parse.message}</p>
-                <div className="mt-3 flex gap-2">
-                  <button
-                    onClick={() => void runParseAndExecute(parse.transcript, true)}
-                    suppressHydrationWarning
-                    className="rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-slate-800"
-                  >
-                    Confirm & Execute
-                  </button>
-                  <button
-                    onClick={() => setStatus("idle")}
-                    suppressHydrationWarning
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Execution Result State */}
-            {status === "result" && execution && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
-                      {execution.intent?.replace(/_/g, " ").toLowerCase() ?? "Result"}
-                    </p>
-                    {latencyMs !== null && (
-                      <span className="rounded-full border border-emerald-200 bg-white px-2 py-0.5 font-mono text-[9px] font-semibold text-emerald-700">
-                        {latencyMs} ms
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    onClick={() =>
-                      playAudioOrSpeak(
-                        execution.message,
-                        language,
-                        execution.audio_base64,
-                        execution.content_type || "audio/wav",
-                      )
-                    }
-                    suppressHydrationWarning
-                    className="flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-900"
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                  {status === "listening" ? (
+                    <Wave className="w-4 h-3 text-white" />
+                  ) : (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                      <line x1="12" x2="12" y1="19" y2="22" />
                     </svg>
-                    Replay Audio
-                  </button>
-                </div>
-                <p className="mt-1.5 text-xs font-medium leading-relaxed text-slate-900">{execution.message}</p>
-                {execution.cases && execution.cases.length > 0 && (
-                  <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    {execution.cases.slice(0, 6).map((c) => (
-                      <span
-                        key={c.case_id}
-                        className="rounded-md border border-slate-200 bg-white px-2 py-0.5 font-mono text-[10.5px] font-semibold text-slate-800 shadow-2xs"
-                      >
-                        {c.case_id} · {c.status}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                  )}
+                </button>
               </div>
-            )}
-
-            {/* Error / Recovery notice */}
-            {error && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-900">
-                <p>{error}</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ================= Center Floating Pill ================= */}
-      <div className="pointer-events-auto relative w-full group">
-        {/* Pill Body */}
-        <div className="relative flex items-center justify-between gap-2.5 rounded-full border border-slate-200 bg-white/95 px-3 py-2 shadow-xl backdrop-blur-md">
-          {/* Brand Icon (6 Slanted Lines) */}
-          <button
-            onClick={() => setOpen((prev) => !prev)}
-            aria-label="Toggle ARGUS Voice Copilot"
-            suppressHydrationWarning
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-900 transition-all hover:bg-slate-100 hover:scale-105"
-          >
-            <svg viewBox="0 0 42 34" className="w-5 h-4 text-slate-900" fill="currentColor" aria-hidden>
-              <polygon points="12,0 30,0 33.2,3.2 15.2,3.2" />
-              <polygon points="14.6,5.6 32.6,5.6 35.8,8.8 17.8,8.8" />
-              <polygon points="17.2,11.2 35.2,11.2 38.4,14.4 20.4,14.4" />
-              <polygon points="3.2,16.8 21.2,16.8 24.4,20 6.4,20" />
-              <polygon points="5.8,22.4 23.8,22.4 27,25.6 9,25.6" />
-              <polygon points="8.4,28 26.4,28 29.6,31.2 11.6,31.2" />
-            </svg>
-          </button>
-
-          {/* Integrated Natural Language Input */}
-          <div className="flex flex-1 items-center min-w-0">
-            <input
-              ref={inputRef}
-              value={typed}
-              onChange={(event) => setTyped(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") submitTyped();
-              }}
-              onFocus={() => setOpen(true)}
-              placeholder="Ask or command ARGUS... (or push mic)"
-              aria-label="Voice or typed command"
-              suppressHydrationWarning
-              className="w-full bg-transparent px-2 text-xs font-medium text-slate-900 placeholder-slate-400 focus:outline-none"
-            />
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* Run Button (visible if user typed something) */}
-            {typed.trim() && (
-              <button
-                onClick={submitTyped}
-                disabled={busy}
-                suppressHydrationWarning
-                className="flex h-8 items-center justify-center rounded-full bg-slate-900 px-3 text-xs font-bold text-white transition hover:bg-slate-800 disabled:opacity-40"
-              >
-                Send
-              </button>
-            )}
-
-            {/* Push-to-Talk Mic Button */}
-            <button
-              onClick={status === "listening" ? stopListening : startListening}
-              disabled={busy && status !== "listening"}
-              aria-label={status === "listening" ? "Stop listening" : "Start push-to-talk voice copilot"}
-              suppressHydrationWarning
-              className={`flex h-9 w-9 items-center justify-center rounded-full border transition-all ${
-                status === "listening"
-                  ? "border-blue-600 bg-blue-600 text-white animate-pulse shadow-md shadow-blue-500/30"
-                  : "border-slate-200 bg-slate-100 text-slate-700 hover:border-slate-300 hover:bg-slate-200 hover:text-slate-900 hover:scale-105"
-              }`}
-            >
-              {status === "listening" ? (
-                <Wave className="w-4 h-3 text-white" />
-              ) : (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" x2="12" y1="19" y2="22" />
-                </svg>
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

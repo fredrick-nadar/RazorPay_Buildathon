@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { motion } from "motion/react";
 import type {
   AuditLogItem,
   CaseDetail,
@@ -146,37 +147,15 @@ export default function ControlRoomPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("argus-dashboard-tab", { detail: { tab: activeTab } }));
+  }, [activeTab]);
+
   function handleHomeSubmit(prompt: string) {
-    const q = prompt.toLowerCase().trim();
-    if (!q) return;
-    if (q.includes("adversarial") || q.includes("agent") || q.includes("stress")) {
-      setActiveTab("dossier");
-      setStatusFilter("ALL");
-      void triggerRun("adversarial", "agent");
-    } else if (q.includes("reconcile") || q.includes("dev") || q.includes("batch")) {
-      setActiveTab("dossier");
-      setStatusFilter("ALL");
-      void triggerRun("dev", "rules-only");
-    } else if (q.includes("approval") || q.includes("approve")) {
-      setStatusFilter(CaseStatus.APPROVAL_REQUIRED);
-      setActiveTab("approval_queue");
-    } else if (q.includes("resolved") || q.includes("verified")) {
-      setStatusFilter(CaseStatus.VERIFIED_RESOLVED);
-      setActiveTab("verified_resolved");
-    } else if (q.includes("unresolved")) {
-      setStatusFilter(CaseStatus.UNRESOLVED);
-      setActiveTab("unresolved");
-    } else if (q.includes("audit") || q.includes("log") || q.includes("trail")) {
-      setActiveTab("audit");
-    } else if (q.includes("evidence") || q.includes("graph") || q.includes("chain")) {
-      setActiveTab("evidence");
-    } else if (q.includes("ledger") || q.includes("dry")) {
-      setActiveTab("ledger");
-    } else {
-      setSearchQuery(prompt);
-      setActiveTab("dossier");
-    }
+    const trimmed = prompt.trim();
+    if (!trimmed) return;
     setHomePrompt("");
+    window.dispatchEvent(new CustomEvent("argus-voice-command", { detail: { text: trimmed } }));
   }
 
   /* ----------------------------- fetching ------------------------- */
@@ -755,7 +734,19 @@ export default function ControlRoomPage() {
               </div>
 
               {/* Central Command / Prompt Input Box (Matching reference image) */}
-              <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300 transition-all">
+              <motion.div
+                key="home-command-center-box"
+                initial={{ opacity: 0, scale: 0.94, scaleY: 0.88, y: 24, filter: "blur(8px)" }}
+                animate={{ opacity: 1, scale: 1, scaleY: 1, y: 0, filter: "blur(0px)" }}
+                exit={{ opacity: 0, scale: 0.92, scaleY: 0.88, y: -20, filter: "blur(6px)" }}
+                transition={{
+                  type: "spring",
+                  stiffness: 360,
+                  damping: 26,
+                  mass: 0.7,
+                }}
+                className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300 transition-all"
+              >
                 <input
                   type="text"
                   value={homePrompt}
@@ -794,7 +785,10 @@ export default function ControlRoomPage() {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      title="Voice command"
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent("argus-voice-mic-toggle"));
+                      }}
+                      title="Push to talk (Voice command)"
                       className="flex h-8 w-8 items-center justify-center rounded-full text-slate-800 hover:bg-slate-100 transition-colors"
                     >
                       <IconMic size={16} />
@@ -816,7 +810,7 @@ export default function ControlRoomPage() {
                     </button>
                   </div>
                 </div>
-              </div>
+              </motion.div>
 
               {/* 3 Minimal Suggestion Action Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
