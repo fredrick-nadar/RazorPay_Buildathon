@@ -31,7 +31,6 @@ import {
   IconBookOpen,
   IconCheck,
   IconChevronDown,
-  IconChevronUp,
   IconFlag,
   IconHome,
   IconLayers,
@@ -275,7 +274,7 @@ export default function ControlRoomPage() {
   );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f8fafc] text-slate-900 antialiased font-sans">
+    <div className="flex h-screen overflow-hidden bg-[#f8fafc] text-slate-900 antialiased font-sans" suppressHydrationWarning>
       {/* ============================ Sarvam API Style Clean Sidebar ============================ */}
       <aside
         className={`flex shrink-0 flex-col border-r border-slate-200 bg-white transition-[width] duration-200 ease-in-out z-30 overflow-hidden select-none ${sidebarOpen ? "w-[240px]" : "w-[56px]"
@@ -359,17 +358,28 @@ export default function ControlRoomPage() {
             {sidebarOpen ? (
               <button
                 onClick={() => setBuildSectionOpen((o) => !o)}
-                className="flex w-full items-center justify-between px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-700"
+                className="flex w-full items-center justify-between px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-700 transition-colors"
               >
                 <span>Build</span>
-                {buildSectionOpen ? <IconChevronUp size={13} /> : <IconChevronDown size={13} />}
+                <IconChevronDown
+                  size={13}
+                  className={`transition-transform duration-300 ease-in-out ${
+                    buildSectionOpen ? "rotate-180" : "rotate-0"
+                  }`}
+                />
               </button>
             ) : (
               <div className="my-2 border-t border-slate-100 mx-1" />
             )}
 
-            {(buildSectionOpen || !sidebarOpen) && (
-              <div className="space-y-0.5 overflow-hidden">
+            <div
+              className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${
+                buildSectionOpen || !sidebarOpen
+                  ? "grid-rows-[1fr] opacity-100"
+                  : "grid-rows-[0fr] opacity-0 pointer-events-none"
+              }`}
+            >
+              <div className="min-h-0 space-y-0.5 overflow-hidden">
                 <button
                   onClick={() => void triggerRun("dev", "rules-only")}
                   disabled={running || booting}
@@ -461,7 +471,7 @@ export default function ControlRoomPage() {
                   </div>
                 </button>
               </div>
-            )}
+            </div>
           </div>
 
           {/* Section: Investigation & Tools */}
@@ -469,17 +479,28 @@ export default function ControlRoomPage() {
             {sidebarOpen ? (
               <button
                 onClick={() => setInvestigationSectionOpen((o) => !o)}
-                className="flex w-full items-center justify-between px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-700"
+                className="flex w-full items-center justify-between px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-700 transition-colors"
               >
                 <span>Investigation</span>
-                {investigationSectionOpen ? <IconChevronUp size={13} /> : <IconChevronDown size={13} />}
+                <IconChevronDown
+                  size={13}
+                  className={`transition-transform duration-300 ease-in-out ${
+                    investigationSectionOpen ? "rotate-180" : "rotate-0"
+                  }`}
+                />
               </button>
             ) : (
               <div className="my-2 border-t border-slate-100 mx-1" />
             )}
 
-            {(investigationSectionOpen || !sidebarOpen) && (
-              <div className="space-y-0.5 overflow-hidden">
+            <div
+              className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${
+                investigationSectionOpen || !sidebarOpen
+                  ? "grid-rows-[1fr] opacity-100"
+                  : "grid-rows-[0fr] opacity-0 pointer-events-none"
+              }`}
+            >
+              <div className="min-h-0 space-y-0.5 overflow-hidden">
                 <button
                   onClick={() => setActiveTab("investigation")}
                   title="Case Dossier"
@@ -553,7 +574,7 @@ export default function ControlRoomPage() {
                   </div>
                 </button>
               </div>
-            )}
+            </div>
           </div>
         </div>
 
