@@ -156,7 +156,7 @@ class SarvamClient:
         self,
         text: str,
         target_language_code: str = "en-IN",
-        speaker: str = "meera",
+        speaker: str | None = None,
     ) -> SarvamTTSResult:
         """Synthesize text into natural spoken speech using Bulbul."""
         if not self.is_configured:
@@ -194,6 +194,9 @@ class SarvamClient:
         # Truncate to reasonable sentence length for instant sub-second synthesis
         clean_text = text.strip()[:500]
 
+        settings = get_settings()
+        resolved_speaker = speaker or settings.voice_tts_speaker
+
         headers = {
             "api-subscription-key": self.api_key or "",
             "Content-Type": "application/json",
@@ -201,13 +204,11 @@ class SarvamClient:
         payload = {
             "inputs": [clean_text],
             "target_language_code": lang,
-            "speaker": speaker,
-            "pitch": 0,
-            "pace": 1.05,
-            "loudness": 1.5,
-            "speech_sample_rate": 22050,
+            "speaker": resolved_speaker,
+            "pace": settings.voice_tts_pace,
+            "speech_sample_rate": settings.voice_tts_sample_rate,
             "enable_preprocessing": True,
-            "model": "bulbul:v1",
+            "model": settings.voice_tts_model,
         }
 
         try:

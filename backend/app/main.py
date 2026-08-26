@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
+from app.ai.router import router as ai_router
 from app.api.routes_cases import router as cases_router
 from app.api.routes_meta import router as meta_router
 from app.api.routes_razorpay import router as razorpay_router
@@ -41,6 +42,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(cases_router)
     app.include_router(razorpay_router)
     app.include_router(voice_router)
+    app.include_router(ai_router)
     return app
 
 

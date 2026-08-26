@@ -110,6 +110,8 @@ class InvestigationResult:
                 entry["verifier_status"] = item.verifier_result.status.value
             if item.proof:
                 entry["proof_id"] = item.proof.proof_id
+            if item.provider_result is not None and item.provider_result.trace:
+                entry["trace"] = list(item.provider_result.trace)[:40]
             per_case.append(entry)
 
         return {

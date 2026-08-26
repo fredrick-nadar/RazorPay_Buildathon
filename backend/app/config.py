@@ -7,11 +7,12 @@ model API key is ever required merely to start (PRD Phase 0 gate).
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 APP_NAME = "ARGUS CONTROL"
@@ -24,9 +25,10 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="ARGUS_",
-        env_file=".env",
+        env_file=(".env", ".env.local"),
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
         frozen=True,
     )
 
@@ -66,23 +68,38 @@ class Settings(BaseSettings):
     # through the configurable base URLs.
     voice_stt_api_key: SecretStr | None = None
     voice_stt_base_url: str = "https://api.sarvam.ai"
-    voice_stt_model: str = "saarika:v2.5"
+    voice_stt_model: str = "saaras:v3"
     voice_tts_api_key: SecretStr | None = None
     voice_tts_base_url: str = "https://api.sarvam.ai"
-    voice_tts_model: str = "bulbul:v2"
-    voice_tts_speaker: str = "anushka"
-    sarvam_api_key: SecretStr | None = Field(
-        default=None,
-        validation_alias=AliasChoices("ARGUS_SARVAM_API_KEY", "SARVAM_API_KEY"),
+    voice_tts_model: str = "bulbul:v3"
+    voice_tts_speaker: str = "shubh"
+    voice_tts_pace: float = 1.0
+    voice_tts_sample_rate: int = 22050
+
+    # AI investigator providers (PRD 10). Chain order for "auto":
+    # gemini -> openai -> sarvam -> ollama (local Llama). With no keys and no
+    # Ollama, the investigator falls back to the deterministic fake provider -
+    # rules-only mode always works (Phase 0 invariant).
+    ai_provider: str = Field(
+        default="auto",
+        pattern="^(auto|gemini|openai|sarvam|ollama|fake|none)$",
     )
-    elevenlabs_api_key: SecretStr | None = Field(
-        default=None,
-        validation_alias=AliasChoices("ARGUS_ELEVENLABS_API_KEY", "ELEVENLABS_API_KEY"),
-    )
-    elevenlabs_voice_id: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("ARGUS_ELEVENLABS_VOICE_ID", "ELEVENLABS_VOICE_ID"),
-    )
+    gemini_api_key: SecretStr | None = None
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    openai_api_key: SecretStr | None = None
+    openai_model: str = "gpt-4o-mini"
+    openai_base_url: str = "https://api.openai.com/v1"
+    sarvam_model: str = "sarvam-105b"
+    sarvam_base_url: str = "https://api.sarvam.ai/v1"
+    ollama_base_url: str = "http://127.0.0.1:11434/v1"
+    ollama_model: str = "llama3.1:8b"
+    ollama_api_key: str = "ollama"
+    ollama_enabled: bool = False  # local Llama joins the auto chain only when enabled
+    ai_timeout_s: float = Field(default=45.0, gt=0)
+    sarvam_api_key: SecretStr | None = None
+    elevenlabs_api_key: SecretStr | None = None
+    elevenlabs_voice_id: str | None = None
 
     @field_validator("model_provider", "razorpay_key_id", "elevenlabs_voice_id", mode="before")
     @classmethod
@@ -106,6 +123,47 @@ class Settings(BaseSettings):
         if isinstance(v, SecretStr) and not v.get_secret_value().strip():
             return None
         return v
+
+    @model_validator(mode="after")
+    def _fallback_unprefixed_sarvam(self) -> Settings:
+        if not self.sarvam_api_key and not os.environ.get("PYTEST_CURRENT_TEST"):
+            key = os.environ.get("SARVAM_API_KEY") or os.environ.get("ARGUS_SARVAM_API_KEY")
+            if not key:
+                for fn in (".env.local", ".env"):
+                    p = Path(fn)
+                    if p.is_file():
+                        try:
+                            for line in p.read_text(encoding="utf-8").splitlines():
+                                if "=" in line and not line.strip().startswith("#"):
+                                    k, v = line.split("=", 1)
+                                    if (
+                                        k.strip() in ("SARVAM_API_KEY", "ARGUS_SARVAM_API_KEY")
+                                        and v.strip()
+                                    ):
+                                        key = v.strip().strip("\"'")
+                                        break
+                        except Exception:
+                            pass
+                        if key:
+                            break
+            if key and key.strip():
+                object.__setattr__(self, "sarvam_api_key", SecretStr(key.strip()))
+        return self
+
+    @model_validator(mode="after")
+    def _cross_populate_gemini_key(self) -> Settings:
+        """When model_provider is 'gemini' and gemini_api_key is unset, copy from model_api_key."""
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            return self
+        if (
+            not self.gemini_api_key
+            and self.model_api_key
+            and str(getattr(self, "model_provider", "") or "").lower() in ("gemini", "")
+        ):
+            raw = self.model_api_key.get_secret_value().strip()
+            if raw:
+                object.__setattr__(self, "gemini_api_key", SecretStr(raw))
+        return self
 
     @property
     def rules_only(self) -> bool:

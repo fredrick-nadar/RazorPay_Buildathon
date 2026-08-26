@@ -126,6 +126,8 @@ def list_voice_languages() -> VoiceLanguagesResponse:
 def voice_capabilities() -> dict[str, str]:
     """Honest engine availability so the client picks the right path."""
     settings = get_settings()
-    stt = "sarvam" if settings.voice_stt_api_key is not None else "unavailable"
-    tts = "sarvam" if settings.voice_tts_api_key is not None else "unavailable"
+    has_stt = settings.voice_stt_api_key is not None or settings.sarvam_api_key is not None
+    has_tts = settings.voice_tts_api_key is not None or settings.sarvam_api_key is not None
+    stt = "sarvam" if has_stt else "unavailable"
+    tts = "sarvam" if has_tts else "unavailable"
     return {"stt": stt, "tts": tts}

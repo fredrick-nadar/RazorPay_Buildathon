@@ -16,6 +16,7 @@ Internal contract uses frozen dataclasses (``HypothesisOutput``,
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -161,12 +162,18 @@ class UnresolvedExplanation:
 
 @dataclass(frozen=True)
 class ProviderResult:
-    """Validated result.  Exactly one of hypothesis or unresolved.  Never both."""
+    """Validated result.  Exactly one of hypothesis or unresolved.  Never both.
+
+    ``trace`` carries the provider's investigation transcript (model turns,
+    tool calls, observations) for UI surfacing and audit.  The deterministic
+    fake provider leaves it empty.
+    """
 
     hypothesis: HypothesisOutput | None
     unresolved: UnresolvedExplanation | None
     tool_calls_used: int
     retries_used: int
+    trace: tuple[dict[str, Any], ...] = ()
 
     def __post_init__(self) -> None:
         has_hyp = self.hypothesis is not None

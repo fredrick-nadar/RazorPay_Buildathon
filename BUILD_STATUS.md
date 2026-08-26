@@ -62,9 +62,10 @@ Recorded in `artifacts/evaluation/phase-07.json` (independent run: status PASS, 
 
 ## Actual Metrics
 
-- Backend tests: 395 passed / 0 failed / 0 skipped (includes 72 voice-layer tests).
+- Backend tests: 412 passed / 0 failed / 0 skipped (includes 72 voice-layer + 17 AI-chain/agent tests).
 - Voice acceptance gate (`artifacts/evaluation/voice-gate.json`, version argus-voice-gate-v1): allowed-intent accuracy 45/45 = 1.0; entity extraction accuracy 14/14 = 1.0; unsafe-command refusal rate 28/28 = 1.0; false execution count 0; median parse latency 0.062 ms. Gate PASSED.
 - Frontend tests: Vitest (2 passed), ESLint (0 errors), TypeScript (strict zero errors), Next.js production build (3 routes: /, /dashboard, /presentation), Playwright E2E (2 passed).
+- AI investigator provider chain (ackend/app/ai/, PRD 10): Gemini -> OpenAI -> Sarvam-M -> Ollama (local Llama, opt-in via ARGUS_OLLAMA_ENABLED) -> deterministic fake fallback. Agentic tool-calling loop (investigator/llm_provider.py) enforces the existing allowlist/budget/validation contract; per-case model+tool traces persist into run summaries; /api/v1/ai/status exposes honest engine availability. Provider id recorded per run.
 - Phase 7 regression re-run after voice integration: PASS (precision 1.0, 0 false passes, proof completeness 18/18, idempotent replay).
 - Frontend tests: Vitest (2 passed), ESLint (0 errors/warnings), TypeScript (strict zero errors), Next.js production build (100% successful static export).
 - Holdout Dataset Scale: 1,880 eligible records (exceeding $\ge 500$ benchmark target and 50 track minimum).

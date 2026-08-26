@@ -75,7 +75,7 @@ def synthesize_voice_speech(
     text: str,
     language: VoiceLanguage = VoiceLanguage.EN_IN,
     provider: str = "auto",
-    speaker: str = "meera",
+    speaker: str | None = None,
 ) -> tuple[str | None, str, str]:
     """Synthesize speech audio into base64 string using Sarvam or ElevenLabs."""
     if not text.strip():
@@ -85,22 +85,17 @@ def synthesize_voice_speech(
     elevenlabs = _get_elevenlabs_client()
 
     # If provider is explicitly specified
-    if provider == "elevenlabs" and elevenlabs.is_configured:
-        eleven_res = elevenlabs.synthesize(text)
-        if eleven_res.success and eleven_res.audio_base64:
-            return eleven_res.audio_base64, eleven_res.content_type, "elevenlabs"
-
     if provider == "sarvam" and sarvam.is_configured:
         sarvam_res = sarvam.synthesize(text, target_language_code=language.value, speaker=speaker)
         if sarvam_res.success and sarvam_res.audio_base64:
             return sarvam_res.audio_base64, sarvam_res.content_type, "sarvam"
 
-    # Auto selection: ElevenLabs for English if configured, Sarvam for Indic / default
-    if language is VoiceLanguage.EN_IN and elevenlabs.is_configured:
+    if provider == "elevenlabs" and elevenlabs.is_configured:
         eleven_res = elevenlabs.synthesize(text)
         if eleven_res.success and eleven_res.audio_base64:
             return eleven_res.audio_base64, eleven_res.content_type, "elevenlabs"
 
+    # Auto selection: Sarvam (Shubh Indic voice) first if configured, else ElevenLabs
     if sarvam.is_configured:
         sarvam_res = sarvam.synthesize(text, target_language_code=language.value, speaker=speaker)
         if sarvam_res.success and sarvam_res.audio_base64:
@@ -140,34 +135,42 @@ def parse_command(
         _audit(db, "VOICE_COMMAND_REFUSED", transcript, language, result, classification)
         return result
 
-    if classification.intent is None:
-        if db is not None:
-            conv_answer, _ = answer_custom_voice_query(db, normalized, language)
-            audio_b64, ctype, _ = synthesize_voice_speech(conv_answer, language)
-            token = uuid.uuid4().hex
-            _TOKENS[token] = (
-                VoiceIntent.EXPLAIN_CASE,
-                entities,
-                language,
-                normalized,
-                time.monotonic() + _TOKEN_TTL_SECONDS,
-            )
-            res = VoiceParseResult(
-                token=token,
-                transcript=transcript[:280],
-                language=language,
-                status=VoiceRequestStatus.OK,
-                intent=VoiceIntent.EXPLAIN_CASE,
-                entities=entities,
-                requires_confirmation=False,
-                message=conv_answer,
-                message_key="conversational_answer",
-                audio_base64=audio_b64,
-                content_type=ctype,
-            )
-            _audit(db, "VOICE_CONVERSATIONAL_QUERY", transcript, language, res, None)
-            return res
+    # Informational, conversational, case explanations, and status queries
+    # go directly to Gemini with live SQLite context
+    action_intents = (
+        VoiceIntent.RUN_RECONCILIATION,
+        VoiceIntent.PREPARE_VERIFIED_CORRECTION_PREVIEWS,
+        VoiceIntent.CANCEL_VOICE_REQUEST,
+    )
 
+    if classification.intent not in action_intents and db is not None:
+        conv_answer, nav = answer_custom_voice_query(db, normalized, language)
+        audio_b64, ctype, _ = synthesize_voice_speech(conv_answer, language)
+        token = uuid.uuid4().hex
+        _TOKENS[token] = (
+            classification.intent or VoiceIntent.EXPLAIN_CASE,
+            entities,
+            language,
+            normalized,
+            time.monotonic() + _TOKEN_TTL_SECONDS,
+        )
+        res = VoiceParseResult(
+            token=token,
+            transcript=transcript[:280],
+            language=language,
+            status=VoiceRequestStatus.OK,
+            intent=classification.intent or VoiceIntent.EXPLAIN_CASE,
+            entities=entities,
+            requires_confirmation=False,
+            message=conv_answer,
+            message_key="conversational_answer",
+            audio_base64=audio_b64,
+            content_type=ctype,
+        )
+        _audit(db, "VOICE_CONVERSATIONAL_QUERY", transcript, language, res, None)
+        return res
+
+    if classification.intent is None:
         return VoiceParseResult(
             token="",
             transcript=transcript[:280],
@@ -368,6 +371,22 @@ def command(
     if parsed.status in (VoiceRequestStatus.REFUSED, VoiceRequestStatus.NOT_UNDERSTOOD):
         return base
     if parsed.requires_confirmation and not confirmed:
+        return base
+
+    if parsed.message_key == "conversational_answer":
+        base["execution"] = {
+            "status": "OK",
+            "intent": parsed.intent.value if parsed.intent else "EXPLAIN_CASE",
+            "message": parsed.message,
+            "message_key": "conversational_answer",
+            "language": parsed.language.value,
+            "cases": [],
+            "previews": [],
+            "briefing": None,
+            "navigation": None,
+            "audio_base64": parsed.audio_base64,
+            "content_type": parsed.content_type,
+        }
         return base
 
     executed = execute_command(db, parsed.token, confirmed=True)

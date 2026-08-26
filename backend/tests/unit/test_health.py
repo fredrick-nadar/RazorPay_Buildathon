@@ -29,7 +29,7 @@ def test_health_returns_version_and_persistence_status(tmp_path: Path) -> None:
 
 def test_health_reports_rules_only_startup_without_model_key(tmp_path: Path) -> None:
     # The app boots with zero model configuration; health stays green (Phase 0 gate).
-    settings = Settings(db_path=tmp_path / "rules-only.sqlite3")
+    settings = Settings(db_path=tmp_path / "rules-only.sqlite3", _env_file=None)
     assert settings.rules_only is True
     with TestClient(create_app(settings)) as client:
         assert client.get("/api/v1/health").status_code == 200

@@ -9,11 +9,27 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from app.investigator.provider import FakeProvider
+from app.ai.chain import build_chain
+from app.config import get_settings
+from app.investigator.llm_provider import LLMInvestigatorProvider
+from app.investigator.provider import FakeProvider, InvestigatorProvider
 from app.persistence.database import Database
 from app.runs import execute_run
 
 router = APIRouter(prefix="/api/v1/runs", tags=["runs"])
+
+
+def _resolve_agent_provider() -> InvestigatorProvider:
+    """Agent mode: live LLM chain when configured, deterministic fake otherwise.
+
+    The provider id is persisted in the run summary either way, so the UI and
+    the benchmark artifacts always show WHICH investigator ran.
+    """
+    settings = get_settings()
+    chain = build_chain(settings)
+    if chain.member_ids:
+        return LLMInvestigatorProvider(chain)
+    return FakeProvider()
 
 
 class ReconcileRequest(BaseModel):
@@ -41,7 +57,7 @@ def reconcile_dataset(payload: ReconcileRequest, request: Request) -> dict[str, 
             detail=f"dataset inputs directory not found at {inputs_path}",
         )
 
-    provider = FakeProvider() if payload.mode == "agent" else None
+    provider = _resolve_agent_provider() if payload.mode == "agent" else None
 
     try:
         res = execute_run(

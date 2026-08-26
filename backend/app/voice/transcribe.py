@@ -25,7 +25,7 @@ from app.config import Settings
 MAX_AUDIO_BYTES = 8 * 1024 * 1024  # 8 MB raw audio ceiling
 MIN_AUDIO_BYTES = 256
 MAX_TTS_CHARS = 500
-_PROVIDER_TIMEOUT_S = 20.0
+_PROVIDER_TIMEOUT_S = 30.0
 
 
 class VoiceProviderUnavailable(Exception):
@@ -126,7 +126,7 @@ def transcribe_audio(
     audio_base64: str, language: str, content_type: str, settings: Settings
 ) -> dict[str, Any]:
     """Transcribe one utterance via the configured provider. Read-only."""
-    key = settings.voice_stt_api_key
+    key = settings.voice_stt_api_key or settings.sarvam_api_key
     if key is None or not key.get_secret_value():
         raise VoiceProviderUnavailable(
             "server speech-to-text is not configured; using on-device browser recognition"
@@ -149,7 +149,7 @@ def transcribe_audio(
 
 def synthesize_speech(text: str, language: str, settings: Settings) -> dict[str, Any]:
     """Synthesize one briefing via the configured provider. Read-only."""
-    key = settings.voice_tts_api_key
+    key = settings.voice_tts_api_key or settings.sarvam_api_key
     if key is None or not key.get_secret_value():
         raise VoiceProviderUnavailable(
             "server text-to-speech is not configured; using browser speech synthesis"
@@ -161,10 +161,13 @@ def synthesize_speech(text: str, language: str, settings: Settings) -> dict[str,
         f"{settings.voice_tts_base_url.rstrip('/')}/text-to-speech",
         key.get_secret_value(),
         {
-            "text": clean,
+            "inputs": [clean],
             "target_language_code": language,
             "model": settings.voice_tts_model,
             "speaker": settings.voice_tts_speaker,
+            "pace": settings.voice_tts_pace,
+            "speech_sample_rate": settings.voice_tts_sample_rate,
+            "enable_preprocessing": True,
         },
     )
     audios = payload.get("audios")

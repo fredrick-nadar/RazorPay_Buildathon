@@ -129,33 +129,23 @@ function getRecognitionCtor(): SpeechRecognitionCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-function playAudioOrSpeak(text: string, lang: string, audioBase64?: string | null, contentType: string = "audio/wav") {
-  if (typeof window === "undefined") return;
-
-  // 1. If Sarvam or ElevenLabs generated natural voice audio, play it immediately!
-  if (audioBase64) {
+/**
+ * Stop all currently playing TTS audio (both HTML5 Audio elements and
+ * Web Speech API synthesis). Called on mic-start / interrupt.
+ */
+function stopAllAudio(audioRef: React.MutableRefObject<HTMLAudioElement | null>) {
+  // Stop tracked HTML5 Audio element
+  if (audioRef.current) {
     try {
-      const audio = new Audio(`data:${contentType};base64,${audioBase64}`);
-      audio.play().catch(() => {
-        /* browser autoplay policy fallback */
-      });
-      return;
-    } catch {
-      /* fallback to browser speech synthesis */
-    }
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current.src = "";
+    } catch { /* ignore */ }
+    audioRef.current = null;
   }
-
-  // 2. Web Speech API synthesis fallback
-  if ("speechSynthesis" in window) {
-    try {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = lang;
-      utterance.rate = 1.02;
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
-    } catch {
-      /* ignore */
-    }
+  // Cancel browser speech synthesis
+  if (typeof window !== "undefined" && "speechSynthesis" in window) {
+    try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
   }
 }
 
@@ -172,15 +162,58 @@ function pickNaturalVoice(lang: string): SpeechSynthesisVoice | null {
   );
 }
 
-function playBrowserSpeech(text: string, lang: string) {
+/**
+ * Play cloud-generated audio or fall back to browser speech synthesis.
+ * All playback is tracked via audioRef so it can be interrupted.
+ */
+function playAudioOrSpeak(
+  text: string,
+  lang: string,
+  audioRef: React.MutableRefObject<HTMLAudioElement | null>,
+  audioBase64?: string | null,
+  contentType: string = "audio/wav",
+) {
+  if (typeof window === "undefined") return;
+
+  // Always stop any currently playing audio first
+  stopAllAudio(audioRef);
+
+  // 1. If Sarvam or ElevenLabs generated natural voice audio, play it
+  if (audioBase64) {
+    try {
+      const audio = new Audio(`data:${contentType};base64,${audioBase64}`);
+      audioRef.current = audio;
+      audio.onended = () => { if (audioRef.current === audio) audioRef.current = null; };
+      audio.onerror = () => { if (audioRef.current === audio) audioRef.current = null; };
+      audio.play().catch(() => {
+        // autoplay blocked → fall through to browser speech
+        audioRef.current = null;
+        playBrowserSpeech(text, lang, audioRef);
+      });
+      return;
+    } catch {
+      /* fallback to browser speech synthesis */
+    }
+  }
+
+  // 2. Web Speech API synthesis fallback
+  playBrowserSpeech(text, lang, audioRef);
+}
+
+function playBrowserSpeech(
+  text: string,
+  lang: string,
+  audioRef: React.MutableRefObject<HTMLAudioElement | null>,
+) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  // Ensure any HTML5 Audio playback is stopped before browser synthesis
+  stopAllAudio(audioRef);
   try {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = lang;
     utterance.rate = 1.02;
     const voice = pickNaturalVoice(lang);
     if (voice) utterance.voice = voice;
-    window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
   } catch {
     /* ignore */
@@ -202,6 +235,8 @@ export function VoiceController() {
   const [capabilities, setCapabilities] = useState<{ stt: string; tts: string }>({ stt: "unavailable", tts: "unavailable" });
   const [muted, setMuted] = useState(false);
 
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+
   const speak = useCallback(
     (text: string) => {
       if (muted || !text) return;
@@ -216,23 +251,18 @@ export function VoiceController() {
             if (res.ok) {
               const data = (await res.json()) as { success: boolean; audio_base64?: string };
               if (data.success && data.audio_base64) {
-                try {
-                  const audio = new Audio(`data:audio/wav;base64,${data.audio_base64}`);
-                  await audio.play();
-                  return;
-                } catch {
-                  /* autoplay blocked -> browser voice */
-                }
+                playAudioOrSpeak(text, language, ttsAudioRef, data.audio_base64, "audio/wav");
+                return;
               }
             }
           } catch {
             /* network hiccup -> browser voice */
           }
-          playBrowserSpeech(text, language);
+          playBrowserSpeech(text, language, ttsAudioRef);
         })();
         return;
       }
-      playBrowserSpeech(text, language);
+      playBrowserSpeech(text, language, ttsAudioRef);
     },
     [capabilities.tts, language, muted],
   );
@@ -240,6 +270,7 @@ export function VoiceController() {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const browserFinalRef = useRef<string>("");
   const inputRef = useRef<HTMLInputElement>(null);
   const [dashboardTab, setDashboardTab] = useState<string>("home");
 
@@ -269,6 +300,9 @@ export function VoiceController() {
   }, []);
 
   const stopListening = useCallback(() => {
+    // Stop any playing TTS audio immediately (the core interruption fix)
+    stopAllAudio(ttsAudioRef);
+
     try {
       recognitionRef.current?.stop();
     } catch {
@@ -285,10 +319,15 @@ export function VoiceController() {
     }
   }, []);
 
+  const inFlightRef = useRef(false);
+
   const runParseAndExecute = useCallback(
     async (text: string, confirmed = false) => {
       const trimmed = text.trim();
       if (!trimmed) return;
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+
       setOpen(true);
       setStatus("parsing");
       setError(null);
@@ -325,11 +364,28 @@ export function VoiceController() {
           setExecution(result);
           if (result.status === "REFUSED") {
             setStatus("refused");
-            playAudioOrSpeak(result.message, language, result.audio_base64, result.content_type || "audio/wav");
+            playAudioOrSpeak(
+              result.message,
+              language,
+              ttsAudioRef,
+              result.audio_base64,
+              result.content_type || "audio/wav",
+            );
             return;
           }
           setStatus("result");
-          speak(result.message);
+          // Play the audio generated by the backend directly (avoids duplicate TTS request)
+          if (result.audio_base64) {
+            playAudioOrSpeak(
+              result.message,
+              language,
+              ttsAudioRef,
+              result.audio_base64,
+              result.content_type || "audio/wav",
+            );
+          } else {
+            speak(result.message);
+          }
           const nav = result.navigation;
           if (nav?.type === "navigate" && nav.route) {
             setTimeout(() => router.push(nav.route as string), 900);
@@ -349,40 +405,13 @@ export function VoiceController() {
         setParse(parsed);
         if (parsed.status === "REFUSED") {
           setStatus("refused");
-          speak(parsed.message);
-          return;
-        }
-        if (parsed.status === "NOT_UNDERSTOOD") {
-          setStatus("error");
-          setError(parsed.message);
-          return;
-        }
-        if (parsed.message_key === "conversational_answer") {
-          setStatus("result");
-          setExecution({
-            status: "OK",
-            intent: "BRIEF_STATUS",
-            message: parsed.message,
-            message_key: "conversational_answer",
+          playAudioOrSpeak(
+            parsed.message,
             language,
-            cases: [],
-            previews: [],
-            briefing: null,
-            navigation: null,
-            audio_base64: parsed.audio_base64,
-            content_type: parsed.content_type,
-          });
-          speak(parsed.message);
-          return;
-        }
-        if (parsed.requires_confirmation) {
-          setStatus("confirm");
-          return;
-        }
-
-        if (parsed.status === "REFUSED") {
-          setStatus("refused");
-          speak(parsed.message);
+            ttsAudioRef,
+            parsed.audio_base64,
+            parsed.content_type || "audio/wav",
+          );
           return;
         }
         if (parsed.status === "NOT_UNDERSTOOD") {
@@ -408,8 +437,9 @@ export function VoiceController() {
           playAudioOrSpeak(
             parsed.message,
             language,
+            ttsAudioRef,
             parsed.audio_base64,
-            parsed.content_type || "audio/wav"
+            parsed.content_type || "audio/wav",
           );
           return;
         }
@@ -420,12 +450,17 @@ export function VoiceController() {
       } catch (cause) {
         setStatus("error");
         setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        inFlightRef.current = false;
       }
     },
     [language, router, speak],
   );
 
   const startListening = useCallback(async () => {
+    // Stop any playing TTS audio when mic is activated (interruption)
+    stopAllAudio(ttsAudioRef);
+
     setError(null);
     setParse(null);
     setExecution(null);
@@ -434,18 +469,11 @@ export function VoiceController() {
     setOpen(true);
 
     audioChunksRef.current = [];
+    browserFinalRef.current = "";
 
-    // SINGLE-ENGINE POLICY: on-device Web Speech recognition is primary
-    // (live interim results, zero upload latency). MediaRecorder ->
-    // /voice/transcribe is a FALLBACK used only when browser recognition
-    // is unavailable. Running both at once executed commands twice.
-
-    const startRecorderFallback = async () => {
-      if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-        setStatus("error");
-        setError("Voice capture is unavailable here. Type your command below.");
-        return;
-      }
+    const useServerSTT = capabilities.stt === "sarvam";
+    const startServerRecording = async () => {
+      if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return;
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const mediaRecorder = new MediaRecorder(stream);
@@ -456,7 +484,14 @@ export function VoiceController() {
         mediaRecorder.onstop = async () => {
           stream.getTracks().forEach((t) => t.stop());
           const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-          if (audioBlob.size <= 1000) return;
+          if (audioBlob.size <= 1000) {
+            if (browserFinalRef.current) {
+              void runParseAndExecute(browserFinalRef.current);
+            } else {
+              setStatus("idle");
+            }
+            return;
+          }
           const reader = new FileReader();
           reader.onloadend = async () => {
             try {
@@ -471,46 +506,55 @@ export function VoiceController() {
               });
               if (!res.ok) {
                 const detail = (await res.json().catch(() => null)) as { reason?: string } | null;
+                if (browserFinalRef.current) {
+                  void runParseAndExecute(browserFinalRef.current);
+                  return;
+                }
                 setStatus("error");
-                setError(
-                  detail?.reason ??
-                    "Server transcription is unavailable. Use the typed command bar.",
-                );
+                setError(detail?.reason ?? "Server transcription unavailable. Use the typed command bar.");
                 return;
               }
               const data = (await res.json()) as { success: boolean; transcript: string };
               if (data.success && data.transcript) {
                 setTranscript(data.transcript);
                 void runParseAndExecute(data.transcript);
+              } else if (browserFinalRef.current) {
+                void runParseAndExecute(browserFinalRef.current);
               }
             } catch {
-              setStatus("error");
-              setError("Transcription request failed. Use the typed command bar.");
+              if (browserFinalRef.current) void runParseAndExecute(browserFinalRef.current);
+              else {
+                setStatus("error");
+                setError("Transcription request failed. Use the typed command bar.");
+              }
             }
           };
           reader.readAsDataURL(audioBlob);
         };
         mediaRecorder.start();
       } catch {
-        setStatus("error");
-        setError("Microphone permission was denied. Allow microphone access or type below.");
+        // Recorder failed - browser STT will handle it
       }
     };
 
-    const Ctor = getRecognitionCtor();
-    if (!Ctor) {
-      // No on-device recognition (e.g. Firefox): server STT fallback.
-      void startRecorderFallback();
-      return;
+    if (useServerSTT) {
+      void startServerRecording();
     }
 
+    const Ctor = getRecognitionCtor();
+    if (!Ctor) {
+      if (!useServerSTT) {
+        setStatus("error");
+        setError("Speech recognition is not available in this browser. Type your command below.");
+      }
+      return;
+    }
     try {
       const recognition = new Ctor();
       recognition.lang = language;
       recognition.continuous = false;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
-
       recognition.onresult = (event) => {
         let finalText = "";
         let interim = "";
@@ -521,42 +565,40 @@ export function VoiceController() {
           if (result.isFinal) finalText += text;
           else interim += text;
         }
-        setTranscript(finalText || interim);
-        if (finalText) {
-          setTranscript(finalText);
-          stopListening();
-          void runParseAndExecute(finalText);
+        if (useServerSTT) {
+          setTranscript(finalText || interim);
+          if (finalText) browserFinalRef.current = finalText;
+        } else {
+          setTranscript(finalText || interim);
+          if (finalText) {
+            browserFinalRef.current = finalText;
+            setTranscript(finalText);
+            stopListening();
+            void runParseAndExecute(finalText);
+          }
         }
       };
-
       recognition.onerror = (event) => {
         if (event.error === "network") {
-          // Browser cloud STT blocked: server STT fallback when configured.
-          if (capabilities.stt === "sarvam") {
-            void startRecorderFallback();
-          } else {
+          if (!useServerSTT) {
             setStatus("idle");
-            setError(
-              "Browser speech service unreachable. Type below or click a quick prompt.",
-            );
+            setError("Browser speech service unreachable. Type below or click a quick prompt.");
             inputRef.current?.focus();
           }
         } else if (event.error === "not-allowed" || event.error === "service-not-allowed") {
           setStatus("error");
           setError("Microphone permission was denied. Allow microphone access or type below.");
         } else if (event.error === "no-speech") {
-          setStatus("idle");
+          if (!useServerSTT) setStatus("idle");
         }
       };
-
       recognition.onend = () => {
-        setStatus((current) => (current === "listening" ? "idle" : current));
+        if (!useServerSTT) setStatus((current) => (current === "listening" ? "idle" : current));
       };
-
       recognitionRef.current = recognition;
       recognition.start();
     } catch {
-      void startRecorderFallback();
+      if (!useServerSTT) void startServerRecording();
     }
   }, [capabilities.stt, language, runParseAndExecute, stopListening]);
 
@@ -807,6 +849,7 @@ export function VoiceController() {
                         playAudioOrSpeak(
                           execution.message,
                           language,
+                          ttsAudioRef,
                           execution.audio_base64,
                           execution.content_type || "audio/wav",
                         )
