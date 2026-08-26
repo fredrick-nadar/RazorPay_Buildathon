@@ -29,7 +29,6 @@ import { HomeChat } from "../../components/home-chat";
 import {
   IconActivity,
   IconBolt,
-  IconBookOpen,
   IconCheck,
   IconChevronDown,
   IconFlag,

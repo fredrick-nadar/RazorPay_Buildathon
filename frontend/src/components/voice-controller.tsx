@@ -3,10 +3,6 @@
 /**
  * ARGUS Voice Copilot (PRD §13.5).
  *
- * Google Gemini-style floating bottom pill with fluid iridescent wave animations,
- * prominent 6-line brand icon, instant typed fallback, preset prompt chips,
- * and robust Sarvam AI / ElevenLabs cloud STT + TTS integration.
- *
  * Safety Model: Observational & navigation copilot ONLY. Cannot approve, apply,
  * or mutate records. Forbidden actions are strictly refused and audited.
  */
@@ -14,7 +10,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { VoiceOrbModal } from "./voice-orb-modal";
 
 type VoiceStatus =
   | "idle"
@@ -119,25 +114,33 @@ function getRecognitionCtor(): SpeechRecognitionCtor | null {
  * Web Speech API synthesis). Called on mic-start / interrupt.
  */
 function stopAllAudio(audioRef: React.MutableRefObject<HTMLAudioElement | null>) {
-  // Stop tracked HTML5 Audio element
   if (audioRef.current) {
     try {
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
       audioRef.current.src = "";
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     audioRef.current = null;
   }
-  // Cancel browser speech synthesis
   if (typeof window !== "undefined" && "speechSynthesis" in window) {
-    try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
+    try {
+      window.speechSynthesis.cancel();
+    } catch {
+      /* ignore */
+    }
   }
 }
 
 function pickNaturalVoice(lang: string): SpeechSynthesisVoice | null {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
   const voices = window.speechSynthesis.getVoices();
-  const matching = voices.filter((v) => v.lang.replace("_", "-").toLowerCase().startsWith(lang.slice(0, 2).toLowerCase()));
+  const matching = voices.filter((v) =>
+    v.lang.replace("_", "-").toLowerCase().startsWith(lang.slice(0, 2).toLowerCase()),
+  );
   const pool = matching.length > 0 ? matching : voices;
   return (
     pool.find((v) => /natural|neural|premium|enhanced/i.test(v.name)) ??
@@ -147,10 +150,6 @@ function pickNaturalVoice(lang: string): SpeechSynthesisVoice | null {
   );
 }
 
-/**
- * Play cloud-generated audio or fall back to browser speech synthesis.
- * All playback is tracked via audioRef so it can be interrupted.
- */
 function playAudioOrSpeak(
   text: string,
   lang: string,
@@ -161,10 +160,8 @@ function playAudioOrSpeak(
 ) {
   if (typeof window === "undefined") return;
 
-  // Always stop any currently playing audio first
   stopAllAudio(audioRef);
 
-  // 1. If Sarvam or ElevenLabs generated natural voice audio, play it
   if (audioBase64) {
     try {
       const audio = new Audio(`data:${contentType};base64,${audioBase64}`);
@@ -177,7 +174,6 @@ function playAudioOrSpeak(
         if (audioRef.current === audio) audioRef.current = null;
       };
       audio.play().catch(() => {
-        // autoplay blocked → fall through to browser speech
         audioRef.current = null;
         playBrowserSpeech(text, lang, audioRef, onEnded);
       });
@@ -187,7 +183,6 @@ function playAudioOrSpeak(
     }
   }
 
-  // 2. Web Speech API synthesis fallback
   playBrowserSpeech(text, lang, audioRef, onEnded);
 }
 
@@ -198,7 +193,6 @@ function playBrowserSpeech(
   onEnded?: () => void,
 ) {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  // Ensure any HTML5 Audio playback is stopped before browser synthesis
   stopAllAudio(audioRef);
   try {
     const utterance = new SpeechSynthesisUtterance(text);
@@ -218,7 +212,7 @@ function playBrowserSpeech(
 export function VoiceController() {
   const router = useRouter();
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  const [, setOpen] = useState(false);
   const [language, setLanguage] = useState("en-IN");
   const [status, setStatus] = useState<VoiceStatus>("idle");
   const [transcript, setTranscript] = useState("");
@@ -227,8 +221,11 @@ export function VoiceController() {
   const [execution, setExecution] = useState<VoiceExecution | null>(null);
   const [, setError] = useState<string | null>(null);
   const [, setLatencyMs] = useState<number | null>(null);
-  const [capabilities, setCapabilities] = useState<{ stt: string; tts: string }>({ stt: "unavailable", tts: "unavailable" });
-  const [muted, setMuted] = useState(false);
+  const [capabilities, setCapabilities] = useState<{ stt: string; tts: string }>({
+    stt: "unavailable",
+    tts: "unavailable",
+  });
+  const [muted] = useState(false);
   const [realtimeMode] = useState(true);
 
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -298,13 +295,11 @@ export function VoiceController() {
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const stopListening = useCallback(() => {
-    // Clear any pending silence timer
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
     }
 
-    // Stop any playing TTS audio immediately (the core interruption fix)
     stopAllAudio(ttsAudioRef);
 
     try {
@@ -324,6 +319,9 @@ export function VoiceController() {
   }, []);
 
   const inFlightRef = useRef(false);
+  const turnExecutedRef = useRef(false);
+  const isStoppedRef = useRef(false);
+  const autoRestartTimerRef = useRef<NodeJS.Timeout | null>(null);
   const realtimeModeRef = useRef(realtimeMode);
   realtimeModeRef.current = realtimeMode;
   const startListeningRef = useRef<(() => Promise<void>) | null>(null);
@@ -332,8 +330,18 @@ export function VoiceController() {
     async (text: string, confirmed = false) => {
       const trimmed = text.trim();
       if (!trimmed) return;
-      if (inFlightRef.current) return;
+      if (inFlightRef.current || turnExecutedRef.current || isStoppedRef.current) return;
       inFlightRef.current = true;
+      turnExecutedRef.current = true;
+
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+      if (autoRestartTimerRef.current) {
+        clearTimeout(autoRestartTimerRef.current);
+        autoRestartTimerRef.current = null;
+      }
 
       setOpen(true);
       setStatus("parsing");
@@ -341,7 +349,6 @@ export function VoiceController() {
       setExecution(null);
       const startedAt = performance.now();
       try {
-        // Atomic single-round-trip path: parse + guard + execute together.
         const commandRes = await fetch("/api/v1/voice/command", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -358,15 +365,18 @@ export function VoiceController() {
         };
         setLatencyMs(Math.round(performance.now() - startedAt));
 
-        // Auto-switch UI language if Gemini / model detected language switch request
         if (commandData.language && commandData.language !== language) {
           setLanguage(commandData.language);
         }
 
         const onVoicePlaybackEnded = () => {
+          if (isStoppedRef.current) return;
           if (realtimeModeRef.current && startListeningRef.current) {
-            setTimeout(() => {
-              void startListeningRef.current?.();
+            if (autoRestartTimerRef.current) clearTimeout(autoRestartTimerRef.current);
+            autoRestartTimerRef.current = setTimeout(() => {
+              if (!isStoppedRef.current) {
+                void startListeningRef.current?.();
+              }
             }, 450);
           }
         };
@@ -401,7 +411,6 @@ export function VoiceController() {
             return;
           }
           setStatus("result");
-          // Play the audio generated by the backend directly (avoids duplicate TTS request)
           if (result.audio_base64) {
             playAudioOrSpeak(
               result.message,
@@ -428,7 +437,6 @@ export function VoiceController() {
           return;
         }
 
-        // Non-executing outcomes surface through the parse shape.
         const parsed = commandData as VoiceParse;
         const targetLang = parsed.language || language;
         setParse(parsed);
@@ -489,20 +497,25 @@ export function VoiceController() {
   );
 
   const startListening = useCallback(async () => {
-    // Stop any playing TTS audio when mic is activated (interruption)
     stopAllAudio(ttsAudioRef);
 
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
     }
+    if (autoRestartTimerRef.current) {
+      clearTimeout(autoRestartTimerRef.current);
+      autoRestartTimerRef.current = null;
+    }
 
+    isStoppedRef.current = false;
     setError(null);
     setParse(null);
     setExecution(null);
     setTranscript("");
     setStatus("listening");
     setOpen(true);
+    turnExecutedRef.current = false;
 
     audioChunksRef.current = [];
     browserFinalRef.current = "";
@@ -569,7 +582,7 @@ export function VoiceController() {
         };
         mediaRecorder.start();
       } catch {
-        // Recorder failed - browser STT will handle it
+        /* best effort */
       }
     };
 
@@ -606,7 +619,6 @@ export function VoiceController() {
         setTranscript(currentText);
         if (finalText) browserFinalRef.current = finalText;
 
-        // Auto-pause detection: if user speaks and pauses for 1.3s, auto-close mic and send to Gemini!
         if (currentText.trim().length > 0) {
           if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
           silenceTimerRef.current = setTimeout(() => {
@@ -618,8 +630,6 @@ export function VoiceController() {
         if (event.error === "network") {
           if (!useServerSTT) {
             setStatus("idle");
-            setError("Browser speech service unreachable. Type below or click a quick prompt.");
-            inputRef.current?.focus();
           }
         } else if (event.error === "not-allowed" || event.error === "service-not-allowed") {
           setStatus("error");
@@ -648,10 +658,14 @@ export function VoiceController() {
 
   const startWithGreeting = useCallback(
     async (targetLang = language) => {
-      // Clear any pending silence timer
+      isStoppedRef.current = false;
       if (silenceTimerRef.current) {
         clearTimeout(silenceTimerRef.current);
         silenceTimerRef.current = null;
+      }
+      if (autoRestartTimerRef.current) {
+        clearTimeout(autoRestartTimerRef.current);
+        autoRestartTimerRef.current = null;
       }
       setOpen(true);
       setError(null);
@@ -665,9 +679,13 @@ export function VoiceController() {
         : "Hello, I'm ARGUS. How can I assist with your reconciliation ledger today?";
 
       const onGreetingEnded = () => {
+        if (isStoppedRef.current) return;
         if (realtimeModeRef.current && startListeningRef.current) {
-          setTimeout(() => {
-            void startListeningRef.current?.();
+          if (autoRestartTimerRef.current) clearTimeout(autoRestartTimerRef.current);
+          autoRestartTimerRef.current = setTimeout(() => {
+            if (!isStoppedRef.current) {
+              void startListeningRef.current?.();
+            }
           }, 350);
         }
       };
@@ -718,13 +736,30 @@ export function VoiceController() {
         void runParseAndExecute(custom.detail.text);
       }
     }
+    function onVoiceStop() {
+      isStoppedRef.current = true;
+      if (autoRestartTimerRef.current) {
+        clearTimeout(autoRestartTimerRef.current);
+        autoRestartTimerRef.current = null;
+      }
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+      stopAllAudio(ttsAudioRef);
+      stopListening();
+      setStatus("idle");
+      setTranscript("");
+      setExecution(null);
+      setParse(null);
+      setOpen(false);
+    }
+
     function onVoiceMicToggle(event: Event) {
-      if (status === "listening" || status === "speaking") {
-        stopAllAudio(ttsAudioRef);
-        stopListening();
-        setOpen(false);
+      const custom = event as CustomEvent<{ greet?: boolean; action?: "stop" | "toggle" | "start" }>;
+      if (custom.detail?.action === "stop" || status !== "idle") {
+        onVoiceStop();
       } else {
-        const custom = event as CustomEvent<{ greet?: boolean }>;
         if (custom.detail?.greet !== false) {
           void startWithGreeting();
         } else {
@@ -737,41 +772,40 @@ export function VoiceController() {
     window.addEventListener("argus-dashboard-tab", onTabChange);
     window.addEventListener("argus-voice-command", onVoiceCommand);
     window.addEventListener("argus-voice-mic-toggle", onVoiceMicToggle);
+    window.addEventListener("argus-voice-stop", onVoiceStop);
 
     return () => {
       window.removeEventListener("argus-dashboard-tab", onTabChange);
       window.removeEventListener("argus-voice-command", onVoiceCommand);
       window.removeEventListener("argus-voice-mic-toggle", onVoiceMicToggle);
+      window.removeEventListener("argus-voice-stop", onVoiceStop);
     };
   }, [runParseAndExecute, startListening, startWithGreeting, stopListening, status]);
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("argus-voice-state", {
+        detail: {
+          status,
+          transcript,
+          assistantMessage: execution?.message || parse?.message || null,
+          language,
+        },
+      }),
+    );
+  }, [status, transcript, execution, parse, language]);
 
   if (pathname === "/") {
     return null;
   }
 
-  const isOuterPage = pathname !== "/dashboard" || dashboardTab !== "home" || open;
+  const isOuterPage = pathname !== "/dashboard" || dashboardTab !== "home";
 
   return (
     <>
-      {/* Full-Screen Realtime ChatGPT Voice Orb Experience */}
-      <VoiceOrbModal
-        isOpen={open}
-        onClose={() => setOpen(false)}
-        status={status}
-        transcript={transcript}
-        assistantMessage={execution?.message || parse?.message || null}
-        language={language}
-        onLanguageChange={setLanguage}
-        muted={muted}
-        onToggleMute={() => setMuted((m) => !m)}
-        onMicToggle={status === "listening" ? stopListening : startListening}
-        onSubmitTyped={(text) => void runParseAndExecute(text)}
-      />
-
       <div className="pointer-events-none fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-3 w-full max-w-2xl px-4">
-        {/* ================= Center Floating Pill Launcher ================= */}
         <AnimatePresence>
-          {isOuterPage && !open && (
+          {isOuterPage && (
             <motion.div
               key="argus-floating-pill"
               initial={{
@@ -806,9 +840,7 @@ export function VoiceController() {
               }}
               className="pointer-events-auto relative w-full group"
             >
-              {/* Pill Body */}
               <div className="relative flex items-center justify-between gap-2.5 rounded-full border border-slate-200 bg-white/95 px-3 py-2 shadow-xl backdrop-blur-md transition-all duration-200 hover:border-slate-300">
-                {/* Brand Icon (6 Slanted Lines) */}
                 <button
                   onClick={() => setOpen((prev) => !prev)}
                   aria-label="Toggle ARGUS Voice Copilot"
@@ -825,7 +857,6 @@ export function VoiceController() {
                   </svg>
                 </button>
 
-                {/* Integrated Natural Language Input */}
                 <div className="flex flex-1 items-center min-w-0">
                   <input
                     ref={inputRef}
@@ -842,9 +873,7 @@ export function VoiceController() {
                   />
                 </div>
 
-                {/* Action Buttons */}
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {/* Push-to-Talk Mic Button */}
                   <button
                     onClick={() => {
                       void startWithGreeting();
