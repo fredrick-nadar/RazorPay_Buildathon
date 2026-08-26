@@ -11,7 +11,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { motion } from "motion/react";
 import type {
   AuditLogItem,
   CaseDetail,
@@ -26,9 +25,9 @@ import { EvidenceChain } from "../../components/evidence-chain";
 import { AuditLog } from "../../components/audit-log";
 import { ApprovalModal } from "../../components/approval-modal";
 import { ConnectDatasetModal } from "../../components/connect-dataset-modal";
+import { HomeChat } from "../../components/home-chat";
 import {
   IconActivity,
-  IconArrowUp,
   IconBolt,
   IconBookOpen,
   IconCheck,
@@ -36,9 +35,6 @@ import {
   IconFlag,
   IconHome,
   IconLayers,
-  IconMic,
-  IconPlus,
-  IconPlug,
   IconPresentation,
   IconRoute,
   IconScale,
@@ -130,7 +126,6 @@ export default function ControlRoomPage() {
   const [auditTrail, setAuditTrail] = useState<AuditLogItem[]>([]);
 
   const [activeTab, setActiveTab] = useState<Tab>("home");
-  const [homePrompt, setHomePrompt] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
@@ -152,13 +147,6 @@ export default function ControlRoomPage() {
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("argus-dashboard-tab", { detail: { tab: activeTab } }));
   }, [activeTab]);
-
-  function handleHomeSubmit(prompt: string) {
-    const trimmed = prompt.trim();
-    if (!trimmed) return;
-    setHomePrompt("");
-    window.dispatchEvent(new CustomEvent("argus-voice-command", { detail: { text: trimmed } }));
-  }
 
   /* ----------------------------- fetching ------------------------- */
 
@@ -344,11 +332,10 @@ export default function ControlRoomPage() {
                 setActiveTab("home");
               }}
               title="Home"
-              className={`group flex h-10 w-full items-center rounded-xl transition-all duration-150 overflow-hidden ${
-                activeTab === "home"
+              className={`group flex h-10 w-full items-center rounded-xl transition-all duration-150 overflow-hidden ${activeTab === "home"
                   ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
                   : "text-slate-700 hover:bg-slate-50 hover:text-slate-900"
-              }`}
+                }`}
             >
               <div className="flex h-10 w-10 shrink-0 items-center justify-center">
                 <IconHome size={18} />
@@ -372,9 +359,8 @@ export default function ControlRoomPage() {
                 <span>Build</span>
                 <IconChevronDown
                   size={13}
-                  className={`transition-transform duration-300 ease-in-out ${
-                    buildSectionOpen ? "rotate-180" : "rotate-0"
-                  }`}
+                  className={`transition-transform duration-300 ease-in-out ${buildSectionOpen ? "rotate-180" : "rotate-0"
+                    }`}
                 />
               </button>
             ) : (
@@ -382,11 +368,10 @@ export default function ControlRoomPage() {
             )}
 
             <div
-              className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${
-                buildSectionOpen || !sidebarOpen
+              className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${buildSectionOpen || !sidebarOpen
                   ? "grid-rows-[1fr] opacity-100"
                   : "grid-rows-[0fr] opacity-0 pointer-events-none"
-              }`}
+                }`}
             >
               <div className="min-h-0 space-y-0.5 overflow-hidden">
                 <button
@@ -441,11 +426,10 @@ export default function ControlRoomPage() {
                     if (match) void selectCase(match.case_id);
                   }}
                   title="Approval Queue"
-                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${
-                    activeTab === "approval_queue"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "approval_queue"
                       ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
                       : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                  }`}
+                    }`}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
                     <IconShield size={17} />
@@ -468,11 +452,10 @@ export default function ControlRoomPage() {
                     if (match) void selectCase(match.case_id);
                   }}
                   title="Verified Resolved"
-                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${
-                    activeTab === "verified_resolved"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "verified_resolved"
                       ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
                       : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                  }`}
+                    }`}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
                     <IconCheck size={17} />
@@ -495,11 +478,10 @@ export default function ControlRoomPage() {
                     if (match) void selectCase(match.case_id);
                   }}
                   title="Unresolved Cases"
-                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${
-                    activeTab === "unresolved"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "unresolved"
                       ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
                       : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                  }`}
+                    }`}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
                     <IconFlag size={17} />
@@ -525,9 +507,8 @@ export default function ControlRoomPage() {
                 <span>Investigation</span>
                 <IconChevronDown
                   size={13}
-                  className={`transition-transform duration-300 ease-in-out ${
-                    investigationSectionOpen ? "rotate-180" : "rotate-0"
-                  }`}
+                  className={`transition-transform duration-300 ease-in-out ${investigationSectionOpen ? "rotate-180" : "rotate-0"
+                    }`}
                 />
               </button>
             ) : (
@@ -535,11 +516,10 @@ export default function ControlRoomPage() {
             )}
 
             <div
-              className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${
-                investigationSectionOpen || !sidebarOpen
+              className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${investigationSectionOpen || !sidebarOpen
                   ? "grid-rows-[1fr] opacity-100"
                   : "grid-rows-[0fr] opacity-0 pointer-events-none"
-              }`}
+                }`}
             >
               <div className="min-h-0 space-y-0.5 overflow-hidden">
                 <button
@@ -548,11 +528,10 @@ export default function ControlRoomPage() {
                     setActiveTab("dossier");
                   }}
                   title="Case Dossier"
-                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${
-                    activeTab === "dossier"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "dossier"
                       ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
                       : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                  }`}
+                    }`}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
                     <IconLayers size={17} />
@@ -568,11 +547,10 @@ export default function ControlRoomPage() {
                 <button
                   onClick={() => setActiveTab("evidence")}
                   title="Evidence Trace"
-                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${
-                    activeTab === "evidence"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "evidence"
                       ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
                       : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                  }`}
+                    }`}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
                     <IconRoute size={17} />
@@ -588,11 +566,10 @@ export default function ControlRoomPage() {
                 <button
                   onClick={() => setActiveTab("ledger")}
                   title="Ledger Dry-Run"
-                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${
-                    activeTab === "ledger"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "ledger"
                       ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
                       : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                  }`}
+                    }`}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
                     <IconScale size={17} />
@@ -608,11 +585,10 @@ export default function ControlRoomPage() {
                 <button
                   onClick={() => setActiveTab("audit")}
                   title="Audit Trail"
-                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${
-                    activeTab === "audit"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "audit"
                       ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
                       : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
-                  }`}
+                    }`}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center">
                     <IconScroll size={17} />
@@ -664,22 +640,6 @@ export default function ControlRoomPage() {
               <span className="truncate text-[13px] font-medium">Presentation</span>
             </div>
           </Link>
-
-          <Link
-            href="/"
-            title="Documentation / Home"
-            className="group flex h-10 w-full items-center rounded-xl text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition-all overflow-hidden"
-          >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-              <IconBookOpen size={17} />
-            </div>
-            <div
-              className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
-                }`}
-            >
-              <span className="truncate text-[13px] font-medium">Documentation</span>
-            </div>
-          </Link>
         </div>
       </aside>
 
@@ -699,22 +659,20 @@ export default function ControlRoomPage() {
               Tenant argus-demo · Synthetic data only
             </span>
             <span
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${
-                apiOk === true
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${apiOk === true
                   ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                   : apiOk === false
                     ? "border-rose-200 bg-rose-50 text-rose-800"
                     : "border-slate-200 bg-slate-50 text-slate-600"
-              }`}
+                }`}
             >
               <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  apiOk === true
+                className={`h-1.5 w-1.5 rounded-full ${apiOk === true
                     ? "bg-emerald-500 animate-pulse-dot"
                     : apiOk === false
                       ? "bg-rose-500"
                       : "bg-slate-400"
-                }`}
+                  }`}
               />
               {apiOk === true ? "API connected" : apiOk === false ? "API offline" : "Checking API…"}
             </span>
@@ -723,178 +681,12 @@ export default function ControlRoomPage() {
 
         {/* ============================ Distinct Dedicated Views ============================ */}
         {activeTab === "home" && (
-          <div className="flex flex-1 flex-col items-center justify-center p-6 sm:p-12 overflow-y-auto">
-            <div className="w-full max-w-2xl mx-auto space-y-8 animate-fade">
-              {/* Minimal Greeting Header */}
-              <div className="text-center space-y-2">
-                <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900 font-sans">
-                  Let&apos;s reconcile.
-                </h2>
-                <p className="text-sm font-medium text-slate-500">
-                  Deterministic financial flight recorder with bounded AI exception investigation.
-                </p>
-              </div>
-
-              {/* Central Command / Prompt Input Box (Matching reference image) */}
-              <motion.div
-                key="home-command-center-box"
-                initial={{ opacity: 0, scale: 0.94, scaleY: 0.88, y: 24, filter: "blur(8px)" }}
-                animate={{ opacity: 1, scale: 1, scaleY: 1, y: 0, filter: "blur(0px)" }}
-                exit={{ opacity: 0, scale: 0.92, scaleY: 0.88, y: -20, filter: "blur(6px)" }}
-                transition={{
-                  type: "spring",
-                  stiffness: 360,
-                  damping: 26,
-                  mass: 0.7,
-                }}
-                className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm hover:border-slate-300 transition-all"
-              >
-                <input
-                  type="text"
-                  value={homePrompt}
-                  onChange={(e) => setHomePrompt(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && homePrompt.trim()) {
-                      handleHomeSubmit(homePrompt);
-                    }
-                  }}
-                  placeholder="Ask anything, investigate exceptions, or run batches..."
-                  className="w-full text-base font-medium placeholder:text-slate-400 focus:outline-none bg-transparent px-2 pt-1 pb-4 text-slate-900"
-                />
-                <div className="flex items-center justify-between pt-2 border-t border-slate-100/80">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setConnectDatasetOpen(true)}
-                      title="Add dataset or connect live Razorpay"
-                      className="flex h-8 w-8 items-center justify-center rounded-full text-slate-800 hover:bg-slate-100 transition-colors"
-                    >
-                      <IconPlus size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConnectDatasetOpen(true)}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50/80 px-3 py-1 text-xs font-semibold text-slate-800 hover:bg-slate-100 transition-colors"
-                    >
-                      <IconPlug size={13} />
-                      Connect datasets
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        window.dispatchEvent(new CustomEvent("argus-voice-mic-toggle"));
-                      }}
-                      title="Push to talk (Voice command)"
-                      className="flex h-8 w-8 items-center justify-center rounded-full text-slate-800 hover:bg-slate-100 transition-colors"
-                    >
-                      <IconMic size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (homePrompt.trim()) handleHomeSubmit(homePrompt);
-                        else {
-                          setActiveTab("dossier");
-                          setStatusFilter("ALL");
-                          void triggerRun("dev", "rules-only");
-                        }
-                      }}
-                      title="Submit command"
-                      className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 hover:bg-slate-800 text-white shadow-xs transition-transform duration-150 active:scale-95"
-                    >
-                      <IconArrowUp size={16} className="text-white" />
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* 3 Minimal Suggestion Action Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-                {/* Card 1: Reconcile Dev */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab("dossier");
-                    setStatusFilter("ALL");
-                    void triggerRun("dev", "rules-only");
-                  }}
-                  className="group flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-5 text-left shadow-2xs hover:border-slate-300 hover:shadow-md transition-all duration-200"
-                >
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-900 transition-colors mb-4">
-                    <IconBolt size={20} />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 transition-colors">
-                      Reconcile Dev Batch
-                    </h3>
-                    <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                      Simulate synthetic records and run deterministic matching
-                    </p>
-                  </div>
-                </button>
-
-                {/* Card 2: Exception Queue */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStatusFilter("ALL");
-                    setActiveTab("dossier");
-                  }}
-                  className="group flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-5 text-left shadow-2xs hover:border-slate-300 hover:shadow-md transition-all duration-200"
-                >
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-900 transition-colors mb-4">
-                    <IconLayers size={20} />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 transition-colors">
-                      Exception Queue
-                    </h3>
-                    <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                      Review bounded AI hypotheses & approval queue
-                    </p>
-                  </div>
-                </button>
-
-                {/* Card 3: AI Adversarial */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab("dossier");
-                    setStatusFilter("ALL");
-                    void triggerRun("adversarial", "agent");
-                  }}
-                  className="group flex flex-col justify-between rounded-2xl border border-slate-200/90 bg-white p-5 text-left shadow-2xs hover:border-slate-300 hover:shadow-md transition-all duration-200"
-                >
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-900 transition-colors mb-4">
-                    <IconRoute size={20} />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 transition-colors">
-                      AI Adversarial Batch
-                    </h3>
-                    <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                      Stress-test boundary cases & simulate corrections
-                    </p>
-                  </div>
-                </button>
-              </div>
-
-              {/* Optional Active Batch Pill */}
-              {telemetry && (
-                <div className="flex justify-center pt-2">
-                  <button
-                    onClick={() => setActiveTab("dossier")}
-                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors"
-                  >
-                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse-dot" />
-                    Active Batch {shortHash(telemetry.runId, 12)} · {telemetry.matchRate} Match Rate · {cases.length} cases
-                  </button>
-                </div>
-              )}
-            </div>
+          <div className="flex flex-1 flex-col overflow-hidden bg-slate-50/40 p-4 sm:p-6">
+            <HomeChat
+              onTriggerRun={triggerRun}
+              onOpenConnectModal={() => setConnectDatasetOpen(true)}
+              telemetry={telemetry}
+            />
           </div>
         )}
 
@@ -1327,7 +1119,7 @@ export default function ControlRoomPage() {
                     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                       <h3 className="text-sm font-bold text-slate-900 mb-2">Simulated Correction Proposal</h3>
                       <p className="text-xs text-slate-600 mb-4">{caseDetail.proof?.claim ?? "Deterministic ledger dry-run simulation"}</p>
-                      
+
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-slate-100 pt-4">
                         <div className="rounded-xl bg-slate-50 p-3">
                           <span className="text-[11px] font-semibold text-slate-500 uppercase">Adjustment Delta</span>

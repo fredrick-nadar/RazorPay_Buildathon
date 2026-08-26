@@ -155,6 +155,7 @@ class VoiceCommandRequest(BaseModel):
     transcript: str = Field(min_length=1, max_length=MAX_TRANSCRIPT_CHARS)
     language: VoiceLanguage = VoiceLanguage.EN_IN
     confirmed: bool = False
+    page_context: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("transcript")
     @classmethod
