@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from pydantic import SecretStr
 
 from app.config import get_settings
 from app.persistence.database import Database
@@ -44,16 +43,16 @@ def _get_api_key_from_env_local(key_names: Sequence[str]) -> str | None:
 
 
 def _gather_live_financial_context(db: Database) -> dict[str, Any]:
-    """Extract complete real numbers, runs, cases, and facts from SQLite to ground Gemini."""
+    """Extract complete real numbers, runs, cases, and facts from SQLite to ground Groq."""
     try:
         cases = [dict(r) for r in db.query_all("SELECT * FROM recon_cases")]
     except Exception:
         cases = []
 
     try:
-        runs = [dict(r) for r in db.query_all("SELECT * FROM recon_runs")]
+        runs = [dict(r) for r in db.query_all("SELECT * FROM runs ORDER BY started_at_utc DESC")]
         if not runs:
-            runs = [dict(r) for r in db.query_all("SELECT * FROM runs")]
+            runs = [dict(r) for r in db.query_all("SELECT * FROM recon_runs")]
     except Exception:
         runs = []
 
@@ -80,26 +79,81 @@ def _gather_live_financial_context(db: Database) -> dict[str, Any]:
         except Exception:
             table_counts[tbl] = 0
 
-    total_cases = len(cases)
-    unresolved_count = sum(1 for c in cases if str(c.get("status")) == "UNRESOLVED")
-    resolved_count = sum(
-        1 for c in cases if str(c.get("status")) in ("RESOLVED", "SIMULATED_CORRECTION")
-    )
-    pending_approval = sum(1 for c in cases if str(c.get("status")) == "PENDING_APPROVAL")
-    total_variance_paise = sum(abs(int(c.get("variance_paise", 0))) for c in cases)
+    # If cases table was clean, extract from latest run summary
+    if not cases and runs:
+        raw_sum = runs[0].get("summary_json")
+        if raw_sum:
+            try:
+                parsed_sum = json.loads(raw_sum) if isinstance(raw_sum, str) else raw_sum
+                if isinstance(parsed_sum, dict) and parsed_sum.get("cases"):
+                    sum_cases = parsed_sum["cases"]
+                    if isinstance(sum_cases, list):
+                        cases = sum_cases
+            except Exception:
+                pass
 
-    case_details = [
-        {
-            "case_id": str(c.get("case_id")),
-            "category": str(c.get("category")),
-            "status": str(c.get("status")),
-            "variance_inr": f"₹{abs(int(c.get('variance_paise', 0))) / 100:.2f}",
-            "variance_paise": int(c.get("variance_paise", 0)),
-            "rule_id": str(c.get("rule_id", "")),
-            "summary": str(c.get("summary", "")),
-        }
-        for c in cases[:30]
-    ]
+    total_cases = len(cases)
+    unresolved_count = sum(
+        1
+        for c in cases
+        if str(c.get("status") or c.get("case_status") or c.get("authority_decision"))
+        == "UNRESOLVED"
+    )
+    resolved_count = sum(
+        1
+        for c in cases
+        if str(c.get("status") or c.get("case_status") or c.get("authority_decision"))
+        in ("RESOLVED", "VERIFIED_RESOLVED", "SIMULATED_CORRECTION")
+    )
+    pending_approval = sum(
+        1
+        for c in cases
+        if str(c.get("status") or c.get("case_status") or c.get("authority_decision"))
+        in ("PENDING_APPROVAL", "APPROVAL_REQUIRED")
+    )
+    total_variance_paise = sum(
+        abs(int(c.get("variance_paise") or c.get("proposed_delta_paise") or 0)) for c in cases
+    )
+
+    # Deterministic Match Rate computation
+    total_source_rows = table_counts.get("source_rows", 0)
+    match_rate_pct = None
+    if runs:
+        raw_sum = runs[0].get("summary_json")
+        if raw_sum:
+            try:
+                parsed_sum = json.loads(raw_sum) if isinstance(raw_sum, str) else raw_sum
+                if isinstance(parsed_sum, dict):
+                    rmr = parsed_sum.get("runtime_match_rate")
+                    if isinstance(rmr, dict) and rmr.get("denominator"):
+                        match_rate_pct = round(
+                            (float(rmr["numerator"]) / float(rmr["denominator"])) * 100, 2
+                        )
+                    elif parsed_sum.get("deterministic_match_rate"):
+                        match_rate_pct = parsed_sum.get("deterministic_match_rate")
+            except Exception:
+                pass
+    if match_rate_pct is None and total_source_rows > 0:
+        matched_records = max(0, total_source_rows - total_cases)
+        match_rate_pct = round((matched_records / total_source_rows) * 100, 2)
+    elif match_rate_pct is None:
+        match_rate_pct = 0.0
+
+    case_details = []
+    for c in cases[:30]:
+        v_paise = int(c.get("variance_paise") or c.get("proposed_delta_paise") or 0)
+        case_details.append(
+            {
+                "case_id": str(c.get("case_id")),
+                "category": str(c.get("category")),
+                "status": str(
+                    c.get("status") or c.get("case_status") or c.get("authority_decision")
+                ),
+                "variance_inr": f"₹{abs(v_paise) / 100:.2f}",
+                "rule_id": str(c.get("rule_id", "")),
+                "summary": str(c.get("summary", "")),
+            }
+        )
 
     run_summaries = [
         {
@@ -113,6 +167,10 @@ def _gather_live_financial_context(db: Database) -> dict[str, Any]:
 
     return {
         "summary": {
+            "deterministic_match_rate": f"{match_rate_pct:.2f}%"
+            if isinstance(match_rate_pct, (int, float))
+            else str(match_rate_pct),
+            "total_input_records": total_source_rows,
             "total_cases": total_cases,
             "unresolved_cases": unresolved_count,
             "resolved_cases": resolved_count,
@@ -135,79 +193,51 @@ def _gather_live_financial_context(db: Database) -> dict[str, Any]:
     }
 
 
-def _call_gemini_llm(
+def _call_groq_llm(
     api_key: str,
     system_prompt: str,
     user_query: str,
-    model: str = "gemini-2.5-flash",
+    base_url: str = "https://api.groq.com/openai/v1",
+    model: str = "openai/gpt-oss-120b",
 ) -> str | None:
-    """Call Google Gemini for sub-second conversational voice reasoning."""
-    import time
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-    payload = {
-        "contents": [
-            {
-                "role": "user",
-                "parts": [{"text": f"{system_prompt}\n\nUser Question: {user_query}"}],
-            }
-        ],
-        "generationConfig": {
-            "temperature": 0.4,
-            "maxOutputTokens": 250,
-        },
-    }
-    for attempt in range(2):
-        try:
-            with httpx.Client(timeout=12.0) as client:
-                resp = client.post(url, json=payload)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        parts = candidates[0].get("content", {}).get("parts", [])
-                        if parts and "text" in parts[0]:
-                            return str(parts[0]["text"]).strip()
-                elif resp.status_code in (429, 503) and attempt == 0:
-                    time.sleep(0.6)
-                    continue
-                else:
-                    logger.warning("Gemini LLM HTTP %s: %s", resp.status_code, resp.text[:200])
-        except Exception as exc:
-            if attempt == 0:
-                time.sleep(0.5)
-                continue
-            logger.warning("Gemini LLM call failed: %s", exc)
-    return None
-
-
-def _call_openai_llm(api_key: str, system_prompt: str, user_query: str) -> str | None:
-    """Call OpenAI GPT-4o-mini for conversational voice reasoning."""
-    url = "https://api.openai.com/v1/chat/completions"
+    """Call Groq high-speed cloud LPU endpoint for conversational voice reasoning."""
+    endpoint = f"{base_url.rstrip('/')}/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "gpt-4o-mini",
+        "model": model,
         "messages": [
-            {"role": "system", "content": system_prompt},
+            {
+                "role": "system",
+                "content": (
+                    f"{system_prompt}\n"
+                    "Do not output internal thinking tags. Output only the direct answer."
+                ),
+            },
             {"role": "user", "content": user_query},
         ],
-        "max_tokens": 200,
-        "temperature": 0.4,
+        "max_tokens": 450,
+        "temperature": 0.3,
     }
     try:
-        with httpx.Client(timeout=8.0) as client:
-            resp = client.post(url, headers=headers, json=payload)
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(endpoint, headers=headers, json=payload)
             if resp.status_code == 200:
                 data = resp.json()
                 choices = data.get("choices", [])
                 if choices:
-                    content = choices[0].get("message", {}).get("content", "")
-                    return str(content).strip()
+                    content = str(choices[0].get("message", {}).get("content", "")).strip()
+                    if "</think>" in content:
+                        content = content.split("</think>", 1)[-1].strip()
+                    elif content.startswith("<think>"):
+                        content = content.replace("<think>", "").strip()
+                    return content
+            else:
+                logger.warning("Groq LLM HTTP %s: %s", resp.status_code, resp.text[:200])
     except Exception as exc:
-        logger.warning("OpenAI LLM call failed: %s", exc)
+        logger.warning("Groq LLM call to %s failed: %s", endpoint, exc)
     return None
 
 
@@ -218,119 +248,145 @@ def _deterministic_financial_synthesizer(
 ) -> str:
     """Fallback intelligent financial synthesizer grounded in live SQLite facts.
 
-    IMPORTANT: Only matches queries that are clearly about ARGUS financial data.
-    Non-financial / general questions get a polite redirect so the copilot
-    doesn't confuse casual conversation with financial status queries.
+    Handles match rates, deterministic reconciliation rules, variance breakdowns,
+    and ledger state even when cloud LLM rate limits are temporarily active.
     """
     q = query.lower()
-    total_var = context.get("total_variance_inr", "₹0.00")
-    total_cases = context.get("total_cases", 0)
-    unresolved = context.get("unresolved_cases", 0)
-    resolved = context.get("resolved_cases", 0)
+    summary = context.get("summary", {})
+    total_var = summary.get("total_variance_inr", "₹0.00")
+    total_cases = summary.get("total_cases", 0)
+    unresolved = summary.get("unresolved_cases", 0)
+    resolved = summary.get("resolved_cases", 0)
+    runs = context.get("runs", [])
+    active_runs = len(runs)
 
-    # ---- Financial keyword matches (require at least one finance-specific word) ----
-
-    _FINANCE_WORDS = (
-        "variance",
-        "ledger",
-        "reconcil",
-        "recon",
-        "case",
-        "exception",
-        "settlement",
-        "refund",
-        "payment",
-        "correction",
-        "approval",
-        "batch",
-        "run",
-        "fee",
-        "gst",
-        "mdr",
-        "paise",
-        "rupee",
-        "inr",
-    )
-    is_financial = any(w in q for w in _FINANCE_WORDS)
-
-    if is_financial:
-        # Variance / Financial discrepancy questions
-        if any(
-            w in q
-            for w in (
-                "variance",
-                "money",
-                "difference",
-                "total",
-                "amount",
-                "rupee",
-                "paise",
-                "loss",
-                "discrepancy",
-            )
-        ):
-            if language is VoiceLanguage.HI_IN:
+    # 1. Match Rate / Deterministic Rate / Accuracy questions
+    if any(
+        w in q
+        for w in (
+            "deterministic rate",
+            "match rate",
+            "max rate",
+            "accuracy",
+            "percentage",
+            "reconciliation rate",
+            "how accurate",
+        )
+    ):
+        if language is VoiceLanguage.HI_IN:
+            if total_cases > 0:
+                rate = (resolved / total_cases) * 100
                 return (
-                    f"कुल वित्तीय भिन्नता {total_var} है, जिसमें {unresolved} मामले "
-                    f"अनसुलझे हैं और {resolved} मामले सुलझाए जा चुके हैं।"
+                    f"वर्तमान डेटामॉडल में निश्चित मिलान दर (Deterministic Match Rate) {rate:.1f}% है। "
+                    f"कुल {total_cases} में से {resolved} मामले पूरी तरह सत्यापित हैं, "
+                    f"और {unresolved} मामलों में मानव सत्यापन लंबित है।"
                 )
             return (
-                f"The total recorded financial variance across the ledger is {total_var}. "
-                f"Currently there are {unresolved} unresolved exceptions requiring inspection, "
-                f"while {resolved} cases have been verified."
+                "निश्चित मिलान दर (Deterministic Match Rate) उन भुगतानों और सेटलमेंट्स का प्रतिशत है "
+                "जो शून्य-अनुमान नियमों द्वारा सीधे सत्यापित होते हैं। "
+                "वर्तमान में 0 बैच प्रोसेस हुए हैं। आप डैशबोर्ड से नया बैच चला सकते हैं।"
             )
-
-        # Health / Summary / Status questions
-        if any(w in q for w in ("health", "summary", "status", "overview", "batch", "report")):
-            if language is VoiceLanguage.HI_IN:
-                return (
-                    f"लेजर का सारांश: कुल {total_cases} मामले प्रोसेस हुए हैं। "
-                    f"{unresolved} मामलों में मानव निरीक्षण की आवश्यकता है।"
-                )
+        if total_cases > 0:
+            rate = (resolved / total_cases) * 100
             return (
-                f"Reconciliation overview: {total_cases} total exception cases processed. "
-                f"{resolved} cases are cleanly verified, and {unresolved} ambiguous cases "
-                "are kept open without guessing."
+                f"The deterministic match rate across the active dataset is currently {rate:.1f}%. "
+                f"Out of {total_cases} total records, {resolved} were cleanly verified with "
+                f"zero AI guessing, while {unresolved} exceptions remain open for human review."
             )
+        return (
+            "The deterministic match rate is the exact percentage of payment and settlement "
+            "records reconciled automatically through cryptographic rules and UTR matching without "
+            "AI guesswork. Currently, no batch runs are active. "
+            "You can trigger a reconciliation batch from the dashboard."
+        )
 
-        # Settlement / Timing / UPI / Bank lag questions
-        if any(
-            w in q for w in ("settlement", "delay", "lag", "upi", "card", "hdfc", "bank", "timing")
-        ):
-            if language is VoiceLanguage.HI_IN:
-                return (
-                    "UPI और बैंक सेटलमेंट में T+1 और T+2 टाइमिंग अंतर हो सकता है। "
-                    "ARGUS केवल सत्यापित UTR रिकॉर्ड के साथ समाधान करता है।"
-                )
+    # 2. Variance / Financial discrepancy questions
+    if any(
+        w in q
+        for w in (
+            "variance",
+            "money",
+            "difference",
+            "total",
+            "amount",
+            "rupee",
+            "paise",
+            "loss",
+            "discrepancy",
+            "kitna",
+        )
+    ):
+        if language is VoiceLanguage.HI_IN:
             return (
-                "Settlement variances typically occur due to T+1 or T+2 batch timing windows "
-                "between bank UTRs and gateway settlement files. "
-                "ARGUS keeps timing mismatches open until the matching bank credit is confirmed."
+                f"कुल वित्तीय भिन्नता {total_var} है, जिसमें {unresolved} मामले "
+                f"अनसुलझे हैं और {resolved} मामले सुलझाए जा चुके हैं।"
             )
+        return (
+            f"The total recorded financial variance across the ledger is {total_var}. "
+            f"Currently there are {unresolved} unresolved exceptions requiring inspection, "
+            f"while {resolved} cases have been verified."
+        )
 
-        # Fee / GST / Calculation questions
-        if any(w in q for w in ("fee", "gst", "tax", "rate", "mdr", "charge", "percentage")):
-            if language is VoiceLanguage.HI_IN:
-                return (
-                    "शुल्क गणना में 18% GST शामिल है।"
-                    " सभी शुल्क विसंगतियों को द्वि-पक्षीय प्रमाण द्वारा जांचा जाता है।"
-                )
+    # 3. Health / Summary / Status / Overview questions
+    if any(
+        w in q
+        for w in (
+            "health",
+            "summary",
+            "status",
+            "overview",
+            "batch",
+            "report",
+            "unresolved",
+            "case",
+        )
+    ):
+        if language is VoiceLanguage.HI_IN:
             return (
-                "Merchant fee calculations apply standard MDR plus 18% GST. "
-                "Fee discrepancies are verified against synthetic merchant policy tiers "
-                "and dry-run before any simulated correction."
+                f"लेजर का सारांश: कुल {total_cases} मामले और {active_runs} बैच प्रोसेस हुए हैं। "
+                f"{unresolved} मामलों में मानव निरीक्षण की आवश्यकता है और कुल भिन्नता {total_var} है।"
             )
+        return (
+            f"Reconciliation overview: {total_cases} total exception cases across "
+            f"{active_runs} runs. {resolved} cases are cleanly verified, and {unresolved} "
+            f"ambiguous cases are kept open with a total variance of {total_var}."
+        )
 
-    # Default: generic copilot response (non-financial or unrecognized)
+    # 4. Settlement / Timing / UPI / Bank lag questions
+    if any(w in q for w in ("settlement", "delay", "lag", "upi", "card", "hdfc", "bank", "timing")):
+        if language is VoiceLanguage.HI_IN:
+            return (
+                "UPI और बैंक सेटलमेंट में T+1 और T+2 टाइमिंग अंतर हो सकता है। "
+                "ARGUS केवल सत्यापित UTR रिकॉर्ड के साथ समाधान करता है।"
+            )
+        return (
+            "Settlement variances typically occur due to T+1 or T+2 batch timing windows "
+            "between bank UTRs and gateway settlement files. "
+            "ARGUS keeps timing mismatches open until the matching bank credit is confirmed."
+        )
+
+    # 5. Fee / GST / Calculation questions
+    if any(w in q for w in ("fee", "gst", "tax", "mdr", "charge", "percentage")):
+        if language is VoiceLanguage.HI_IN:
+            return (
+                "शुल्क गणना में 18% GST शामिल है। सभी शुल्क विसंगतियों को द्वि-पक्षीय प्रमाण द्वारा जांचा जाता है।"
+            )
+        return (
+            "Merchant fee calculations apply standard MDR plus 18% GST. "
+            "Fee discrepancies are verified against synthetic merchant policy tiers "
+            "and dry-run before any simulated correction."
+        )
+
+    # 6. Default conversational copilot response
     if language is VoiceLanguage.HI_IN:
         return (
             f"मैं ARGUS वित्तीय सहायक हूँ। हमारे पास {total_cases} रिकॉर्ड्स और "
-            f"{total_var} की कुल भिन्नता है। कृपया वित्तीय मामलों से जुड़ा सवाल पूछें।"
+            f"{total_var} की कुल भिन्नता है। आप मैच रेट, भिन्नता, या सेटलमेंट के बारे में पूछ सकते हैं।"
         )
     return (
-        f"I am your ARGUS financial copilot. "
+        f"I am your ARGUS financial flight recorder copilot. "
         f"We are monitoring {total_cases} reconciliation records with {total_var} "
-        "in total tracked variance. Ask me about specific cases, "
+        "in total tracked variance. Ask me about the deterministic match rate, "
         "variance breakdowns, settlement delays, or fee calculations."
     )
 
@@ -378,17 +434,102 @@ def _call_ollama_llm(
     return None
 
 
+def detect_language_preference(
+    query: str, current_language: VoiceLanguage = VoiceLanguage.EN_IN
+) -> VoiceLanguage:
+    """Detect dynamic language switch requests in conversation (e.g. 'switch to Hindi')."""
+    q = query.lower()
+
+    # Hindi / Hinglish switch triggers
+    if any(
+        phrase in q
+        for phrase in (
+            "switch to hindi",
+            "hindi me bolo",
+            "hindi me baat",
+            "hindi mein bolo",
+            "hindi mein baat",
+            "speak in hindi",
+            "talk in hindi",
+            "hindi please",
+            "hindi me batao",
+            "hindi mein batao",
+            "hindi karo",
+            "in hindi",
+            "hindi language",
+        )
+    ) or any("\u0900" <= ch <= "\u097f" for ch in query):
+        return VoiceLanguage.HI_IN
+
+    # English switch triggers
+    if any(
+        phrase in q
+        for phrase in (
+            "switch to english",
+            "english me bolo",
+            "speak in english",
+            "talk in english",
+            "english please",
+            "in english",
+            "english karo",
+            "english language",
+        )
+    ):
+        return VoiceLanguage.EN_IN
+
+    # Tamil switch triggers
+    if any(
+        phrase in q
+        for phrase in (
+            "switch to tamil",
+            "tamil me bolo",
+            "speak in tamil",
+            "tamil please",
+            "in tamil",
+        )
+    ):
+        return VoiceLanguage.TA_IN
+
+    # Telugu switch triggers
+    if any(
+        phrase in q
+        for phrase in (
+            "switch to telugu",
+            "telugu me bolo",
+            "speak in telugu",
+            "telugu please",
+            "in telugu",
+        )
+    ):
+        return VoiceLanguage.TE_IN
+
+    # Kannada switch triggers
+    if any(
+        phrase in q
+        for phrase in (
+            "switch to kannada",
+            "kannada me bolo",
+            "speak in kannada",
+            "kannada please",
+            "in kannada",
+        )
+    ):
+        return VoiceLanguage.KN_IN
+
+    return current_language
+
+
 def answer_custom_voice_query(
     db: Database,
     query: str,
     language: VoiceLanguage = VoiceLanguage.EN_IN,
-) -> tuple[str, dict[str, Any] | None]:
+) -> tuple[str, dict[str, Any] | None, VoiceLanguage]:
     """Produce a grounded conversational answer to any natural language question.
 
-    Priority: Gemini (config key) -> OpenAI -> Ollama -> deterministic fallback.
-    The LLM gets live financial context so answers are grounded, but it also
-    handles general/casual questions naturally.
+    Dynamically detects language switches (e.g. 'switch to Hindi', 'talk in English')
+    and responds fluently in the requested language.
     """
+    resolved_language = detect_language_preference(query, language)
     context = _gather_live_financial_context(db)
     settings = get_settings()
 
@@ -406,52 +547,39 @@ def answer_custom_voice_query(
         "5. For non-financial questions (e.g. weather, date, general knowledge), answer "
         "conversationally and briefly in 1 sentence, then offer reconciliation assistance.\n\n"
         f"LIVE SQLITE RECONCILIATION CONTEXT:\n{ctx_json}\n\n"
-        "STYLE & TONE:\n"
+        "STYLE, TONE & LANGUAGE INSTRUCTIONS:\n"
+        f"- Target response language: {resolved_language.value}.\n"
+        f"- Respond fluently in {resolved_language.value} "
+        f"(e.g., if hi-IN, speak in natural Hindi/Hinglish; if en-IN, speak in English).\n"
         "- Spoken voice format: direct, natural, professional, 2-3 concise sentences.\n"
-        "- Never use markdown asterisks (*), markdown headers (#), bullet points, or code blocks.\n"
-        f"- Target language: {language.value}."
+        "- Never use markdown asterisks (*), markdown headers (#), bullet points, or code blocks."
     )
 
-    # --- Key resolution: prefer dedicated gemini_api_key, fall back to model_api_key ---
-    gemini_key: str | None = None
-    raw_gemini = getattr(settings, "gemini_api_key", None)
-    if isinstance(raw_gemini, SecretStr):
-        gemini_key = raw_gemini.get_secret_value().strip() or None
-    if not gemini_key:
-        raw_model = getattr(settings, "model_api_key", None)
-        if isinstance(raw_model, SecretStr):
-            candidate = raw_model.get_secret_value().strip()
-            provider = str(getattr(settings, "model_provider", "") or "").lower()
-            if candidate and provider in ("gemini", ""):
-                gemini_key = candidate
-
-    openai_key: str | None = None
-    raw_openai = getattr(settings, "openai_api_key", None)
-    if isinstance(raw_openai, SecretStr):
-        openai_key = raw_openai.get_secret_value().strip() or None
+    groq_key: str | None = None
+    if settings.model_api_key:
+        groq_key = settings.model_api_key.get_secret_value().strip()
+    if not groq_key and settings.openai_api_key:
+        groq_key = settings.openai_api_key.get_secret_value().strip()
 
     answer: str | None = None
 
-    # 1. Gemini (primary)
-    if not answer and gemini_key:
-        answer = _call_gemini_llm(
-            gemini_key,
+    # 1. Groq Cloud LPU (Primary LLM engine)
+    if not answer and groq_key:
+        answer = _call_groq_llm(
+            groq_key,
             system_prompt,
             query,
-            model=settings.gemini_model,
+            base_url=settings.openai_base_url,
+            model=settings.openai_model,
         )
 
-    # 2. OpenAI fallback
-    if not answer and openai_key:
-        answer = _call_openai_llm(openai_key, system_prompt, query)
-
-    # 3. Local Ollama
+    # 2. Local Ollama (Offline backup)
     if not answer:
         answer = _call_ollama_llm(system_prompt, query)
 
-    # 4. Deterministic Financial Synthesizer (last resort)
+    # 3. Deterministic Financial Synthesizer (Zero-downtime safety fallback)
     if not answer:
-        answer = _deterministic_financial_synthesizer(query, context, language)
+        answer = _deterministic_financial_synthesizer(query, context, resolved_language)
 
     nav: dict[str, Any] | None = None
     q = query.lower()
@@ -460,4 +588,4 @@ def answer_custom_voice_query(
     elif "dashboard" in q or "control room" in q:
         nav = {"type": "navigate", "route": "/dashboard"}
 
-    return answer, nav
+    return answer, nav, resolved_language

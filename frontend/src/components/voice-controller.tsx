@@ -299,7 +299,15 @@ export function VoiceController() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const stopListening = useCallback(() => {
+    // Clear any pending silence timer
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+
     // Stop any playing TTS audio immediately (the core interruption fix)
     stopAllAudio(ttsAudioRef);
 
@@ -346,12 +354,18 @@ export function VoiceController() {
         };
         setLatencyMs(Math.round(performance.now() - startedAt));
 
+        // Auto-switch UI language if Gemini / model detected language switch request
+        if (commandData.language && commandData.language !== language) {
+          setLanguage(commandData.language);
+        }
+
         if (commandData.execution) {
           const result = commandData.execution;
+          const targetLang = commandData.language || language;
           const syntheticParse: VoiceParse = {
             token: "",
             transcript: commandData.transcript,
-            language: commandData.language,
+            language: targetLang,
             status: commandData.status,
             intent: commandData.intent,
             forbidden_intent: commandData.forbidden_intent,
@@ -366,7 +380,7 @@ export function VoiceController() {
             setStatus("refused");
             playAudioOrSpeak(
               result.message,
-              language,
+              targetLang,
               ttsAudioRef,
               result.audio_base64,
               result.content_type || "audio/wav",
@@ -378,7 +392,7 @@ export function VoiceController() {
           if (result.audio_base64) {
             playAudioOrSpeak(
               result.message,
-              language,
+              targetLang,
               ttsAudioRef,
               result.audio_base64,
               result.content_type || "audio/wav",
@@ -402,12 +416,13 @@ export function VoiceController() {
 
         // Non-executing outcomes surface through the parse shape.
         const parsed = commandData as VoiceParse;
+        const targetLang = parsed.language || language;
         setParse(parsed);
         if (parsed.status === "REFUSED") {
           setStatus("refused");
           playAudioOrSpeak(
             parsed.message,
-            language,
+            targetLang,
             ttsAudioRef,
             parsed.audio_base64,
             parsed.content_type || "audio/wav",
@@ -426,7 +441,7 @@ export function VoiceController() {
             intent: "EXPLAIN_CASE",
             message: parsed.message,
             message_key: "conversational_answer",
-            language,
+            language: targetLang,
             cases: [],
             previews: [],
             briefing: null,
@@ -436,7 +451,7 @@ export function VoiceController() {
           });
           playAudioOrSpeak(
             parsed.message,
-            language,
+            targetLang,
             ttsAudioRef,
             parsed.audio_base64,
             parsed.content_type || "audio/wav",
@@ -460,6 +475,11 @@ export function VoiceController() {
   const startListening = useCallback(async () => {
     // Stop any playing TTS audio when mic is activated (interruption)
     stopAllAudio(ttsAudioRef);
+
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
 
     setError(null);
     setParse(null);
@@ -552,7 +572,7 @@ export function VoiceController() {
     try {
       const recognition = new Ctor();
       recognition.lang = language;
-      recognition.continuous = false;
+      recognition.continuous = true;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
       recognition.onresult = (event) => {
@@ -565,17 +585,17 @@ export function VoiceController() {
           if (result.isFinal) finalText += text;
           else interim += text;
         }
-        if (useServerSTT) {
-          setTranscript(finalText || interim);
-          if (finalText) browserFinalRef.current = finalText;
-        } else {
-          setTranscript(finalText || interim);
-          if (finalText) {
-            browserFinalRef.current = finalText;
-            setTranscript(finalText);
+
+        const currentText = finalText || interim;
+        setTranscript(currentText);
+        if (finalText) browserFinalRef.current = finalText;
+
+        // Auto-pause detection: if user speaks and pauses for 1.3s, auto-close mic and send to Gemini!
+        if (currentText.trim().length > 0) {
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = setTimeout(() => {
             stopListening();
-            void runParseAndExecute(finalText);
-          }
+          }, 1300);
         }
       };
       recognition.onerror = (event) => {

@@ -87,9 +87,26 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-2.5-flash"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
-    openai_api_key: SecretStr | None = None
-    openai_model: str = "gpt-4o-mini"
-    openai_base_url: str = "https://api.openai.com/v1"
+    openai_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ARGUS_OPENAI_API_KEY", "OPENAI_API_KEY", "openai_api_key"),
+    )
+    openai_model: str = Field(
+        default="gpt-4o-mini",
+        validation_alias=AliasChoices(
+            "ARGUS_OPENAI_MODEL", "OPENAI_MODEL", "LLM_MODEL", "ARGUS_LLM_MODEL", "openai_model"
+        ),
+    )
+    openai_base_url: str = Field(
+        default="https://api.openai.com/v1",
+        validation_alias=AliasChoices(
+            "ARGUS_OPENAI_BASE_URL",
+            "OPENAI_BASE_URL",
+            "LLM_BASE_URL",
+            "ARGUS_LLM_BASE_URL",
+            "openai_base_url",
+        ),
+    )
     sarvam_model: str = "sarvam-105b"
     sarvam_base_url: str = "https://api.sarvam.ai/v1"
     ollama_base_url: str = "http://127.0.0.1:11434/v1"
@@ -151,18 +168,90 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def _cross_populate_gemini_key(self) -> Settings:
-        """When model_provider is 'gemini' and gemini_api_key is unset, copy from model_api_key."""
+    def _cross_populate_universal_llm_key(self) -> Settings:
+        """Cross-populate universal LLM_API_KEY / model_api_key to specific provider chains."""
         if os.environ.get("PYTEST_CURRENT_TEST"):
             return self
-        if (
-            not self.gemini_api_key
-            and self.model_api_key
-            and str(getattr(self, "model_provider", "") or "").lower() in ("gemini", "")
-        ):
-            raw = self.model_api_key.get_secret_value().strip()
-            if raw:
-                object.__setattr__(self, "gemini_api_key", SecretStr(raw))
+
+        raw_key = self.model_api_key.get_secret_value().strip() if self.model_api_key else ""
+        if not raw_key:
+            # Check env and .env.local / .env files for LLM_API_KEY directly
+            for name in (
+                "LLM_API_KEY",
+                "ARGUS_LLM_API_KEY",
+                "MODEL_API_KEY",
+                "ARGUS_MODEL_API_KEY",
+            ):
+                val = os.environ.get(name, "").strip()
+                if val:
+                    raw_key = val
+                    object.__setattr__(self, "model_api_key", SecretStr(raw_key))
+                    break
+            if not raw_key:
+                for fn in (".env.local", ".env"):
+                    p = Path(fn)
+                    if p.is_file():
+                        try:
+                            for line in p.read_text(encoding="utf-8").splitlines():
+                                if "=" in line and not line.strip().startswith("#"):
+                                    k, v = line.split("=", 1)
+                                    if (
+                                        k.strip()
+                                        in (
+                                            "LLM_API_KEY",
+                                            "ARGUS_LLM_API_KEY",
+                                            "MODEL_API_KEY",
+                                            "ARGUS_MODEL_API_KEY",
+                                        )
+                                        and v.strip()
+                                    ):
+                                        raw_key = v.strip().strip("\"'")
+                                        object.__setattr__(
+                                            self, "model_api_key", SecretStr(raw_key)
+                                        )
+                                        break
+                        except Exception:
+                            pass
+                        if raw_key:
+                            break
+
+        if raw_key:
+            # Auto-detect Groq keys
+            if raw_key.startswith("gsk_"):
+                if not self.openai_api_key:
+                    object.__setattr__(self, "openai_api_key", SecretStr(raw_key))
+                if self.openai_base_url in (
+                    "https://api.openai.com/v1",
+                    "https://api.groq.com/openai/v1",
+                ):
+                    object.__setattr__(self, "openai_base_url", "https://api.groq.com/openai/v1")
+                if self.openai_model in (
+                    "gpt-4o-mini",
+                    "llama-3.3-70b-versatile",
+                    "qwen/qwen3.6-27b",
+                ):
+                    object.__setattr__(self, "openai_model", "openai/gpt-oss-120b")
+                if not self.model_provider:
+                    object.__setattr__(self, "model_provider", "openai")
+
+            # Auto-detect Gemini keys
+            elif raw_key.startswith("AIza") or raw_key.startswith("AQ."):
+                if not self.gemini_api_key:
+                    object.__setattr__(self, "gemini_api_key", SecretStr(raw_key))
+                if not self.model_provider:
+                    object.__setattr__(self, "model_provider", "gemini")
+
+            # Standard OpenAI / OpenAI-compatible keys
+            elif raw_key.startswith("sk-") or not self.gemini_api_key:
+                if not self.openai_api_key:
+                    object.__setattr__(self, "openai_api_key", SecretStr(raw_key))
+                if not self.gemini_api_key and str(
+                    getattr(self, "model_provider", "") or ""
+                ).lower() in ("gemini", ""):
+                    object.__setattr__(self, "gemini_api_key", SecretStr(raw_key))
+                if not self.model_provider:
+                    object.__setattr__(self, "model_provider", "openai")
+
         return self
 
     @property

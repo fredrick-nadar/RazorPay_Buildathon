@@ -144,20 +144,20 @@ def parse_command(
     )
 
     if classification.intent not in action_intents and db is not None:
-        conv_answer, nav = answer_custom_voice_query(db, normalized, language)
-        audio_b64, ctype, _ = synthesize_voice_speech(conv_answer, language)
+        conv_answer, nav, resolved_lang = answer_custom_voice_query(db, normalized, language)
+        audio_b64, ctype, _ = synthesize_voice_speech(conv_answer, language=resolved_lang)
         token = uuid.uuid4().hex
         _TOKENS[token] = (
             classification.intent or VoiceIntent.EXPLAIN_CASE,
             entities,
-            language,
+            resolved_lang,
             normalized,
             time.monotonic() + _TOKEN_TTL_SECONDS,
         )
         res = VoiceParseResult(
             token=token,
             transcript=transcript[:280],
-            language=language,
+            language=resolved_lang,
             status=VoiceRequestStatus.OK,
             intent=classification.intent or VoiceIntent.EXPLAIN_CASE,
             entities=entities,
@@ -167,7 +167,7 @@ def parse_command(
             audio_base64=audio_b64,
             content_type=ctype,
         )
-        _audit(db, "VOICE_CONVERSATIONAL_QUERY", transcript, language, res, None)
+        _audit(db, "VOICE_CONVERSATIONAL_QUERY", transcript, resolved_lang, res, None)
         return res
 
     if classification.intent is None:
