@@ -1,4 +1,4 @@
-﻿# ARGUS Build Status
+# ARGUS Build Status
 
 Current phase: 8 - Submission Release (optional ARGUS Voice Control Layer implemented under its own acceptance gate)
 Status: PASSED
@@ -7,6 +7,10 @@ Last evaluation artifact: artifacts/evaluation/phase-07.json (+ artifacts/evalua
 
 ## Implemented
 
+- ARGUS Enterprise Reconciliation Extensions (Track 04 Enhancements):
+  - Executive Audit Dossier (`backend/app/api/routes_runs.py`, `frontend/src/components/executive-dossier-modal.tsx`): one-click printable & exportable compliance dossier with cryptographic SHA-256 batch proof seal, full transaction lineage traces, verifier rule citations, auditor sign-offs, and append-only audit event digest.
+  - MDR & GST Pricing Reconciler (`backend/app/domain/fee_audit.py`, `frontend/src/components/fee-audit-card.tsx`): automated gateway fee deduction and GST rate audit down to exact signed integer paise (zero floats) against contractual merchant rate cards (2.00% MDR + 18% GST), detecting silent micro-leakages.
+  - Multi-Source CSV File Drop Zone (`backend/app/api/routes_ingest.py`, `frontend/src/components/connect-dataset-modal.tsx`): drag-and-drop ingestion for external Razorpay settlement CSVs, bank statement CSVs, and merchant ledger CSVs with column aliasing, SHA-256 checksum validation, and instant batch reconciliation.
 - ARGUS Voice Control Layer (`backend/app/voice/`, PRD 13.5 - optional work under its own gate, Phase 7 passed first):
   - Deterministic parser (`parser.py`): pure regex + keyword classification over a normalized transcript - no model in the parse path, prompt-injection inert. Forbidden patterns are always evaluated before allowed patterns.
   - Indian number converter: digits, `10 thousand`, `5 lakh`, `2 crore`, `50 paise`, Devanagari digits and Hindi number words -> exact signed integer paise (no float arithmetic).

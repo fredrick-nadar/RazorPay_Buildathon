@@ -12,6 +12,7 @@ from app import __version__
 from app.ai.router import router as ai_router
 from app.api.routes_cases import router as cases_router
 from app.api.routes_chat import router as chat_router
+from app.api.routes_ingest import router as ingest_router
 from app.api.routes_meta import router as meta_router
 from app.api.routes_razorpay import router as razorpay_router
 from app.api.routes_runs import router as runs_router
@@ -45,6 +46,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(razorpay_router)
     app.include_router(voice_router)
     app.include_router(ai_router)
+    app.include_router(ingest_router)
     return app
 
 

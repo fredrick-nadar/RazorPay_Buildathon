@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   IconBolt,
@@ -10,6 +10,7 @@ import {
   IconRazorpay,
   IconShield,
   IconSparkles,
+  IconUpload,
   IconX,
 } from "./icons";
 
@@ -20,13 +21,22 @@ interface ConnectDatasetModalProps {
   onSyncSuccess: (runId: string, summary: Record<string, unknown> | null) => void;
 }
 
+interface UploadedFileSummary {
+  filename: string;
+  mapped_filename: string;
+  file_type: string;
+  rows_count: number;
+  checksum_sha256: string;
+  status: string;
+}
+
 export function ConnectDatasetModal({
   open,
   onClose,
   onRunSynthetic,
   onSyncSuccess,
 }: ConnectDatasetModalProps) {
-  const [selectedSource, setSelectedSource] = useState<"synthetic" | "razorpay">("synthetic");
+  const [selectedSource, setSelectedSource] = useState<"synthetic" | "razorpay" | "csv">("synthetic");
   const [status, setStatus] = useState<{
     configured: boolean;
     key_id_masked: string | null;
@@ -42,6 +52,14 @@ export function ConnectDatasetModal({
     refunds_count: number;
     settlements_count: number;
   } | null>(null);
+
+  // CSV Ingest state
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFileSummary[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [reconcilingSession, setReconcilingSession] = useState(false);
+  const [csvError, setCsvError] = useState<string | null>(null);
+  const [sessionId] = useState(() => `session_${Math.random().toString(36).slice(2, 9)}`);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -105,11 +123,134 @@ export function ConnectDatasetModal({
     }
   }
 
+  async function handleFilesSelected(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    setCsvError(null);
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file) continue;
+
+      const lowerName = file.name.toLowerCase();
+      const isCsv = lowerName.endsWith(".csv");
+      const isPdf = lowerName.endsWith(".pdf");
+      const isImage =
+        lowerName.endsWith(".png") ||
+        lowerName.endsWith(".jpg") ||
+        lowerName.endsWith(".jpeg") ||
+        lowerName.endsWith(".webp");
+
+      if (!isCsv && !isPdf && !isImage) continue;
+
+      try {
+        if (isCsv) {
+          const text = await file.text();
+          const res = await fetch("/api/v1/ingest/upload-csv", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              filename: file.name,
+              content: text,
+              file_type: "auto",
+              session_id: sessionId,
+            }),
+          });
+
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || `Failed to upload ${file.name}`);
+          }
+
+          const data: UploadedFileSummary = await res.json();
+          setUploadedFiles((prev) => [
+            ...prev.filter((f) => f.mapped_filename !== data.mapped_filename),
+            data,
+          ]);
+        } else {
+          // PDF or Image file -> convert to base64 and call upload-document endpoint
+          const arrayBuffer = await file.arrayBuffer();
+          const bytes = new Uint8Array(arrayBuffer);
+          let binary = "";
+          for (let j = 0; j < bytes.byteLength; j++) {
+            binary += String.fromCharCode(bytes[j] ?? 0);
+          }
+          const base64Content = btoa(binary);
+          const mimeType = isPdf
+            ? "application/pdf"
+            : lowerName.endsWith(".png")
+              ? "image/png"
+              : lowerName.endsWith(".webp")
+                ? "image/webp"
+                : "image/jpeg";
+
+          const res = await fetch("/api/v1/ingest/upload-document", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              filename: file.name,
+              content_base64: base64Content,
+              mime_type: mimeType,
+              session_id: sessionId,
+            }),
+          });
+
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || `Failed to extract data from ${file.name}`);
+          }
+
+          const data: UploadedFileSummary = await res.json();
+          setUploadedFiles((prev) => [
+            ...prev.filter((f) => f.mapped_filename !== data.mapped_filename),
+            data,
+          ]);
+        }
+      } catch (err) {
+        setCsvError(err instanceof Error ? err.message : "Error uploading file");
+      }
+    }
+    setUploading(false);
+  }
+
+  async function handleReconcileUploadedSession() {
+    if (uploadedFiles.length === 0) return;
+    setReconcilingSession(true);
+    setCsvError(null);
+
+    try {
+      const res = await fetch("/api/v1/ingest/reconcile-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          fallback_profile: "dev",
+          mode: "rules-only",
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Failed to reconcile uploaded files");
+      }
+
+      const data = await res.json();
+      if (data.run_id) {
+        onSyncSuccess(data.run_id, data.summary);
+        onClose();
+      }
+    } catch (err) {
+      setCsvError(err instanceof Error ? err.message : "Error executing reconciliation");
+    } finally {
+      setReconcilingSession(false);
+    }
+  }
+
   if (!open) return null;
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
         {/* Backdrop */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -125,7 +266,7 @@ export function ConnectDatasetModal({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ type: "spring", stiffness: 380, damping: 28 }}
-          className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-2xl z-10 text-slate-900"
+          className="relative w-full max-w-3xl overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-2xl z-10 text-slate-900"
           role="dialog"
           aria-modal="true"
         >
@@ -137,10 +278,10 @@ export function ConnectDatasetModal({
               </div>
               <div>
                 <h2 className="text-lg font-bold tracking-tight text-slate-900">
-                  Connect Datasets & Sources
+                  Connect Datasets & Multi-Source Ingest
                 </h2>
                 <p className="text-xs font-medium text-slate-500">
-                  Choose your data source for deterministic financial reconciliation.
+                  Choose your data source for deterministic financial flight recording.
                 </p>
               </div>
             </div>
@@ -153,8 +294,8 @@ export function ConnectDatasetModal({
             </button>
           </div>
 
-          {/* Source Tabs */}
-          <div className="grid grid-cols-2 gap-3 pt-6">
+          {/* Source Tabs (3-way layout) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-6">
             {/* Tab 1: Synthetic Dataset */}
             <button
               type="button"
@@ -165,7 +306,7 @@ export function ConnectDatasetModal({
                   : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
               }`}
             >
-              <div className="flex items-center justify-between w-full mb-3">
+              <div className="flex items-center justify-between w-full mb-2.5">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xs">
                   <IconLayers size={16} />
                 </div>
@@ -175,21 +316,13 @@ export function ConnectDatasetModal({
                   </span>
                 )}
               </div>
-              <h3 className="text-sm font-bold text-slate-900">Generate Synthetic</h3>
-              <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed">
-                Deterministic multi-source dataset (50–1,880 records) with payments, refunds, settlements, and edge cases.
+              <h3 className="text-xs font-bold text-slate-900">Generate Synthetic</h3>
+              <p className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
+                Deterministic benchmark (50–1,880 records) with edge cases.
               </p>
-              <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-slate-200/60">
-                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold text-slate-700">
-                  Offline-First
-                </span>
-                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold text-slate-700">
-                  Anti-Overfitting
-                </span>
-              </div>
             </button>
 
-            {/* Tab 2: Live Razorpay Test Mode API */}
+            {/* Tab 2: Razorpay Test Mode API */}
             <button
               type="button"
               onClick={() => setSelectedSource("razorpay")}
@@ -199,7 +332,7 @@ export function ConnectDatasetModal({
                   : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
               }`}
             >
-              <div className="flex items-center justify-between w-full mb-3">
+              <div className="flex items-center justify-between w-full mb-2.5">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xs">
                   <IconRazorpay size={18} />
                 </div>
@@ -209,35 +342,54 @@ export function ConnectDatasetModal({
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-1.5">
-                <h3 className="text-sm font-bold text-slate-900">Razorpay Test Mode</h3>
-                {status?.configured ? (
-                  <span className="rounded-full bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 text-[10px] font-bold text-emerald-700">
+              <div className="flex items-center gap-1">
+                <h3 className="text-xs font-bold text-slate-900">Razorpay API</h3>
+                {status?.configured && (
+                  <span className="rounded-full bg-emerald-50 border border-emerald-200 px-1 py-0.2 text-[9px] font-bold text-emerald-700">
                     Live
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-blue-50 border border-blue-200 px-1.5 py-0.2 text-[10px] font-bold text-blue-700">
-                    API
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-500 font-medium mt-1 leading-relaxed">
-                Sync live test-mode payments, refunds, and settlements directly from api.razorpay.com.
+              <p className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
+                Sync live test-mode payments & settlements from API.
               </p>
-              <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-slate-200/60">
-                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold text-slate-700">
-                  Read-Only
-                </span>
-                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold text-slate-700">
-                  HMAC-SHA256
+            </button>
+
+            {/* Tab 3: Multi-Format Ingestion Zone */}
+            <button
+              type="button"
+              onClick={() => setSelectedSource("csv")}
+              className={`flex flex-col text-left p-4 rounded-2xl border transition-all ${
+                selectedSource === "csv"
+                  ? "border-slate-900 bg-slate-50/80 shadow-xs ring-1 ring-slate-900"
+                  : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
+              }`}
+            >
+              <div className="flex items-center justify-between w-full mb-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xs">
+                  <IconUpload size={16} />
+                </div>
+                {selectedSource === "csv" && (
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-white">
+                    <IconCheck size={12} className="text-white" />
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                <h3 className="text-xs font-bold text-slate-900">Multi-Format Ingest</h3>
+                <span className="rounded-full bg-blue-50 border border-blue-200 px-1.5 py-0.2 text-[9px] font-bold text-blue-700">
+                  OCR / Vision
                 </span>
               </div>
+              <p className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
+                Upload CSVs, PDF bank statements, or scanned settlement screenshots.
+              </p>
             </button>
           </div>
 
           {/* Action Body Area */}
           <div className="mt-6 pt-5 border-t border-slate-100">
-            {selectedSource === "synthetic" ? (
+            {selectedSource === "synthetic" && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
                   <div className="flex items-center gap-2.5">
@@ -274,7 +426,9 @@ export function ConnectDatasetModal({
                   </button>
                 </div>
               </div>
-            ) : (
+            )}
+
+            {selectedSource === "razorpay" && (
               <div className="space-y-4">
                 {status?.configured ? (
                   <div className="flex items-center justify-between p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/60">
@@ -295,7 +449,7 @@ export function ConnectDatasetModal({
                 ) : (
                   <div className="space-y-3">
                     <p className="text-xs font-medium text-slate-600">
-                      Enter your Razorpay Test Mode API keys (or save to <code className="font-mono bg-slate-100 px-1 py-0.5 rounded text-[11px]">.env</code>):
+                      Enter your Razorpay Test Mode API keys:
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
@@ -350,6 +504,96 @@ export function ConnectDatasetModal({
                   >
                     <IconRazorpay size={16} className="text-white" />
                     {syncing ? "Connecting to api.razorpay.com…" : "Sync & Reconcile Razorpay Data"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {selectedSource === "csv" && (
+              <div className="space-y-4">
+                {/* Drag-and-drop drop zone */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={(e) => void handleFilesSelected(e.target.files)}
+                  accept=".csv,.pdf,.png,.jpg,.jpeg,.webp"
+                  multiple
+                  className="hidden"
+                />
+
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    void handleFilesSelected(e.dataTransfer.files);
+                  }}
+                  className="border-2 border-dashed border-slate-300 hover:border-slate-900 rounded-3xl p-6 text-center cursor-pointer transition-all bg-slate-50/50 hover:bg-slate-50 flex flex-col items-center justify-center gap-2"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white border border-slate-200 shadow-2xs text-slate-800">
+                    <IconUpload size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900">
+                      {uploading
+                        ? "Extracting financial data with Vision / OCR..."
+                        : "Click or drag CSV, PDF statements, or screenshot images"}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Supports CSV, PDF bank statements, and payment settlement screenshots (PNG/JPG/WEBP)
+                    </p>
+                  </div>
+                </div>
+
+                {csvError && (
+                  <div className="p-3 rounded-xl border border-rose-200 bg-rose-50 text-xs font-semibold text-rose-800">
+                    ⚠️ {csvError}
+                  </div>
+                )}
+
+                {/* Uploaded files summary list */}
+                {uploadedFiles.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-bold text-slate-500 uppercase">
+                      Validated Ingestion Files ({uploadedFiles.length})
+                    </div>
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                      {uploadedFiles.map((file) => (
+                        <div
+                          key={file.mapped_filename}
+                          className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white text-xs"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-slate-900">{file.mapped_filename}</span>
+                            <span className="rounded bg-slate-100 px-1.5 py-0.2 text-[10px] font-semibold text-slate-700">
+                              {file.rows_count} rows
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] text-slate-400">
+                              SHA: {file.checksum_sha256.slice(0, 8)}...
+                            </span>
+                            <span className="rounded-full bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 text-[10px] font-bold text-emerald-700">
+                              ✓ Validated
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={handleReconcileUploadedSession}
+                    disabled={uploadedFiles.length === 0 || reconcilingSession}
+                    className="w-full flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-xs font-bold text-white shadow-sm hover:bg-slate-800 transition-colors disabled:opacity-50"
+                  >
+                    <IconBolt size={14} className="text-white" />
+                    {reconcilingSession
+                      ? "Reconciling Uploaded Batch..."
+                      : `Reconcile Uploaded Dataset (${uploadedFiles.length} files)`}
                   </button>
                 </div>
               </div>

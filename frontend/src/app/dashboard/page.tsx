@@ -25,6 +25,8 @@ import { EvidenceChain } from "../../components/evidence-chain";
 import { AuditLog } from "../../components/audit-log";
 import { ApprovalModal } from "../../components/approval-modal";
 import { ConnectDatasetModal } from "../../components/connect-dataset-modal";
+import { ExecutiveDossierModal } from "../../components/executive-dossier-modal";
+import { FeeAuditCard } from "../../components/fee-audit-card";
 import { HomeChat } from "../../components/home-chat";
 import {
   IconActivity,
@@ -34,12 +36,14 @@ import {
   IconFlag,
   IconHome,
   IconLayers,
+  IconPlug,
   IconPresentation,
   IconRoute,
   IconScale,
   IconScroll,
   IconShield,
   IconSidebar,
+  IconTrendingUp,
 } from "../../components/icons";
 import { Metric, Toast, type ToastState } from "../../components/primitives";
 import { CaseStatus } from "../../domain/enums";
@@ -81,6 +85,17 @@ interface RunTelemetry {
   econHash?: string;
 }
 
+type Tab =
+  | "home"
+  | "approval_queue"
+  | "verified_resolved"
+  | "unresolved"
+  | "dossier"
+  | "evidence"
+  | "ledger"
+  | "audit"
+  | "fee_audit";
+
 function telemetryFromRun(run: RunListItem): RunTelemetry {
   const s = run.summary ?? {};
   const rate = childObj(s, "runtime_match_rate");
@@ -106,15 +121,6 @@ function telemetryFromRun(run: RunListItem): RunTelemetry {
 /* ------------------------------------------------------------------ */
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
-type Tab =
-  | "home"
-  | "approval_queue"
-  | "verified_resolved"
-  | "unresolved"
-  | "dossier"
-  | "evidence"
-  | "ledger"
-  | "audit";
 
 export default function ControlRoomPage() {
   const [runs, setRuns] = useState<RunListItem[]>([]);
@@ -141,6 +147,7 @@ export default function ControlRoomPage() {
   const [modalAction, setModalAction] = useState<"APPROVE" | "REJECT">("APPROVE");
   const [modalOpen, setModalOpen] = useState(false);
   const [connectDatasetOpen, setConnectDatasetOpen] = useState(false);
+  const [dossierModalOpen, setDossierModalOpen] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
   useEffect(() => {
@@ -164,18 +171,24 @@ export default function ControlRoomPage() {
   }, []);
 
   const loadCases = useCallback(
-    async (runId: string) => {
+    async (runId: string, preferredCaseId?: string) => {
       try {
         const res = await fetch(`/api/v1/runs/${runId}/cases`);
         if (!res.ok) return;
         const data = (await res.json()) as CaseSummary[];
         setCases(data);
-        void selectCase(data[0]?.case_id ?? "");
+        if (preferredCaseId && data.some((c) => c.case_id === preferredCaseId)) {
+          void selectCase(preferredCaseId);
+        } else if (selectedCaseId && data.some((c) => c.case_id === selectedCaseId)) {
+          void selectCase(selectedCaseId);
+        } else if (data.length > 0) {
+          void selectCase(data[0]?.case_id ?? "");
+        }
       } catch {
         /* keep previous case list */
       }
     },
-    [selectCase],
+    [selectCase, selectedCaseId],
   );
 
   const loadRuns = useCallback(async (): Promise<boolean> => {
@@ -230,10 +243,11 @@ export default function ControlRoomPage() {
 
   async function confirmAuthority(proofId: string, notes?: string) {
     if (!caseDetail) return;
+    const currentCaseId = caseDetail.case.case_id;
     setActionBusy(true);
     try {
       const path = modalAction === "APPROVE" ? "approve" : "reject";
-      const res = await fetch(`/api/v1/cases/${caseDetail.case.case_id}/${path}`, {
+      const res = await fetch(`/api/v1/cases/${currentCaseId}/${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -248,11 +262,29 @@ export default function ControlRoomPage() {
       }
       setToast({
         kind: "success",
-        message: `Case ${caseDetail.case.case_id} ${modalAction === "APPROVE" ? "approved" : "rejected"} cleanly.`,
+        message: `Case ${currentCaseId} ${modalAction === "APPROVE" ? "approved & applied" : "rejected"} cleanly.`,
       });
       setModalOpen(false);
-      await selectCase(caseDetail.case.case_id);
-      if (activeRunId) await loadCases(activeRunId);
+
+      if (activeRunId) {
+        const caseListRes = await fetch(`/api/v1/runs/${activeRunId}/cases`);
+        if (caseListRes.ok) {
+          const updatedCases = (await caseListRes.json()) as CaseSummary[];
+          setCases(updatedCases);
+
+          // If in approval queue, transition selection to next pending approval
+          if (activeTab === "approval_queue") {
+            const nextPending = updatedCases.find((c) => c.status === CaseStatus.APPROVAL_REQUIRED);
+            if (nextPending) {
+              void selectCase(nextPending.case_id);
+            } else {
+              void selectCase(currentCaseId);
+            }
+          } else {
+            void selectCase(currentCaseId);
+          }
+        }
+      }
     } catch (e) {
       setToast({
         kind: "error",
@@ -460,12 +492,16 @@ export default function ControlRoomPage() {
                   onClick={() => {
                     setCategoryFilter("ALL");
                     setSearchQuery("");
-                    setStatusFilter(CaseStatus.VERIFIED_RESOLVED);
+                    setStatusFilter("ALL");
                     setActiveTab("verified_resolved");
-                    const match = cases.find((c) => c.status === CaseStatus.VERIFIED_RESOLVED);
+                    const match = cases.find(
+                      (c) =>
+                        c.status === CaseStatus.VERIFIED_RESOLVED ||
+                        c.status === CaseStatus.SIMULATED_APPLIED,
+                    );
                     if (match) void selectCase(match.case_id);
                   }}
-                  title="Verified Resolved"
+                  title="Verified Resolved & Applied"
                   className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "verified_resolved"
                       ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
                       : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
@@ -614,6 +650,25 @@ export default function ControlRoomPage() {
                     <span className="truncate text-[13px]">Audit Trail</span>
                   </div>
                 </button>
+
+                <button
+                  onClick={() => setActiveTab("fee_audit")}
+                  title="MDR & GST Pricing Audit"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "fee_audit"
+                      ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                      : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
+                    }`}
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                    <IconTrendingUp size={17} />
+                  </div>
+                  <div
+                    className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
+                      }`}
+                  >
+                    <span className="truncate text-[13px]">MDR & GST Audit</span>
+                  </div>
+                </button>
               </div>
             </div>
           </div>
@@ -667,11 +722,25 @@ export default function ControlRoomPage() {
             </h1>
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="hidden items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700 sm:inline-flex">
-              <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-              Tenant argus-demo · Synthetic data only
-            </span>
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setDossierModalOpen(true)}
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-2xs cursor-pointer"
+              title="Open Certified Executive Audit Dossier"
+            >
+              <IconShield size={13} className="text-slate-900" />
+              <span>Audit Dossier</span>
+            </button>
+
+            <button
+              onClick={() => setConnectDatasetOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors shadow-2xs cursor-pointer"
+              title="Ingest CSV or Sync API"
+            >
+              <IconPlug size={13} className="text-white" />
+              <span>Connect Data</span>
+            </button>
+
             <span
               className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${apiOk === true
                   ? "border-emerald-200 bg-emerald-50 text-emerald-800"
@@ -781,13 +850,20 @@ export default function ControlRoomPage() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-sm font-bold text-slate-900">Verified Resolutions</h2>
+                    <h2 className="text-sm font-bold text-slate-900">Verified & Applied Resolutions</h2>
                     <span className="rounded-full bg-emerald-200/80 px-2 py-0.5 text-[11px] font-bold text-emerald-900">
-                      {cases.filter((c) => c.status === CaseStatus.VERIFIED_RESOLVED).length} Verified Closed
+                      {
+                        cases.filter(
+                          (c) =>
+                            c.status === CaseStatus.VERIFIED_RESOLVED ||
+                            c.status === CaseStatus.SIMULATED_APPLIED,
+                        ).length
+                      }{" "}
+                      Verified Closed
                     </span>
                   </div>
                   <p className="text-xs text-slate-600">
-                    Exceptions closed with 100% deterministic verifier PASS, cited rule versions, and evidence hashes.
+                    Exceptions closed with 100% deterministic verifier PASS, cited rule versions, and human authorization.
                   </p>
                 </div>
               </div>
@@ -795,20 +871,26 @@ export default function ControlRoomPage() {
 
             <div className="flex min-h-0 flex-1">
               <CaseRail
-                cases={cases.filter((c) => c.status === CaseStatus.VERIFIED_RESOLVED)}
+                cases={cases.filter(
+                  (c) =>
+                    c.status === CaseStatus.VERIFIED_RESOLVED ||
+                    c.status === CaseStatus.SIMULATED_APPLIED,
+                )}
                 loading={booting}
                 selectedCaseId={selectedCaseId}
                 onSelect={(id) => void selectCase(id)}
-                statusFilter={CaseStatus.VERIFIED_RESOLVED}
+                statusFilter="ALL"
                 categoryFilter={categoryFilter}
                 onCategoryFilter={setCategoryFilter}
                 searchQuery={searchQuery}
                 onSearchQuery={setSearchQuery}
-                title="Verified Cases"
+                title="Verified & Applied Cases"
                 hideStatusFilters={true}
               />
               <main className="min-w-0 flex-1 overflow-y-auto bg-[#f8fafc] p-6">
-                {caseDetail && caseDetail.case.status === CaseStatus.VERIFIED_RESOLVED ? (
+                {caseDetail &&
+                (caseDetail.case.status === CaseStatus.VERIFIED_RESOLVED ||
+                  caseDetail.case.status === CaseStatus.SIMULATED_APPLIED) ? (
                   <CaseWorkspace
                     detail={caseDetail}
                     onApprove={() => {
@@ -828,7 +910,7 @@ export default function ControlRoomPage() {
                       </div>
                       <p className="text-sm font-bold text-slate-800">No Verified Cases in View</p>
                       <p className="mt-1 text-xs text-slate-500">
-                        Run a reconciliation batch to inspect verified exceptions.
+                        Run a reconciliation batch or approve verified exceptions to inspect resolved cases.
                       </p>
                     </div>
                   </div>
@@ -1253,6 +1335,15 @@ export default function ControlRoomPage() {
           </div>
         )}
 
+        {/* ============================ MDR & GST Fee Audit View ============================ */}
+        {activeTab === "fee_audit" && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[#f8fafc] p-6">
+            <div className="max-w-5xl mx-auto w-full space-y-6">
+              <FeeAuditCard runId={activeRunId} />
+            </div>
+          </div>
+        )}
+
         {/* ============================ Overlays ============================ */}
         <ConnectDatasetModal
           open={connectDatasetOpen}
@@ -1269,10 +1360,15 @@ export default function ControlRoomPage() {
             void loadRuns();
             void loadCases(runId);
             setToast({
-              message: `Synced and reconciled live Razorpay data (Run ${runId.slice(0, 10)})`,
+              message: `Synced and reconciled dataset (Run ${runId.slice(0, 10)})`,
               kind: "success",
             });
           }}
+        />
+        <ExecutiveDossierModal
+          open={dossierModalOpen}
+          onClose={() => setDossierModalOpen(false)}
+          runId={activeRunId}
         />
         {modalOpen && caseDetail && (
           <ApprovalModal

@@ -1,0 +1,3 @@
+ledger_entry_id,account_code,accounting_date,currency,signed_amount,source_reference,source_type,description,entry_origin
+led_DEMO_001,1100-HDFC-BANK,2026-03-02,INR,20911.00,pay_DEMO_001,PAYMENT,Merchant settlement payout 01,IMPORTED
+led_DEMO_002,1100-HDFC-BANK,2026-03-02,INR,10536.30,pay_DEMO_006,PAYMENT,Merchant settlement payout 02,IMPORTED

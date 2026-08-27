@@ -1,0 +1,57 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 750 >>
+stream
+BT
+/F1 16 Tf
+50 780 Td
+(HDFC BANK LIMITED - CORPORATE ACCOUNT STATEMENT) Tj
+/F1 10 Tf
+0 -25 Td
+(Account: 50200089124419  |  Currency: INR  |  Branch: KORAMANGALA BANGALORE) Tj
+0 -15 Td
+(Statement Period: 01-MAR-2026 to 03-MAR-2026  |  IFSC: HDFC0000053) Tj
+0 -30 Td
+(DATE         TRANSACTION DETAILS                     UTR NUMBER              CREDIT (INR)) Tj
+0 -15 Td
+(----------------------------------------------------------------------------------------------------) Tj
+0 -20 Td
+(02-MAR-2026  CMS/RAZORPAY SETTLEMENT/stl_DEMO_01     UTR_RZP_20260302_001     20,911.00) Tj
+0 -20 Td
+(02-MAR-2026  CMS/RAZORPAY SETTLEMENT/stl_DEMO_02     UTR_RZP_20260302_002     10,536.30) Tj
+0 -20 Td
+(02-MAR-2026  NEFT INWARD CR/ORDER_PAY_DEMO_004       UTR_NEFT_992188410       12,500.00) Tj
+0 -20 Td
+(02-MAR-2026  UPI CR/PAY_DEMO_005/MERCHANT PAYOUT     UTR_UPI_771992019         2,300.00) Tj
+0 -35 Td
+(----------------------------------------------------------------------------------------------------) Tj
+0 -15 Td
+(TOTAL CREDITED: INR 46,247.30  |  CLOSING BALANCE: INR 1,84,590.20) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000010 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000224 00000 n 
+0000001026 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1108
+%%EOF

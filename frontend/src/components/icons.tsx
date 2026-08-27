@@ -894,3 +894,94 @@ export function IconMessageSquare({ size = 16, className = "", ...props }: IconP
   );
 }
 
+export function IconTrendingUp({ size = 16, className = "", ...props }: IconProps) {
+  return (
+    <motion.svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      whileHover={{ scale: 1.15, y: -1 }}
+      className={`text-slate-900 ${className}`}
+      {...props}
+    >
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+      <polyline points="17 6 23 6 23 12" />
+    </motion.svg>
+  );
+}
+
+export function IconDownload({ size = 16, className = "", ...props }: IconProps) {
+  return (
+    <motion.svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      whileHover={{ scale: 1.15, y: 1 }}
+      className={`text-slate-900 ${className}`}
+      {...props}
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </motion.svg>
+  );
+}
+
+export function IconUpload({ size = 16, className = "", ...props }: IconProps) {
+  return (
+    <motion.svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      whileHover={{ scale: 1.15, y: -1 }}
+      className={`text-slate-900 ${className}`}
+      {...props}
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
+    </motion.svg>
+  );
+}
+
+export function IconPrinter({ size = 16, className = "", ...props }: IconProps) {
+  return (
+    <motion.svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      whileHover={{ scale: 1.15 }}
+      className={`text-slate-900 ${className}`}
+      {...props}
+    >
+      <polyline points="6 9 6 2 18 2 18 9" />
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+      <rect x="6" y="14" width="12" height="8" />
+    </motion.svg>
+  );
+}
+

@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-2.5-flash"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    groq_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ARGUS_GROQ_API_KEY", "GROQ_API_KEY", "groq_api_key"),
+    )
     openai_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("ARGUS_OPENAI_API_KEY", "OPENAI_API_KEY", "openai_api_key"),
