@@ -272,7 +272,7 @@ export default function ControlRoomPage() {
     <div className="flex h-screen overflow-hidden bg-[#f8fafc] text-slate-900 antialiased font-sans" suppressHydrationWarning>
       {/* ============================ Sarvam API Style Clean Sidebar ============================ */}
       <aside
-        className={`flex shrink-0 flex-col border-r border-slate-200 bg-white transition-[width] duration-200 ease-in-out z-30 overflow-hidden select-none ${sidebarOpen ? "w-[240px]" : "w-[56px]"
+        className={`group/sidebar flex shrink-0 flex-col border-r border-slate-200 bg-white transition-[width] duration-200 ease-in-out z-30 overflow-hidden select-none ${sidebarOpen ? "w-[240px]" : "w-[56px]"
           }`}
       >
         {/* Sidebar Header */}
@@ -312,9 +312,24 @@ export default function ControlRoomPage() {
               onClick={() => setSidebarOpen(true)}
               aria-label="Expand sidebar"
               title="Expand sidebar"
-              className="group flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+              className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl hover:bg-slate-100 transition-all cursor-pointer"
             >
-              <IconSidebar size={18} className="text-slate-500 transition-transform duration-200 group-hover:scale-110 group-hover:text-slate-900" />
+              {/* Argus Logo (shown when entire shrunk menu is not hovered) */}
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900 text-white shadow-xs transition-all duration-200 group-hover/sidebar:opacity-0 group-hover/sidebar:scale-75">
+                <svg viewBox="0 0 42 34" className="w-4 h-3.5" fill="currentColor" aria-hidden="true">
+                  <polygon points="12,0 30,0 33.2,3.2 15.2,3.2" />
+                  <polygon points="14.6,5.6 32.6,5.6 35.8,8.8 17.8,8.8" />
+                  <polygon points="17.2,11.2 35.2,11.2 38.4,14.4 20.4,14.4" />
+                  <polygon points="3.2,16.8 21.2,16.8 24.4,20 6.4,20" />
+                  <polygon points="5.8,22.4 23.8,22.4 27,25.6 9,25.6" />
+                  <polygon points="8.4,28 26.4,28 29.6,31.2 11.6,31.2" />
+                </svg>
+              </div>
+
+              {/* Sidebar Expand Icon (revealed when the entire shrunk menu is hovered) */}
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 scale-75 transition-all duration-200 group-hover/sidebar:opacity-100 group-hover/sidebar:scale-100 text-slate-600">
+                <IconSidebar size={18} className="text-slate-600 group-hover:text-slate-900" />
+              </div>
             </button>
           )}
         </div>
