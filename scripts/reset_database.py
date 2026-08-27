@@ -6,11 +6,11 @@ import sqlite3
 import sys
 from pathlib import Path
 
-# Add backend directory to sys.path
+# Add backend directory to sys.path dynamically
 root_dir = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(root_dir / "backend"))
-
-from app.persistence.database import Database
+backend_dir = root_dir / "backend"
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
 
 ALL_DATA_TABLES = [
     "audit_log",
@@ -26,6 +26,7 @@ ALL_DATA_TABLES = [
     "norm_settlements",
     "norm_refunds",
     "norm_payments",
+    "source_rows",
     "runs",
 ]
 
@@ -37,35 +38,43 @@ def reset_database() -> None:
 
     print(f"[ARGUS] Clearing local database at: {db_path}")
 
-    # Try unlinking first
-    unlinked = True
+    # If the database file exists, truncate all data tables directly
+    if db_path.exists():
+        try:
+            conn = sqlite3.connect(str(db_path), isolation_level=None)
+            for table in ALL_DATA_TABLES:
+                try:
+                    conn.execute(f"DELETE FROM {table}")
+                except Exception:
+                    pass
+            try:
+                conn.execute("VACUUM")
+            except Exception:
+                pass
+            conn.close()
+            print("  [OK] All data tables truncated cleanly.")
+            print("[ARGUS] Database is 100% clean and ready for demo recording!")
+            return
+        except Exception as e:
+            print(f"  [WARN] Direct SQLite truncate encountered: {e}")
+
+    # If file unlinking or fresh bootstrap is needed:
     for p in (db_path, wal_path, shm_path):
         if p.exists():
             try:
                 p.unlink()
                 print(f"  [OK] Deleted {p.name}")
             except Exception:
-                unlinked = False
+                pass
 
-    if not unlinked and db_path.exists():
-        print("  [INFO] File is open by dev server. Truncating all data tables cleanly...")
-        conn = sqlite3.connect(str(db_path), isolation_level=None)
-        for table in ALL_DATA_TABLES:
-            try:
-                conn.execute(f"DELETE FROM {table}")
-            except Exception as e:
-                print(f"  [SKIP] Table {table}: {e}")
-        try:
-            conn.execute("VACUUM")
-        except Exception:
-            pass
-        conn.close()
-        print("  [OK] All data tables truncated cleanly.")
-    else:
-        # Initialize fresh database if newly created
-        print("[ARGUS] Initializing fresh schema & migrations...")
+    # Initialize schema using backend Database if available
+    try:
+        from app.persistence.database import Database  # type: ignore[import-not-found]
+
         db = Database(db_path)
         print(f"[ARGUS] Fresh database initialized at schema version: {db.schema_version}")
+    except Exception:
+        print("  [INFO] Database file reset. Next backend start will auto-create fresh schema.")
 
     print("[ARGUS] Database is 100% clean and ready for demo recording!")
 

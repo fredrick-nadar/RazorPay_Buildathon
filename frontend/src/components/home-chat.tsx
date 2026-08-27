@@ -10,7 +10,6 @@ import {
   IconCheck,
   IconCopy,
   IconMessageSquare,
-  IconPlug,
   IconPlus,
   IconRefresh,
   IconSidebar,
@@ -69,8 +68,6 @@ const STARTER_PROMPTS = [
 ];
 
 interface HomeChatProps {
-  onTriggerRun: (profile: "dev" | "adversarial", mode: "rules-only" | "agent") => Promise<void>;
-  onOpenConnectModal: () => void;
   telemetry?: {
     runId: string;
     matchRate: string;
@@ -79,7 +76,6 @@ interface HomeChatProps {
 }
 
 export function HomeChat({
-  onOpenConnectModal,
   telemetry,
 }: HomeChatProps) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -792,23 +788,8 @@ export function HomeChat({
           />
 
           <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={onOpenConnectModal}
-                title="Connect datasets"
-                className="flex h-6 w-6 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 transition-colors"
-              >
-                <IconPlus size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={onOpenConnectModal}
-                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
-              >
-                <IconPlug size={11} />
-                Connect datasets
-              </button>
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400">
+              <span>Financial AI Copilot</span>
             </div>
 
             <div className="flex items-center gap-2">

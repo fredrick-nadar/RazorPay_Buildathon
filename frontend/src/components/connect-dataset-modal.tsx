@@ -2,14 +2,12 @@
 
 import { useEffect, useState, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import DecryptedText from "./ui/decrypted-text";
 import {
   IconBolt,
   IconCheck,
-  IconLayers,
   IconPlug,
   IconRazorpay,
-  IconShield,
-  IconSparkles,
   IconUpload,
   IconX,
 } from "./icons";
@@ -17,7 +15,6 @@ import {
 interface ConnectDatasetModalProps {
   open: boolean;
   onClose: () => void;
-  onRunSynthetic: (profile: "dev" | "adversarial", mode: "rules-only" | "agent") => void;
   onSyncSuccess: (runId: string, summary: Record<string, unknown> | null) => void;
 }
 
@@ -30,13 +27,52 @@ interface UploadedFileSummary {
   status: string;
 }
 
+const SYNC_PROGRESS_MESSAGES = [
+  "Connecting to Razorpay Test Mode...",
+  "Establishing a secure data channel...",
+  "Authenticating the reconciliation request...",
+  "Fetching payment and settlement records...",
+  "Retrieving linked refunds and adjustments...",
+  "Normalizing transaction timestamps...",
+  "Aligning payment, order and settlement references...",
+  "Mapping records across the financial pipeline...",
+  "Building the five-way ledger graph...",
+  "Tracing each transaction to its settlement path...",
+  "Checking for duplicate ledger entries...",
+  "Checking for missing ledger postings...",
+  "Validating fees, taxes and adjustments...",
+  "Comparing expected and settled amounts...",
+  "Reconciling refunds against original payments...",
+  "Analyzing settlement timing windows...",
+  "Resolving cross-source reference mismatches...",
+  "Generating integer-paise proofs...",
+  "Verifying arithmetic consistency...",
+  "Evaluating reconciliation exceptions...",
+  "Tracing exceptions back to source records...",
+  "Cross-checking evidence across connected records...",
+  "Running deterministic financial checks...",
+  "Validating every proposed match...",
+  "Computing confidence for unresolved records...",
+  "Preparing the exception set...",
+  "Finalizing verified reconciliation...",
+  "Compiling the reconciliation report...",
+  "Preparing results for the control room..."
+];
+
+const UPLOAD_PROGRESS_MESSAGES = [
+  "Reading financial documents...",
+  "Parsing columns with Vision...",
+  "Canonicalizing vendor headers...",
+  "Calculating deterministic matches...",
+  "Finalizing verified ledger...",
+];
+
 export function ConnectDatasetModal({
   open,
   onClose,
-  onRunSynthetic,
   onSyncSuccess,
 }: ConnectDatasetModalProps) {
-  const [selectedSource, setSelectedSource] = useState<"synthetic" | "razorpay" | "csv">("synthetic");
+  const [selectedSource, setSelectedSource] = useState<"razorpay" | "csv">("razorpay");
   const [status, setStatus] = useState<{
     configured: boolean;
     key_id_masked: string | null;
@@ -60,6 +96,32 @@ export function ConnectDatasetModal({
   const [csvError, setCsvError] = useState<string | null>(null);
   const [sessionId] = useState(() => `session_${Math.random().toString(36).slice(2, 9)}`);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Dynamic progress message index
+  const [syncMsgIdx, setSyncMsgIdx] = useState(0);
+  const [uploadMsgIdx, setUploadMsgIdx] = useState(0);
+
+  useEffect(() => {
+    if (!syncing) {
+      setSyncMsgIdx(0);
+      return;
+    }
+    const timer = setInterval(() => {
+      setSyncMsgIdx((prev) => (prev + 1) % SYNC_PROGRESS_MESSAGES.length);
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [syncing]);
+
+  useEffect(() => {
+    if (!reconcilingSession) {
+      setUploadMsgIdx(0);
+      return;
+    }
+    const timer = setInterval(() => {
+      setUploadMsgIdx((prev) => (prev + 1) % UPLOAD_PROGRESS_MESSAGES.length);
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [reconcilingSession]);
 
   useEffect(() => {
     if (!open) return;
@@ -294,43 +356,16 @@ export function ConnectDatasetModal({
             </button>
           </div>
 
-          {/* Source Tabs (3-way layout) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-6">
-            {/* Tab 1: Synthetic Dataset */}
-            <button
-              type="button"
-              onClick={() => setSelectedSource("synthetic")}
-              className={`flex flex-col text-left p-4 rounded-2xl border transition-all ${
-                selectedSource === "synthetic"
-                  ? "border-slate-900 bg-slate-50/80 shadow-xs ring-1 ring-slate-900"
-                  : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
-              }`}
-            >
-              <div className="flex items-center justify-between w-full mb-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xs">
-                  <IconLayers size={16} />
-                </div>
-                {selectedSource === "synthetic" && (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-white">
-                    <IconCheck size={12} className="text-white" />
-                  </span>
-                )}
-              </div>
-              <h3 className="text-xs font-bold text-slate-900">Generate Synthetic</h3>
-              <p className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
-                Deterministic benchmark (50–1,880 records) with edge cases.
-              </p>
-            </button>
-
-            {/* Tab 2: Razorpay Test Mode API */}
+          {/* Source Tabs (2-way layout: Live API & User Uploads) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-6">
+            {/* Tab 1: Razorpay Live API */}
             <button
               type="button"
               onClick={() => setSelectedSource("razorpay")}
-              className={`flex flex-col text-left p-4 rounded-2xl border transition-all ${
-                selectedSource === "razorpay"
-                  ? "border-slate-900 bg-slate-50/80 shadow-xs ring-1 ring-slate-900"
-                  : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
-              }`}
+              className={`flex flex-col text-left p-4 rounded-2xl border transition-all ${selectedSource === "razorpay"
+                ? "border-slate-900 bg-slate-50/80 shadow-xs ring-1 ring-slate-900"
+                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
+                }`}
             >
               <div className="flex items-center justify-between w-full mb-2.5">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xs">
@@ -342,28 +377,26 @@ export function ConnectDatasetModal({
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-1">
-                <h3 className="text-xs font-bold text-slate-900">Razorpay API</h3>
-                {status?.configured && (
-                  <span className="rounded-full bg-emerald-50 border border-emerald-200 px-1 py-0.2 text-[9px] font-bold text-emerald-700">
-                    Live
-                  </span>
-                )}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h3 className="text-xs font-bold text-slate-900">Razorpay Live API</h3>
+                <span className="rounded-full bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 inline-flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Gateway
+                </span>
               </div>
               <p className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
-                Sync live test-mode payments & settlements from API.
+                Fetch live test-mode orders, payments & settlements directly from Razorpay.
               </p>
             </button>
 
-            {/* Tab 3: Multi-Format Ingestion Zone */}
+            {/* Tab 2: Multi-Format Ingestion Zone */}
             <button
               type="button"
               onClick={() => setSelectedSource("csv")}
-              className={`flex flex-col text-left p-4 rounded-2xl border transition-all ${
-                selectedSource === "csv"
-                  ? "border-slate-900 bg-slate-50/80 shadow-xs ring-1 ring-slate-900"
-                  : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
-              }`}
+              className={`flex flex-col text-left p-4 rounded-2xl border transition-all ${selectedSource === "csv"
+                ? "border-slate-900 bg-slate-50/80 shadow-xs ring-1 ring-slate-900"
+                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
+                }`}
             >
               <div className="flex items-center justify-between w-full mb-2.5">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xs">
@@ -376,57 +409,19 @@ export function ConnectDatasetModal({
                 )}
               </div>
               <div className="flex items-center gap-1">
-                <h3 className="text-xs font-bold text-slate-900">Multi-Format Ingest</h3>
+                <h3 className="text-xs font-bold text-slate-900">Upload Documents</h3>
                 <span className="rounded-full bg-blue-50 border border-blue-200 px-1.5 py-0.2 text-[9px] font-bold text-blue-700">
-                  OCR / Vision
+                  PDF / CSV / OCR
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
-                Upload CSVs, PDF bank statements, or scanned settlement screenshots.
+                Explicitly upload merchant bank statements, settlement sheets, or CSVs.
               </p>
             </button>
           </div>
 
           {/* Action Body Area */}
           <div className="mt-6 pt-5 border-t border-slate-100">
-            {selectedSource === "synthetic" && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-200 bg-slate-50/50">
-                  <div className="flex items-center gap-2.5">
-                    <IconShield size={16} className="text-slate-900" />
-                    <div>
-                      <p className="text-xs font-bold text-slate-900">Synthetic Merchant Policy Dataset</p>
-                      <p className="text-[11px] text-slate-500 font-medium">100% reproducible with integer paise precision and label firewall.</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onRunSynthetic("dev", "rules-only");
-                      onClose();
-                    }}
-                    className="flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-xs font-bold text-white shadow-sm hover:bg-slate-800 transition-colors"
-                  >
-                    <IconBolt size={14} className="text-white" />
-                    Reconcile Dev Batch
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onRunSynthetic("adversarial", "agent");
-                      onClose();
-                    }}
-                    className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-bold text-slate-900 shadow-2xs hover:bg-slate-50 hover:border-slate-300 transition-colors"
-                  >
-                    <IconSparkles size={14} />
-                    Run AI Adversarial Batch
-                  </button>
-                </div>
-              </div>
-            )}
 
             {selectedSource === "razorpay" && (
               <div className="space-y-4">
@@ -500,10 +495,25 @@ export function ConnectDatasetModal({
                     type="button"
                     onClick={handleRazorpaySync}
                     disabled={syncing}
-                    className="w-full flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-xs font-bold text-white shadow-sm hover:bg-slate-800 transition-colors disabled:opacity-50"
+                    className="w-full flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-xs font-bold text-white shadow-sm hover:bg-slate-800 transition-all disabled:opacity-80"
                   >
-                    <IconRazorpay size={16} className="text-white" />
-                    {syncing ? "Connecting to api.razorpay.com…" : "Sync & Reconcile Razorpay Data"}
+                    <IconRazorpay size={16} className={`text-white shrink-0 ${syncing ? "animate-pulse" : ""}`} />
+                    <span className="transition-all duration-300">
+                      {syncing ? (
+                        <DecryptedText
+                          text={SYNC_PROGRESS_MESSAGES[syncMsgIdx] ?? "Syncing live data..."}
+                          speed={35}
+                          maxIterations={12}
+                          sequential={true}
+                          revealDirection="start"
+                          animateOn="view"
+                          className="text-white font-mono"
+                          encryptedClassName="text-slate-400 font-mono"
+                        />
+                      ) : (
+                        "Sync & Reconcile Live Gateway Data"
+                      )}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -588,12 +598,25 @@ export function ConnectDatasetModal({
                     type="button"
                     onClick={handleReconcileUploadedSession}
                     disabled={uploadedFiles.length === 0 || reconcilingSession}
-                    className="w-full flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-xs font-bold text-white shadow-sm hover:bg-slate-800 transition-colors disabled:opacity-50"
+                    className="w-full flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-xs font-bold text-white shadow-sm hover:bg-slate-800 transition-all disabled:opacity-80"
                   >
-                    <IconBolt size={14} className="text-white" />
-                    {reconcilingSession
-                      ? "Reconciling Uploaded Batch..."
-                      : `Reconcile Uploaded Dataset (${uploadedFiles.length} files)`}
+                    <IconBolt size={14} className={`text-white shrink-0 ${reconcilingSession ? "animate-pulse" : ""}`} />
+                    <span className="transition-all duration-300">
+                      {reconcilingSession ? (
+                        <DecryptedText
+                          text={UPLOAD_PROGRESS_MESSAGES[uploadMsgIdx] ?? "Reconciling uploaded files..."}
+                          speed={35}
+                          maxIterations={12}
+                          sequential={true}
+                          revealDirection="start"
+                          animateOn="view"
+                          className="text-white font-mono"
+                          encryptedClassName="text-slate-400 font-mono"
+                        />
+                      ) : (
+                        `Reconcile Uploaded Dataset (${uploadedFiles.length} files)`
+                      )}
+                    </span>
                   </button>
                 </div>
               </div>

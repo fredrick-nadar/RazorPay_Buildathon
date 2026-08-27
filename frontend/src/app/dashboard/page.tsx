@@ -15,7 +15,6 @@ import type {
   AuditLogItem,
   CaseDetail,
   CaseSummary,
-  ReconcileResponse,
   RunListItem,
 } from "../../lib/types";
 import { formatCount, formatINR, formatRate, shortHash } from "../../lib/format";
@@ -30,7 +29,6 @@ import { FeeAuditCard } from "../../components/fee-audit-card";
 import { HomeChat } from "../../components/home-chat";
 import {
   IconActivity,
-  IconBolt,
   IconCheck,
   IconChevronDown,
   IconFlag,
@@ -140,7 +138,6 @@ export default function ControlRoomPage() {
   const [investigationSectionOpen, setInvestigationSectionOpen] = useState(true);
 
   const [booting, setBooting] = useState(true);
-  const [running, setRunning] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [apiOk, setApiOk] = useState<boolean | null>(null);
 
@@ -212,34 +209,6 @@ export default function ControlRoomPage() {
   useEffect(() => {
     void loadRuns().finally(() => setBooting(false));
   }, [loadRuns]);
-
-  async function triggerRun(profile: "dev" | "adversarial", mode: "rules-only" | "agent") {
-    setRunning(true);
-    try {
-      const res = await fetch("/api/v1/runs/reconcile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dataset_profile: profile, mode, force: true }),
-      });
-      if (!res.ok) {
-        const err = (await res.json()) as { detail?: string };
-        throw new Error(err.detail ?? `Reconciliation failed: ${res.status}`);
-      }
-      const data = (await res.json()) as ReconcileResponse;
-      setToast({
-        kind: "success",
-        message: `Batch ${shortHash(data.run_id)} complete · status: ${data.status}`,
-      });
-      await loadRuns();
-    } catch (e) {
-      setToast({
-        kind: "error",
-        message: e instanceof Error ? e.message : "Run failed.",
-      });
-    } finally {
-      setRunning(false);
-    }
-  }
 
   async function confirmAuthority(proofId: string, notes?: string) {
     if (!caseDetail) return;
@@ -421,44 +390,19 @@ export default function ControlRoomPage() {
             >
               <div className="min-h-0 space-y-0.5 overflow-hidden">
                 <button
-                  onClick={() => {
-                    setActiveTab("dossier");
-                    setStatusFilter("ALL");
-                    void triggerRun("dev", "rules-only");
-                  }}
-                  disabled={running || booting}
-                  title="Reconcile Dev"
+                  onClick={() => setConnectDatasetOpen(true)}
+                  disabled={booting}
+                  title="Import Data (Live Razorpay API or Upload Files)"
                   className="group flex h-10 w-full items-center rounded-xl text-slate-700 hover:bg-slate-100/80 hover:text-slate-900 transition-all disabled:opacity-50 overflow-hidden"
                 >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-                    <IconBolt size={17} />
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center text-slate-900">
+                    <IconPlug size={17} />
                   </div>
                   <div
                     className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
                       }`}
                   >
-                    <span className="truncate text-[13px] font-medium">Reconcile Dev</span>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setActiveTab("dossier");
-                    setStatusFilter("ALL");
-                    void triggerRun("adversarial", "agent");
-                  }}
-                  disabled={running || booting}
-                  title="AI Adversarial"
-                  className="group flex h-10 w-full items-center rounded-xl text-slate-700 hover:bg-slate-100/80 hover:text-slate-900 transition-all disabled:opacity-50 overflow-hidden"
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-                    <IconRoute size={17} />
-                  </div>
-                  <div
-                    className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
-                      }`}
-                  >
-                    <span className="truncate text-[13px] font-medium">AI Adversarial</span>
+                    <span className="truncate text-[13px] font-medium">Import Data</span>
                   </div>
                 </button>
 
@@ -732,15 +676,6 @@ export default function ControlRoomPage() {
               <span>Audit Dossier</span>
             </button>
 
-            <button
-              onClick={() => setConnectDatasetOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors shadow-2xs cursor-pointer"
-              title="Ingest CSV or Sync API"
-            >
-              <IconPlug size={13} className="text-white" />
-              <span>Connect Data</span>
-            </button>
-
             <span
               className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${apiOk === true
                   ? "border-emerald-200 bg-emerald-50 text-emerald-800"
@@ -766,8 +701,6 @@ export default function ControlRoomPage() {
         {activeTab === "home" && (
           <div className="flex flex-1 flex-col overflow-hidden bg-slate-50/40 p-4 sm:p-6">
             <HomeChat
-              onTriggerRun={triggerRun}
-              onOpenConnectModal={() => setConnectDatasetOpen(true)}
               telemetry={telemetry}
             />
           </div>
@@ -1348,11 +1281,6 @@ export default function ControlRoomPage() {
         <ConnectDatasetModal
           open={connectDatasetOpen}
           onClose={() => setConnectDatasetOpen(false)}
-          onRunSynthetic={(profile, mode) => {
-            setActiveTab("dossier");
-            setStatusFilter("ALL");
-            void triggerRun(profile, mode);
-          }}
           onSyncSuccess={(runId) => {
             setActiveRunId(runId);
             setActiveTab("dossier");

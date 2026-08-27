@@ -147,6 +147,25 @@ class RazorpayClient:
         """Read-only fetch of created orders from Test Mode."""
         return self._get("orders", {"count": count, "skip": skip})
 
+    def fetch_all_orders(self, max_records: int = 1000) -> RazorpayFetchResult:
+        """Fetch all available orders across pagination (500+ live records)."""
+        all_items: list[dict[str, Any]] = []
+        skip = 0
+        while len(all_items) < max_records:
+            batch = self.fetch_orders(count=100, skip=skip)
+            if not batch.success or not batch.items:
+                break
+            all_items.extend(batch.items)
+            if len(batch.items) < 100:
+                break
+            skip += 100
+        return RazorpayFetchResult(
+            success=bool(all_items),
+            skipped=False,
+            reason=f"Fetched {len(all_items)} live orders across pagination",
+            items=all_items,
+        )
+
     def fetch_refunds(self, count: int = 10) -> RazorpayFetchResult:
         """Read-only fetch of processed refunds from Test Mode."""
         return self._get("refunds", {"count": count})
