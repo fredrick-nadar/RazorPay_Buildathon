@@ -1,3 +1,0 @@
-settlement_id,settled_at_utc,window_start_utc,window_end_utc,status,currency,gross_credit,fee_amount,tax_amount,adjustment_amount,net_amount,utr
-stl_DEMO_SETTLE_01,2026-03-02T16:00:00Z,2026-03-02T10:00:00Z,2026-03-02T16:00:00Z,PROCESSED,INR,21413.80,427.80,75.00,0.00,20911.00,UTR_RZP_20260302_001
-stl_DEMO_SETTLE_02,2026-03-02T17:00:00Z,2026-03-02T11:00:00Z,2026-03-02T17:00:00Z,PROCESSED,INR,10790.00,215.00,38.70,0.00,10536.30,UTR_RZP_20260302_002

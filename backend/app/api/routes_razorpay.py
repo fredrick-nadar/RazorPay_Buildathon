@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.api.routes_runs import _resolve_agent_provider
 from app.config import get_settings
 from app.importers.razorpay_client import RazorpayClient
 from app.persistence.database import Database
@@ -311,10 +312,12 @@ def sync_razorpay_data(payload: RazorpaySyncRequest, request: Request) -> dict[s
     }
 
     if payload.auto_reconcile:
+        provider = _resolve_agent_provider()
         run_res = execute_run(
             inputs_dir=live_inputs_dir,
             database=db,
-            mode="rules-only",
+            mode="agent",
+            provider=provider,
             force=True,
         )
         result["run_id"] = run_res.run_id

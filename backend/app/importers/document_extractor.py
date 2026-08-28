@@ -52,39 +52,40 @@ Output ONLY raw JSON. No markdown backticks, no conversational text.
 """
 
 FINANCIAL_KEYWORDS = (
+    "amount",
+    "bill",
+    "charge",
+    "tax",
+    "gst",
+    "currency",
+    "posting",
+    "transaction",
+    "remarks",
+    "order",
+    "payout",
+    "credit",
+    "debit",
+    "balance",
+    "ledger",
+    "statement",
+    "bank",
+    "payment",
+    "settlement",
+    "refund",
+    "voucher",
+    "journal",
+    "clearing",
+    "inr",
     "utr",
-    "payment_id",
-    "settlement_id",
-    "refund_id",
-    "bank_entry_id",
-    "ledger_entry_id",
-    "gross_amount",
-    "fee_amount",
-    "tax_amount",
-    "net_amount",
-    "signed_amount",
-    "bank statement",
-    "account balance",
-    "credit amount",
-    "debit amount",
-    "settlement credit",
-    "captured_at",
-    "settled_at",
-    "accounting_date",
-    "account_code",
-    "razorpay",
-    "hdfc bank",
-    "icici bank",
-    "sbi bank",
-    "axis bank",
-    "transaction date",
-    "value date",
 )
 
 STRONG_PATTERNS = [
     re.compile(r"\b(?:pay|stl|rfnd|ord|bnk|led|utr)_[a-zA-Z0-9_]+\b", re.IGNORECASE),
     re.compile(r"(?:₹|inr|rs\.?)\s*\d+(?:,\d+)*(?:\.\d{2})?", re.IGNORECASE),
-    re.compile(r"\b(?:credit|debit|settled|captured|payout|balance)\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:credit|debit|settled|captured|payout|balance|clearing|journal|voucher|amount)\b",
+        re.IGNORECASE,
+    ),
 ]
 
 
@@ -161,10 +162,11 @@ def _clean_date_str(val: Any, default_time: str = "2026-03-02T10:00:00Z") -> str
 
 def _offline_heuristic_extractor(text_or_filename: str, raw_bytes: bytes) -> dict[str, Any]:
     """Deterministic offline fallback extractor for image/PDF text simulations."""
-    # If PDF binary, clean the text first to avoid matching xref offsets or binary streams
+    # Use cleaned PDF text if PDF binary, otherwise use text_or_filename
     if raw_bytes.startswith(b"%PDF"):
-        cleaned_text = _clean_pdf_text(raw_bytes)
-        combined_text = f"{text_or_filename}\n{cleaned_text}"
+        combined_text = _clean_pdf_text(raw_bytes)
+        if not combined_text.strip():
+            combined_text = text_or_filename
     else:
         combined_text = text_or_filename
 
@@ -183,26 +185,31 @@ def _offline_heuristic_extractor(text_or_filename: str, raw_bytes: bytes) -> dic
     lines = [line.strip() for line in combined_text.splitlines() if line.strip()]
     records: list[dict[str, Any]] = []
 
-    lower_fn = combined_text.lower()
+    lower_fn = (f"{text_or_filename}\n{combined_text}").lower()
     doc_type = "payments"
-    if "bank" in lower_fn or "statement" in lower_fn or "hdfc" in lower_fn or "icici" in lower_fn:
+    if "ledger" in lower_fn or "journal" in lower_fn or "erp" in lower_fn or "voucher" in lower_fn:
+        doc_type = "ledger_entries"
+    elif "bank" in lower_fn or "hdfc" in lower_fn or "icici" in lower_fn or "sbi" in lower_fn:
         doc_type = "bank_entries"
+    elif "payment" in lower_fn or "pay_" in lower_fn:
+        doc_type = "payments"
     elif "settle" in lower_fn or "payout" in lower_fn:
         doc_type = "settlements"
-    elif "ledger" in lower_fn or "journal" in lower_fn:
-        doc_type = "ledger_entries"
+    elif "refund" in lower_fn:
+        doc_type = "refunds"
 
     # Require currency symbol OR explicit financial ID pattern to avoid matching random numbers
     strict_amount_pattern = re.compile(
         r"(?:₹|inr|rs\.?)\s*(\d+(?:,\d+)*(?:\.\d{2})?)", re.IGNORECASE
     )
     id_pattern = re.compile(
-        r"\b(pay_[a-zA-Z0-9]+|stl_[a-zA-Z0-9]+|utr_[a-zA-Z0-9_]+|ord_[a-zA-Z0-9]+|rfnd_[a-zA-Z0-9]+)\b",
+        r"\b(pay_[a-zA-Z0-9_]+|stl_[a-zA-Z0-9_]+|settle_[a-zA-Z0-9_]+|utr_[a-zA-Z0-9_]+|ord_[a-zA-Z0-9_]+|order_[a-zA-Z0-9_]+|rfnd_[a-zA-Z0-9_]+|refund_[a-zA-Z0-9_]+|led_[a-zA-Z0-9_]+|ledger_[a-zA-Z0-9_]+|bnk_[a-zA-Z0-9_]+|bank_[a-zA-Z0-9_]+)\b",
         re.IGNORECASE,
     )
     loose_amount_pattern = re.compile(r"\b(\d+(?:,\d+)*\.\d{2})\b")
 
     code_keywords = ["import ", "public class", "void main", "function(", "const ", "let "]
+    seen_ids: set[str] = set()
     for idx, line in enumerate(lines):
         # Ignore code lines or common non-financial text
         if any(w in line.lower() for w in code_keywords):
@@ -218,23 +225,71 @@ def _offline_heuristic_extractor(text_or_filename: str, raw_bytes: bytes) -> dic
             if clean_amt <= 0.0:
                 continue
             rec_id = ids[0] if ids else f"{doc_type[:3]}_scanned_{idx + 1:03d}"
-            records.append(
-                {
-                    "record_id": rec_id,
-                    "order_id": ids[1] if len(ids) > 1 else None,
-                    "status": "CAPTURED" if doc_type == "payments" else "PROCESSED",
-                    "currency": "INR",
-                    "gross_amount": clean_amt,
-                    "fee_amount": round(clean_amt * 0.02, 2),
-                    "tax_amount": round(clean_amt * 0.02 * 0.18, 2),
-                    "captured_at_utc": "2026-03-02T10:00:00Z",
-                    "settlement_id": ids[2] if len(ids) > 2 else "stl_DEMO_SETTLE_01",
-                    "utr": ids[1]
-                    if (len(ids) > 1 and "utr" in ids[1].lower())
-                    else f"UTR_RZP_{rec_id}",
-                    "narration": f"Scanned entry {rec_id}",
-                }
-            )
+            if rec_id in seen_ids:
+                continue
+            seen_ids.add(rec_id)
+
+            # Smart extraction based on detected document type
+            if doc_type == "ledger_entries":
+                records.append(
+                    {
+                        "record_id": rec_id,
+                        "ledger_entry_id": rec_id,
+                        "account_code": "2100-PAYMENTS-CLEARING",
+                        "accounting_date": "2026-03-01",
+                        "currency": "INR",
+                        "signed_amount": clean_amt,
+                        "source_reference": ids[1] if len(ids) > 1 else rec_id,
+                        "source_type": "PAYMENT",
+                        "description": f"Ledger entry {rec_id}",
+                    }
+                )
+            elif doc_type == "bank_entries":
+                bank_id = f"bnk_STL_{idx + 1:03d}"
+                utr_id = (
+                    ids[1]
+                    if len(ids) > 1
+                    else (ids[0] if ids and "utr" in ids[0].lower() else f"UTR_RZP_{idx + 1:03d}")
+                )
+                stl_ref = (
+                    ids[0] if ids and "stl" in ids[0].lower() else f"stl_DEMO_SETTLE_{idx + 1:02d}"
+                )
+                records.append(
+                    {
+                        "record_id": bank_id,
+                        "bank_entry_id": bank_id,
+                        "posted_at_utc": "2026-03-02T17:00:00Z",
+                        "value_date": "2026-03-02",
+                        "currency": "INR",
+                        "signed_amount": clean_amt,
+                        "narration": f"CMS/RAZORPAY NODAL SETTLEMENT/{stl_ref}",
+                        "utr": utr_id,
+                        "account_fingerprint": "acc_hdfc_corp_001",
+                    }
+                )
+            else:
+                records.append(
+                    {
+                        "record_id": rec_id,
+                        "payment_id": rec_id,
+                        "order_id": ids[1] if (len(ids) > 1 and "ord" in ids[1].lower()) else None,
+                        "status": "CAPTURED",
+                        "currency": "INR",
+                        "gross_amount": clean_amt,
+                        "fee_amount": float(amounts[1].replace(",", ""))
+                        if len(amounts) > 1
+                        else round(clean_amt * 0.02, 2),
+                        "tax_amount": round(clean_amt * 0.02 * 0.18, 2),
+                        "captured_at_utc": "2026-03-02T10:00:00Z",
+                        "settlement_id": ids[2]
+                        if (len(ids) > 2 and "stl" in ids[2].lower())
+                        else (
+                            ids[1]
+                            if (len(ids) > 1 and "stl" in ids[1].lower())
+                            else "stl_DEMO_SETTLE_01"
+                        ),
+                    }
+                )
 
     if not records:
         return {
@@ -557,7 +612,7 @@ def convert_extracted_records_to_csv(records: list[dict[str, Any]], doc_type: st
 
 
 def canonicalize_csv_text(raw_csv_text: str, doc_type: str) -> str:
-    """Canonicalize raw uploaded CSV text with arbitrary headers into AdapterSpec format."""
+    """Canonicalize raw uploaded CSV text using intelligent LLM schema mapping or fallback."""
     reader = csv.DictReader(io.StringIO(raw_csv_text.strip()))
     if not reader.fieldnames:
         return raw_csv_text
@@ -568,10 +623,30 @@ def canonicalize_csv_text(raw_csv_text: str, doc_type: str) -> str:
 
     # Verify if CSV contains financial columns
     header_str = " ".join(reader.fieldnames).lower()
-    if not is_financial_document(header_str):
+    full_sample = header_str + "\n" + raw_csv_text[:600]
+    if not is_financial_document(full_sample):
         # If headers have no financial markers, return empty to trigger quarantine/rejection
         return ""
 
+    # Check if standard schema is already present
+    standard_keys = {"payment_id", "bank_entry_id", "ledger_entry_id", "settlement_id", "refund_id"}
+    has_standard_headers = any(k in reader.fieldnames for k in standard_keys)
+
+    # For non-standard or unstructured headers, invoke the LLM extractor (Groq / Gemini)
+    if not has_standard_headers:
+        try:
+            b64_content = base64.b64encode(raw_csv_text.encode("utf-8")).decode("utf-8")
+            ai_res = extract_financial_data_from_document(
+                filename=f"{doc_type}.csv",
+                content_base64=b64_content,
+                mime_type="text/csv",
+            )
+            if ai_res.get("is_financial") and ai_res.get("records"):
+                return convert_extracted_records_to_csv(ai_res["records"], doc_type)
+        except Exception:
+            pass
+
+    # Heuristic column mapping fallback
     mapped_records: list[dict[str, Any]] = []
     for r in rows:
         normalized_row: dict[str, Any] = {}
@@ -588,32 +663,80 @@ def canonicalize_csv_text(raw_csv_text: str, doc_type: str) -> str:
                 "deposit",
                 "signed_amount",
                 "gross_credit",
+                "billed_total_amount",
+                "billed_total",
+                "credit_amount",
+                "net_journal_value",
+                "total_amount",
+                "txn_amount",
+                "value",
             }:
                 normalized_row["gross_amount"] = v
                 normalized_row["signed_amount"] = v
                 normalized_row["gross_credit"] = v
             # Fees
-            elif lk in {"fee_amount", "fee", "fees", "mdr", "mdr_fee"}:
+            elif lk in {
+                "fee_amount",
+                "fee",
+                "fees",
+                "mdr",
+                "mdr_fee",
+                "gateway_mdr_charge",
+                "processing_charge",
+                "charge",
+                "charges",
+            }:
                 normalized_row["fee_amount"] = v
             # Taxes
-            elif lk in {"tax_amount", "tax", "taxes", "gst", "gst_amount"}:
+            elif lk in {
+                "tax_amount",
+                "tax",
+                "taxes",
+                "gst",
+                "gst_amount",
+                "govt_tax_gst",
+                "tax_gst",
+                "gst_tax",
+            }:
                 normalized_row["tax_amount"] = v
             # Identifiers
-            elif lk in {"payment_id", "pay_id", "transaction_id", "txn_id"}:
-                normalized_row["record_id"] = v
+            elif lk in {
+                "payment_id",
+                "pay_id",
+                "transaction_id",
+                "txn_id",
+                "transaction_ref",
+                "txn_ref",
+                "source_doc_number",
+            }:
                 normalized_row["payment_id"] = v
-            elif lk in {"settlement_id", "settle_id", "batch_id", "payout_id"}:
-                normalized_row["record_id"] = v
+                normalized_row["source_reference"] = v
+            elif lk in {
+                "settlement_id",
+                "settle_id",
+                "batch_id",
+                "payout_id",
+                "batch_payout_ref",
+                "payout_ref",
+                "batch_ref",
+            }:
                 normalized_row["settlement_id"] = v
-            elif lk in {"bank_entry_id", "bank_id", "entry_id"}:
-                normalized_row["record_id"] = v
+            elif lk in {"bank_entry_id", "bank_id", "entry_id", "chq_ref_no"}:
                 normalized_row["bank_entry_id"] = v
-            elif lk in {"ledger_entry_id", "ledger_id", "journal_id"}:
-                normalized_row["record_id"] = v
+            elif lk in {"ledger_entry_id", "ledger_id", "journal_id", "voucher_no", "voucher_id"}:
                 normalized_row["ledger_entry_id"] = v
-            elif lk in {"order_id", "order_ref", "ord_id"}:
+            elif lk in {"refund_id", "rfnd_id"}:
+                normalized_row["refund_id"] = v
+            elif lk in {
+                "order_id",
+                "order_ref",
+                "ord_id",
+                "cust_order_no",
+                "order_no",
+                "cart_order",
+            }:
                 normalized_row["order_id"] = v
-            elif lk in {"utr", "utr_number", "rrn", "ref_no", "reference"}:
+            elif lk in {"utr", "utr_number", "rrn", "ref_no", "reference", "chq_ref_no"}:
                 normalized_row["utr"] = v
             # Timestamps & Dates
             elif lk in {
@@ -623,16 +746,54 @@ def canonicalize_csv_text(raw_csv_text: str, doc_type: str) -> str:
                 "created_at_utc",
                 "date",
                 "timestamp",
+                "created_timestamp",
+                "booking_date",
+                "posting_date",
+                "txn_date",
             }:
                 normalized_row["captured_at_utc"] = v
                 normalized_row["posted_at_utc"] = v
                 normalized_row["settled_at_utc"] = v
+                normalized_row["accounting_date"] = v
             # Narration / Description
-            elif lk in {"narration", "description", "details", "remarks", "memo"}:
+            elif lk in {
+                "narration",
+                "description",
+                "details",
+                "remarks",
+                "memo",
+                "txn_remarks",
+                "audit_remarks",
+            }:
                 normalized_row["narration"] = v
                 normalized_row["description"] = v
+            # Account Code
+            elif lk in {"account_code", "ledger_head", "account", "gl_code"}:
+                normalized_row["account_code"] = v
             else:
                 normalized_row[lk] = v
+
+        # Correctly assign primary record_id based on doc_type to prevent cross-column collisions
+        if doc_type == "payments":
+            normalized_row["record_id"] = normalized_row.get("payment_id") or normalized_row.get(
+                "record_id"
+            )
+        elif doc_type == "settlements":
+            normalized_row["record_id"] = normalized_row.get("settlement_id") or normalized_row.get(
+                "record_id"
+            )
+        elif doc_type == "bank_entries":
+            normalized_row["record_id"] = normalized_row.get("bank_entry_id") or normalized_row.get(
+                "record_id"
+            )
+        elif doc_type == "ledger_entries":
+            normalized_row["record_id"] = normalized_row.get(
+                "ledger_entry_id"
+            ) or normalized_row.get("record_id")
+        elif doc_type == "refunds":
+            normalized_row["record_id"] = normalized_row.get("refund_id") or normalized_row.get(
+                "record_id"
+            )
 
         mapped_records.append(normalized_row)
 

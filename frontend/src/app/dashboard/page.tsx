@@ -27,6 +27,7 @@ import { ConnectDatasetModal } from "../../components/connect-dataset-modal";
 import { ExecutiveDossierModal } from "../../components/executive-dossier-modal";
 import { FeeAuditCard } from "../../components/fee-audit-card";
 import { HomeChat } from "../../components/home-chat";
+import { MasterMatrixTable } from "../../components/master-matrix-table";
 import {
   IconActivity,
   IconCheck,
@@ -85,6 +86,7 @@ interface RunTelemetry {
 
 type Tab =
   | "home"
+  | "matrix"
   | "approval_queue"
   | "verified_resolved"
   | "unresolved"
@@ -408,6 +410,27 @@ export default function ControlRoomPage() {
 
                 <button
                   onClick={() => {
+                    setActiveTab("matrix");
+                  }}
+                  title="5-Way Reconciled Master Matrix"
+                  className={`group flex h-10 w-full items-center rounded-xl transition-all overflow-hidden ${activeTab === "matrix"
+                      ? "bg-slate-100 text-slate-900 font-semibold shadow-xs"
+                      : "text-slate-700 hover:bg-slate-100/80 hover:text-slate-900"
+                    }`}
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+                    <IconLayers size={17} />
+                  </div>
+                  <div
+                    className={`flex items-center overflow-hidden whitespace-nowrap transition-all duration-200 ${sidebarOpen ? "max-w-[170px] opacity-100 pr-2" : "max-w-0 opacity-0 pointer-events-none pr-0"
+                      }`}
+                  >
+                    <span className="truncate text-[13px]">5-Way Master Matrix</span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
                     setCategoryFilter("ALL");
                     setSearchQuery("");
                     setStatusFilter(CaseStatus.APPROVAL_REQUIRED);
@@ -704,6 +727,11 @@ export default function ControlRoomPage() {
               telemetry={telemetry}
             />
           </div>
+        )}
+
+        {/* ============================ 5-Way Master Matrix View ============================ */}
+        {activeTab === "matrix" && (
+          <MasterMatrixTable runId={activeRunId} />
         )}
 
         {/* ============================ Approval Queue View ============================ */}

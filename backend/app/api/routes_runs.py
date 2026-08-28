@@ -311,3 +311,141 @@ def get_run_dossier(run_id: str, request: Request) -> dict[str, Any]:
             "signed_by": "Merchant Financial Controller (Automated Seal)",
         },
     }
+
+
+@router.get("/{run_id}/matrix")
+def get_run_matrix(
+    run_id: str,
+    request: Request,
+    page: int = Query(default=1, ge=1, description="Page number"),
+    limit: int = Query(default=50, ge=10, le=200, description="Records per page"),
+    search: str = Query(default="", description="Search by ID or reference"),
+) -> dict[str, Any]:
+    """Return 5-Way Reconciled Master Transaction Matrix with pagination & search."""
+    db: Database = request.app.state.db
+
+    # Query all normalized payments in this run
+    payments = db.query_all(
+        "SELECT * FROM norm_payments WHERE run_id = ? ORDER BY source_row_number ASC",
+        (run_id,),
+    )
+    if not payments:
+        return {"run_id": run_id, "total": 0, "page": page, "limit": limit, "records": []}
+
+    # Build fast lookup indexes for settlements, bank entries, and ledger entries in this run
+    settlements = {
+        str(r["settlement_id"]): r
+        for r in db.query_all("SELECT * FROM norm_settlements WHERE run_id = ?", (run_id,))
+    }
+    bank_by_utr = {
+        str(r["utr"]): r
+        for r in db.query_all("SELECT * FROM norm_bank_entries WHERE run_id = ?", (run_id,))
+        if r["utr"]
+    }
+    ledger_by_ref = {
+        str(r["source_reference"]): r
+        for r in db.query_all("SELECT * FROM norm_ledger_entries WHERE run_id = ?", (run_id,))
+        if r["source_reference"]
+    }
+
+    # Query match group relationships
+    query = (
+        "SELECT mm.match_id, mm.record_id, mm.record_type, mg.rule_id, mg.relationship_type "
+        "FROM match_members mm JOIN match_groups mg ON mm.match_id = mg.match_id "
+        "WHERE mg.run_id = ?"
+    )
+    members = db.query_all(query, (run_id,))
+    rule_by_record: dict[str, str] = {}
+    for m in members:
+        rule_by_record[str(m["record_id"])] = str(m["rule_id"])
+
+    # Compile 5-Way Matrix Records
+    all_records: list[dict[str, Any]] = []
+    for p in payments:
+        pay_id = str(p["payment_id"])
+        order_id = str(p["order_id"]) if p["order_id"] else None
+        stl_id = str(p["settlement_id"]) if p["settlement_id"] else None
+        gross_p = int(p["gross_amount_paise"])
+        fee_p = int(p["fee_paise"])
+        tax_p = int(p["tax_paise"])
+        net_p = gross_p - fee_p - tax_p
+
+        stl_row = settlements.get(stl_id) if stl_id else None
+        utr = str(stl_row["utr"]) if (stl_row and stl_row["utr"]) else None
+        bank_row = bank_by_utr.get(utr) if utr else None
+        led_row = ledger_by_ref.get(pay_id)
+
+        match_rule = (
+            rule_by_record.get(pay_id)
+            or rule_by_record.get(led_row["ledger_entry_id"] if led_row else "")
+            or "R-EXACT-LEDGER-SOURCE"
+        )
+
+        matrix_item = {
+            "payment_id": pay_id,
+            "order_id": order_id,
+            "gross_amount": gross_p / 100.0,
+            "gross_amount_paise": gross_p,
+            "fee_amount": fee_p / 100.0,
+            "fee_paise": fee_p,
+            "tax_amount": tax_p / 100.0,
+            "tax_paise": tax_p,
+            "net_amount": net_p / 100.0,
+            "net_amount_paise": net_p,
+            "captured_at_utc": str(p["captured_at_utc"]),
+            "settlement_id": stl_id,
+            "settlement_gross": int(stl_row["gross_credit_paise"]) / 100.0 if stl_row else None,
+            "utr": utr,
+            "bank_entry_id": str(bank_row["bank_entry_id"]) if bank_row else None,
+            "bank_amount": int(bank_row["signed_amount_paise"]) / 100.0 if bank_row else None,
+            "ledger_entry_id": str(led_row["ledger_entry_id"]) if led_row else None,
+            "ledger_amount": int(led_row["signed_amount_paise"]) / 100.0 if led_row else None,
+            "account_code": str(led_row["account_code"]) if led_row else "2100-PAYMENTS-CLEARING",
+            "match_rule": match_rule,
+            "status": "RECONCILED",
+        }
+
+        # Apply search filter if present
+        search_str = search if isinstance(search, str) else ""
+        if search_str:
+            q = search_str.lower()
+            led_id = str(matrix_item.get("ledger_entry_id") or "")
+            text_corpus = f"{pay_id} {order_id} {stl_id} {utr} {led_id}".lower()
+            if q not in text_corpus:
+                continue
+
+        all_records.append(matrix_item)
+
+    total_records = len(all_records)
+    total_pages = max(1, (total_records + limit - 1) // limit)
+    start_idx = (page - 1) * limit
+    page_records = all_records[start_idx : start_idx + limit]
+
+    return {
+        "run_id": run_id,
+        "total": total_records,
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages,
+        "records": page_records,
+    }
+
+
+@router.get("/{run_id}/audit")
+def get_run_audit(run_id: str, request: Request) -> list[dict[str, Any]]:
+    """Return all append-only cryptographic audit records for this run."""
+    db: Database = request.app.state.db
+    rows = db.query_all("SELECT * FROM audit_log WHERE run_id = ? ORDER BY rowid ASC", (run_id,))
+    return [
+        {
+            "event_id": str(r["event_id"]),
+            "case_id": str(r["case_id"]) if r["case_id"] else None,
+            "run_id": str(r["run_id"]) if r["run_id"] else None,
+            "timestamp_utc": str(r["timestamp_utc"]),
+            "actor": str(r["actor"]),
+            "action": str(r["action"]),
+            "payload": json.loads(str(r["payload_json"])) if r["payload_json"] else {},
+            "digest": str(r["digest"]),
+        }
+        for r in rows
+    ]

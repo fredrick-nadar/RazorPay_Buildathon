@@ -750,6 +750,85 @@ def _persist_completed_run(
     _persist_ingest(database, run_id, ingest)
     _persist_reconciliation(database, run_id, result, verification, now_iso)
 
+    # Append-only cryptographic audit event chain (PRD §6.12, §11.4)
+    from app.audit.service import record_audit_event
+
+    record_audit_event(
+        db=database,
+        actor="SYSTEM_INGEST_PIPELINE",
+        action="INGEST_COMPLETED",
+        payload={
+            "raw_row_count": ingest.raw_row_count,
+            "accepted_count": ingest.accepted_count,
+            "quarantined_count": ingest.quarantined_count,
+            "inputs_fingerprint": ingest.inputs_fingerprint,
+            "files": [s.file_stem for s in ingest.file_stats],
+        },
+        run_id=run_id,
+        timestamp_utc=now_iso,
+    )
+
+    denom = max(ingest.accepted_count, 1)
+    rate_str = f"{(result.matched_record_count / denom * 100):.1f}%"
+    record_audit_event(
+        db=database,
+        actor="DETERMINISTIC_RECON_ENGINE",
+        action="RECONCILIATION_MATCH_COMPLETED",
+        payload={
+            "matched_records": result.matched_record_count,
+            "match_groups_count": len(result.matches),
+            "match_rate": rate_str,
+            "relationship_rules_applied": list({m.rule_id for m in result.matches}),
+        },
+        run_id=run_id,
+        timestamp_utc=now_iso,
+    )
+
+    if result.cases:
+        record_audit_event(
+            db=database,
+            actor="AI_INVESTIGATOR_SERVICE",
+            action="INVESTIGATION_DISPATCHED",
+            payload={
+                "exception_cases_count": len(result.cases),
+                "categories": [c.category.value for c in result.cases],
+                "verifications_count": len(verification.verifications),
+            },
+            run_id=run_id,
+            timestamp_utc=now_iso,
+        )
+
+        for case in result.cases:
+            record_audit_event(
+                db=database,
+                actor="AI_INVESTIGATOR_SERVICE",
+                action="CASE_OPENED",
+                payload={
+                    "category": case.category.value,
+                    "status": case.status.value,
+                    "variance_paise": case.variance_paise,
+                    "affected_amount_paise": case.affected_amount_paise,
+                    "summary": case.summary,
+                    "reason_codes": list(case.reason_codes),
+                },
+                case_id=case.case_id,
+                run_id=run_id,
+                timestamp_utc=now_iso,
+            )
+
+    record_audit_event(
+        db=database,
+        actor="FINANCIAL_CONTROLLER_SEAL",
+        action="RUN_SEALED",
+        payload={
+            "economic_output_hash": econ_hash,
+            "statutory_standard": "Signed Integer Paise (0 floats)",
+            "verification_status": "SEALED",
+        },
+        run_id=run_id,
+        timestamp_utc=now_iso,
+    )
+
 
 def execute_run(
     inputs_dir: Path,
