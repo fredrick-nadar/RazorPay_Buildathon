@@ -99,7 +99,7 @@ export function ConnectDatasetModal({
     mimeType?: string;
   } | null>(null);
   const [reconcilingSession, setReconcilingSession] = useState(false);
-  const [reconcileMode, setReconcileMode] = useState<"rules-only" | "ai-assisted">("rules-only");
+  const [reconcileMode, setReconcileMode] = useState<"rules-only" | "ai-assisted">("ai-assisted");
   const [csvError, setCsvError] = useState<string | null>(null);
   const [sessionId] = useState(() => `session_${Math.random().toString(36).slice(2, 9)}`);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -261,7 +261,7 @@ export function ConnectDatasetModal({
         body: JSON.stringify({
           session_id: sessionId,
           fallback_profile: "dev",
-          mode: reconcileMode,
+          mode: reconcileMode === "ai-assisted" ? "agent" : "rules-only",
         }),
       });
 

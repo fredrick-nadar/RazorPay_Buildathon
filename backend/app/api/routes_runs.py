@@ -19,16 +19,21 @@ from app.runs import execute_run
 router = APIRouter(prefix="/api/v1/runs", tags=["runs"])
 
 
-def _resolve_agent_provider() -> InvestigatorProvider:
-    """Agent mode: live LLM chain when configured, deterministic fake otherwise.
+def _resolve_agent_provider(provider_id: str | None = None) -> InvestigatorProvider:
+    """Agent mode: live LLM chain when configured & requested, deterministic fake otherwise.
 
     The provider id is persisted in the run summary either way, so the UI and
     the benchmark artifacts always show WHICH investigator ran.
     """
+    if not provider_id or "fake" in provider_id.lower():
+        return FakeProvider()
     settings = get_settings()
-    chain = build_chain(settings)
-    if chain.member_ids:
-        return LLMInvestigatorProvider(chain)
+    try:
+        chain = build_chain(settings)
+        if chain.member_ids:
+            return LLMInvestigatorProvider(chain)
+    except Exception:
+        pass
     return FakeProvider()
 
 

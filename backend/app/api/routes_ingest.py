@@ -312,7 +312,10 @@ def commit_extracted_file(payload: CommitExtractedPayload) -> dict[str, Any]:
 class ReconcileSessionPayload(BaseModel):
     session_id: str = "default_session"
     fallback_profile: str = "dev"
-    mode: Literal["rules-only", "agent"] = "agent"
+    mode: str = Field(
+        default="agent",
+        description="Reconciliation mode (rules-only, agent, or ai-assisted)",
+    )
 
 
 @router.post("/reconcile-session")
@@ -491,13 +494,16 @@ def reconcile_uploaded_session(
                     ]
                 )
 
-    provider = _resolve_agent_provider() if payload.mode == "agent" else None
+    exec_mode: Literal["rules-only", "agent"] = (
+        "agent" if payload.mode.lower() in ("agent", "ai-assisted") else "rules-only"
+    )
+    provider = _resolve_agent_provider() if exec_mode == "agent" else None
 
     try:
         res = execute_run(
             inputs_dir=session_dir,
             database=db,
-            mode=payload.mode,
+            mode=exec_mode,
             provider=provider,
             force=True,
         )

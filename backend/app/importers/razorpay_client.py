@@ -47,7 +47,7 @@ class RazorpayClient:
         self,
         key_id: str | None | Any = _UNSET,
         key_secret: str | None | Any = _UNSET,
-        timeout_s: float = 10.0,
+        timeout_s: float = 2.5,
     ) -> None:
         if key_id is not _UNSET or key_secret is not _UNSET:
             self.key_id = None if key_id is _UNSET else key_id
