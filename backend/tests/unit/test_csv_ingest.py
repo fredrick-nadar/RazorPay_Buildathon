@@ -115,3 +115,46 @@ def test_non_financial_document_rejected(tmp_path: Path) -> None:
         assert res.status_code == 400
         err = res.json()
         assert "no recognizable financial" in err["detail"].lower()
+
+
+def test_java_notes_and_pdf_binary_rejected(tmp_path: Path) -> None:
+    import base64
+
+    settings = Settings(ARGUS_DB_PATH=str(tmp_path / "test_java_notes.db"))
+    app = create_app(settings)
+
+    with TestClient(app) as client:
+        # Simulate a programming book / notes PDF with xref binary offsets and words
+        fake_pdf = (
+            b"%PDF-1.4\n"
+            b"1 0 obj\n<< /Title (Java Professional Notes) /Author (Developer) >>\nendobj\n"
+            b"2 0 obj\n<< /Length 120 >>\nstream\n"
+            b"public class OrderProcessor {\n"
+            b"    public static void main(String[] args) {\n"
+            b'        System.out.println("Order in array");\n'
+            b"    }\n"
+            b"}\n"
+            b"endstream\nendobj\n"
+            b"xref\n0 3\n"
+            b"0000000000 65535 f\n"
+            b"0000014602 00000 n\n"
+            b"0000146026 00000 n\n"
+            b"trailer\n<< /Size 3 >>\nstartxref\n500\n%%EOF"
+        )
+        b64_content = base64.b64encode(fake_pdf).decode("utf-8")
+
+        res = client.post(
+            "/api/v1/ingest/upload-document",
+            json={
+                "filename": "java professional notes.pdf",
+                "content_base64": b64_content,
+                "mime_type": "application/pdf",
+                "session_id": "test_java_notes_session",
+            },
+        )
+        assert res.status_code == 400
+        err = res.json()
+        assert (
+            "no financial transaction tables" in err["detail"].lower()
+            or "no recognizable financial" in err["detail"].lower()
+        )

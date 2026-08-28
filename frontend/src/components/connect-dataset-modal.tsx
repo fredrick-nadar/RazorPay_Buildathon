@@ -226,7 +226,7 @@ export function ConnectDatasetModal({
 
           const data: UploadedFileSummary = await res.json();
           setUploadedFiles((prev) => [
-            ...prev.filter((f) => f.mapped_filename !== data.mapped_filename),
+            ...prev.filter((f) => f.filename !== data.filename && f.mapped_filename !== data.mapped_filename),
             data,
           ]);
         } else {
@@ -264,7 +264,7 @@ export function ConnectDatasetModal({
 
           const data: UploadedFileSummary = await res.json();
           setUploadedFiles((prev) => [
-            ...prev.filter((f) => f.mapped_filename !== data.mapped_filename),
+            ...prev.filter((f) => f.filename !== data.filename && f.mapped_filename !== data.mapped_filename),
             data,
           ]);
         }
@@ -273,6 +273,10 @@ export function ConnectDatasetModal({
       }
     }
     setUploading(false);
+  }
+
+  function handleRemoveFile(filename: string) {
+    setUploadedFiles((prev) => prev.filter((f) => f.filename !== filename));
   }
 
   async function handleReconcileUploadedSession() {
@@ -564,31 +568,60 @@ export function ConnectDatasetModal({
                 {/* Uploaded files summary list */}
                 {uploadedFiles.length > 0 && (
                   <div className="space-y-2">
-                    <div className="text-[11px] font-bold text-slate-500 uppercase">
+                    <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                       Validated Ingestion Files ({uploadedFiles.length})
                     </div>
-                    <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                      {uploadedFiles.map((file) => (
-                        <div
-                          key={file.mapped_filename}
-                          className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white text-xs"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono font-bold text-slate-900">{file.mapped_filename}</span>
-                            <span className="rounded bg-slate-100 px-1.5 py-0.2 text-[10px] font-semibold text-slate-700">
-                              {file.rows_count} rows
-                            </span>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {uploadedFiles.map((file) => {
+                        const isPdf = file.filename.toLowerCase().endsWith(".pdf");
+                        const isCsv = file.filename.toLowerCase().endsWith(".csv");
+                        const extLabel = isPdf ? "PDF" : isCsv ? "CSV" : "IMG";
+                        const extColor = isPdf
+                          ? "bg-rose-50 text-rose-700 border-rose-200"
+                          : isCsv
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : "bg-blue-50 text-blue-700 border-blue-200";
+
+                        return (
+                          <div
+                            key={`${file.filename}-${file.mapped_filename}`}
+                            className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white text-xs shadow-2xs hover:border-slate-300 transition-all"
+                          >
+                            <div className="flex items-center gap-2 min-w-0 pr-2">
+                              <span
+                                className={`rounded px-1.5 py-0.5 text-[9px] font-mono font-bold border shrink-0 ${extColor}`}
+                              >
+                                {extLabel}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-slate-900 truncate max-w-[200px] sm:max-w-[260px]">
+                                  {file.filename}
+                                </p>
+                                <p className="font-mono text-[10px] text-slate-500 flex items-center gap-1">
+                                  <span>↳ mapped as:</span>
+                                  <span className="font-bold text-slate-700">{file.mapped_filename}</span>
+                                  <span>•</span>
+                                  <span className="font-semibold text-slate-600">{file.rows_count} {file.rows_count === 1 ? "row" : "rows"}</span>
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold text-emerald-700 inline-flex items-center gap-1">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                Validated
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveFile(file.filename)}
+                                className="h-6 w-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                title="Remove file"
+                              >
+                                <IconX size={12} />
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-[10px] text-slate-400">
-                              SHA: {file.checksum_sha256.slice(0, 8)}...
-                            </span>
-                            <span className="rounded-full bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 text-[10px] font-bold text-emerald-700">
-                              ✓ Validated
-                            </span>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}

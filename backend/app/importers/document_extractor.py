@@ -52,35 +52,86 @@ Output ONLY raw JSON. No markdown backticks, no conversational text.
 """
 
 FINANCIAL_KEYWORDS = (
-    "amount",
-    "gross",
-    "credit",
-    "debit",
-    "balance",
     "utr",
-    "payment",
-    "settlement",
-    "payout",
-    "inr",
-    "₹",
-    "rs",
-    "tax",
-    "fee",
-    "mdr",
-    "gst",
-    "order",
-    "bank",
-    "account",
-    "ledger",
-    "journal",
+    "payment_id",
+    "settlement_id",
+    "refund_id",
+    "bank_entry_id",
+    "ledger_entry_id",
+    "gross_amount",
+    "fee_amount",
+    "tax_amount",
+    "net_amount",
+    "signed_amount",
+    "bank statement",
+    "account balance",
+    "credit amount",
+    "debit amount",
+    "settlement credit",
+    "captured_at",
+    "settled_at",
+    "accounting_date",
+    "account_code",
+    "razorpay",
+    "hdfc bank",
+    "icici bank",
+    "sbi bank",
+    "axis bank",
+    "transaction date",
+    "value date",
 )
+
+STRONG_PATTERNS = [
+    re.compile(r"\b(?:pay|stl|rfnd|ord|bnk|led|utr)_[a-zA-Z0-9_]+\b", re.IGNORECASE),
+    re.compile(r"(?:₹|inr|rs\.?)\s*\d+(?:,\d+)*(?:\.\d{2})?", re.IGNORECASE),
+    re.compile(r"\b(?:credit|debit|settled|captured|payout|balance)\b", re.IGNORECASE),
+]
+
+
+def _clean_pdf_text(raw_bytes: bytes) -> str:
+    """Extract legible text from PDF bytes, stripping binary streams & xref offsets."""
+    try:
+        # Simple extraction of text literals in parentheses e.g. (Text) Tj
+        literal_matches = re.findall(rb"\(([^)]{2,})\)", raw_bytes)
+        if literal_matches:
+            extracted_parts = []
+            for part in literal_matches:
+                with contextlib.suppress(Exception):
+                    extracted_parts.append(part.decode("utf-8", errors="ignore"))
+            if extracted_parts:
+                return "\n".join(extracted_parts)
+    except Exception:
+        pass
+
+    # Fallback to plain decoding but strip binary/xref lines
+    decoded = raw_bytes.decode("utf-8", errors="ignore")
+    clean_lines: list[str] = []
+    for line in decoded.splitlines():
+        trimmed = line.strip()
+        # Skip PDF binary stream headers, objects, and xref tables (e.g. 0000014602 00000 n)
+        if (
+            re.match(r"^\d{10}\s+\d{5}\s+[fn]$", trimmed)
+            or re.match(r"^\d+\s+\d+\s+obj$", trimmed)
+            or trimmed in {"xref", "endobj", "stream", "endstream", "trailer", "startxref"}
+            or trimmed.startswith(("/Filter", "/Length", "/Size", "/Root", "/Info", "<<", ">>"))
+        ):
+            continue
+        clean_lines.append(trimmed)
+    return "\n".join(clean_lines)
 
 
 def is_financial_document(text: str) -> bool:
-    """Check if the document or CSV text contains recognizable financial keywords."""
+    """Check if the document or CSV text contains recognizable financial keywords and structure."""
     lower = text.lower()
-    matches = sum(1 for kw in FINANCIAL_KEYWORDS if kw in lower)
-    return matches >= 1
+    keyword_matches = sum(1 for kw in FINANCIAL_KEYWORDS if kw in lower)
+    pattern_matches = sum(1 for p in STRONG_PATTERNS if p.search(text))
+
+    # Require strong financial keywords or multiple patterns
+    return (
+        keyword_matches >= 2
+        or (keyword_matches >= 1 and pattern_matches >= 2)
+        or (pattern_matches >= 3)
+    )
 
 
 def _clean_amt_str(val: Any, default: float = 0.0) -> str:
@@ -110,38 +161,62 @@ def _clean_date_str(val: Any, default_time: str = "2026-03-02T10:00:00Z") -> str
 
 def _offline_heuristic_extractor(text_or_filename: str, raw_bytes: bytes) -> dict[str, Any]:
     """Deterministic offline fallback extractor for image/PDF text simulations."""
-    if not is_financial_document(text_or_filename):
+    # If PDF binary, clean the text first to avoid matching xref offsets or binary streams
+    if raw_bytes.startswith(b"%PDF"):
+        cleaned_text = _clean_pdf_text(raw_bytes)
+        combined_text = f"{text_or_filename}\n{cleaned_text}"
+    else:
+        combined_text = text_or_filename
+
+    if not is_financial_document(combined_text):
         return {
             "is_financial": False,
             "document_type": "unrecognized",
             "records": [],
-            "error": "Document contains no recognizable financial keywords or transaction lines.",
+            "error": (
+                "Document contains no recognizable financial transaction tables or banking records."
+            ),
             "extractor": "heuristic_validator_v1",
             "confidence": 0.0,
         }
 
-    lines = [line.strip() for line in text_or_filename.splitlines() if line.strip()]
+    lines = [line.strip() for line in combined_text.splitlines() if line.strip()]
     records: list[dict[str, Any]] = []
 
-    lower_fn = text_or_filename.lower()
+    lower_fn = combined_text.lower()
     doc_type = "payments"
-    if "bank" in lower_fn or "statement" in lower_fn:
+    if "bank" in lower_fn or "statement" in lower_fn or "hdfc" in lower_fn or "icici" in lower_fn:
         doc_type = "bank_entries"
     elif "settle" in lower_fn or "payout" in lower_fn:
         doc_type = "settlements"
     elif "ledger" in lower_fn or "journal" in lower_fn:
         doc_type = "ledger_entries"
 
-    amount_pattern = re.compile(r"₹?\s*(\d+(?:,\d+)*(?:\.\d{2})?)")
-    id_pattern = re.compile(
-        r"(pay_[a-zA-Z0-9]+|stl_[a-zA-Z0-9]+|utr_[a-zA-Z0-9_]+|ord_[a-zA-Z0-9]+)"
+    # Require currency symbol OR explicit financial ID pattern to avoid matching random numbers
+    strict_amount_pattern = re.compile(
+        r"(?:₹|inr|rs\.?)\s*(\d+(?:,\d+)*(?:\.\d{2})?)", re.IGNORECASE
     )
+    id_pattern = re.compile(
+        r"\b(pay_[a-zA-Z0-9]+|stl_[a-zA-Z0-9]+|utr_[a-zA-Z0-9_]+|ord_[a-zA-Z0-9]+|rfnd_[a-zA-Z0-9]+)\b",
+        re.IGNORECASE,
+    )
+    loose_amount_pattern = re.compile(r"\b(\d+(?:,\d+)*\.\d{2})\b")
 
+    code_keywords = ["import ", "public class", "void main", "function(", "const ", "let "]
     for idx, line in enumerate(lines):
+        # Ignore code lines or common non-financial text
+        if any(w in line.lower() for w in code_keywords):
+            continue
+
         ids = id_pattern.findall(line)
-        amounts = amount_pattern.findall(line)
-        if amounts:
+        strict_amounts = strict_amount_pattern.findall(line)
+        loose_amounts = loose_amount_pattern.findall(line) if ids else []
+
+        amounts = strict_amounts or loose_amounts
+        if amounts and (ids or strict_amounts):
             clean_amt = float(amounts[0].replace(",", ""))
+            if clean_amt <= 0.0:
+                continue
             rec_id = ids[0] if ids else f"{doc_type[:3]}_scanned_{idx + 1:03d}"
             records.append(
                 {
@@ -161,12 +236,22 @@ def _offline_heuristic_extractor(text_or_filename: str, raw_bytes: bytes) -> dic
                 }
             )
 
+    if not records:
+        return {
+            "is_financial": False,
+            "document_type": "unrecognized",
+            "records": [],
+            "error": "No valid financial transaction rows or amount records could be extracted.",
+            "extractor": "heuristic_validator_v1",
+            "confidence": 0.0,
+        }
+
     return {
-        "is_financial": bool(records),
+        "is_financial": True,
         "document_type": doc_type,
         "records": records,
         "extractor": "heuristic_ocr_engine_v1",
-        "confidence": 0.98 if records else 0.0,
+        "confidence": 0.98,
     }
 
 
