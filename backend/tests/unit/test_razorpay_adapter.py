@@ -7,8 +7,10 @@ import hmac
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app.audit.service import get_audit_trail
+from app.config import Settings
 from app.importers.adapters import QuarantineSignal
 from app.importers.razorpay import (
     RazorpayAdapter,
@@ -17,6 +19,7 @@ from app.importers.razorpay import (
     verify_razorpay_webhook_signature,
 )
 from app.importers.razorpay_client import RazorpayClient
+from app.main import create_app
 from app.persistence.database import Database
 
 
@@ -141,3 +144,40 @@ def test_razorpay_client_unconfigured_skips_gracefully() -> None:
     smoke = client.smoke_test()
     assert smoke["status"] == "SKIPPED"
     assert smoke["read_access_verified"] is False
+
+
+def test_unconfigured_sync_uses_exact_synthetic_fallback(tmp_path: Path) -> None:
+    settings = Settings(
+        db_path=tmp_path / "razorpay-sync.sqlite3",
+        razorpay_key_id=None,
+        razorpay_key_secret=None,
+        _env_file=None,
+    )
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/api/v1/razorpay/sync",
+            json={"count": 25, "auto_reconcile": False},
+        )
+        raw_payments_path = (
+            Path(__file__).resolve().parents[3] / "tmp/razorpay_live/inputs/raw_payments.json"
+        )
+        first_raw_payload = raw_payments_path.read_bytes()
+        repeated = client.post(
+            "/api/v1/razorpay/sync",
+            json={"count": 25, "auto_reconcile": False},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["payments_count"] == 520
+    assert payload["refunds_count"] == 0
+    assert payload["settlements_count"] == 11
+    assert payload["data_source"] == "synthetic_fallback"
+    assert "synthetic dataset" in payload["provider_warning"]
+    assert repeated.status_code == 200
+    assert raw_payments_path.read_bytes() == first_raw_payload
+
+    payments_csv = Path(__file__).resolve().parents[3] / "tmp/razorpay_live/inputs/payments.csv"
+    first_data_row = payments_csv.read_text(encoding="utf-8").splitlines()[1]
+    assert ",100.75,2.02,0.36," in first_data_row

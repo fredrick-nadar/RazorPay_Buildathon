@@ -159,6 +159,21 @@ def test_command_atomic_fast_path(tmp_path: Path) -> None:
         assert payload["execution"]["intent"] == "LIST_UNRESOLVED_CASES"
 
 
+def test_filter_cases_atomic_path_uses_valid_query(tmp_path: Path) -> None:
+    """The filter executor must not reference an undefined SQL table alias."""
+    with _client(tmp_path) as client:
+        _seed_run(client)
+        response = client.post(
+            "/api/v1/voice/command",
+            json={"transcript": "filter approval required cases", "language": "en-IN"},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["status"] == "EXECUTED"
+        assert payload["intent"] == "FILTER_CASES"
+        assert payload["execution"]["navigation"]["status"] == "APPROVAL_REQUIRED"
+
+
 def test_command_refusal_is_atomic(tmp_path: Path) -> None:
     with _client(tmp_path) as client:
         _seed_run(client)

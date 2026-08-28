@@ -2,8 +2,8 @@
 
 Extracts and canonicalizes tabular payments, settlements, bank entries, and ledger records
 from raw PDF files, scanned images (PNG, JPG, WEBP), and arbitrary multi-vendor CSV exports.
-Ensures 100% schema compliance with backend AdapterSpec invariants.
-Strictly rejects non-financial and unrelated documents with zero hallucination.
+Maps recognized records into backend AdapterSpec schemas and rejects documents
+that do not contain recognizable financial rows.
 """
 
 from __future__ import annotations
@@ -16,7 +16,8 @@ import json
 import re
 from typing import Any
 
-from app.config import get_settings
+from app.config import Settings
+from app.domain.money import Paise, format_paise, paise_from_decimal_rupees, require_paise
 
 DOCUMENT_EXTRACTION_SYSTEM_PROMPT = """You are ARGUS Financial Document Validator.
 First, determine if this document is a financial transaction record (bank statement,
@@ -34,20 +35,22 @@ If it IS a financial document, extract every transaction row into JSON:
   "document_type": "payments" | "settlements" | "bank_entries" | "ledger_entries",
   "records": [
     {
-      "record_id": "string",
-      "order_id": "string or null",
-      "status": "CAPTURED" | "SETTLED" | "PROCESSED",
-      "currency": "INR",
-      "gross_amount": 1250.00,
-      "fee_amount": 25.00,
-      "tax_amount": 4.50,
-      "captured_at_utc": "2026-03-02T10:00:00Z",
-      "settlement_id": "string or null",
-      "utr": "string or null",
-      "narration": "string or null"
+      "record_id": "exact value from the document or null",
+      "order_id": "exact value from the document or null",
+      "status": "exact value from the document or null",
+      "currency": "exact value from the document or null",
+      "gross_amount": "exact decimal text from the document or null",
+      "fee_amount": "exact decimal text from the document or null",
+      "tax_amount": "exact decimal text from the document or null",
+      "captured_at_utc": "exact timezone-aware timestamp from the document or null",
+      "settlement_id": "exact value from the document or null",
+      "utr": "exact value from the document or null",
+      "narration": "exact value from the document or null"
     }
   ]
 }
+Never invent, infer, calculate, or substitute a missing identifier, amount, status,
+timestamp, currency, account, UTR, settlement, fee, or tax. Use null when absent.
 Output ONLY raw JSON. No markdown backticks, no conversational text.
 """
 
@@ -135,29 +138,38 @@ def is_financial_document(text: str) -> bool:
     )
 
 
-def _clean_amt_str(val: Any, default: float = 0.0) -> str:
-    """Safely format float or string amount into two-decimal string."""
+def _paise_text(value: int) -> str:
+    return format_paise(Paise(require_paise(value))).removesuffix(" INR")
+
+
+def _clean_amt_paise(val: Any) -> int | None:
+    """Parse an extracted rupee value without ever accepting binary floats."""
     if val is None or val == "":
-        return f"{default:.2f}"
-    if isinstance(val, (int, float)):
-        return f"{float(val):.2f}"
+        return None
+    if isinstance(val, (bool, float)):
+        raise ValueError("document money must be a decimal string or integer rupee value")
     cleaned = str(val).replace("₹", "").replace(",", "").replace(" ", "").strip()
-    try:
-        return f"{float(cleaned):.2f}"
-    except ValueError:
-        return f"{default:.2f}"
+    return int(paise_from_decimal_rupees(cleaned))
 
 
-def _clean_date_str(val: Any, default_time: str = "2026-03-02T10:00:00Z") -> str:
-    """Format string date/timestamp into ISO-8601 UTC string."""
+def _clean_amt_str(val: Any) -> str:
+    """Return an exact two-decimal rupee string backed by integer paise."""
+    paise = _clean_amt_paise(val)
+    return _paise_text(paise) if paise is not None else ""
+
+
+def _clean_date_str(val: Any) -> str:
+    """Preserve only an explicit timezone-aware ISO-8601 timestamp."""
     if not val:
-        return default_time
+        return ""
     s = str(val).strip()
-    if "T" in s:
-        return s if s.endswith("Z") else f"{s}Z"
-    if re.match(r"^\d{4}-\d{2}-\d{2}$", s):
-        return f"{s}T10:00:00Z"
-    return default_time
+    if re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$", s):
+        return s
+    return ""
+
+
+def _first_present(*values: Any) -> Any:
+    return next((value for value in values if value is not None and value != ""), None)
 
 
 def _offline_heuristic_extractor(text_or_filename: str, raw_bytes: bytes) -> dict[str, Any]:
@@ -179,26 +191,30 @@ def _offline_heuristic_extractor(text_or_filename: str, raw_bytes: bytes) -> dic
                 "Document contains no recognizable financial transaction tables or banking records."
             ),
             "extractor": "heuristic_validator_v1",
-            "confidence": 0.0,
         }
 
     lines = [line.strip() for line in combined_text.splitlines() if line.strip()]
     records: list[dict[str, Any]] = []
 
-    lower_fn = (f"{text_or_filename}\n{combined_text}").lower()
+    lower_fn = combined_text.lower()
     doc_type = "payments"
     if "ledger" in lower_fn or "journal" in lower_fn or "erp" in lower_fn or "voucher" in lower_fn:
         doc_type = "ledger_entries"
-    elif "bank" in lower_fn or "hdfc" in lower_fn or "icici" in lower_fn or "sbi" in lower_fn:
+    elif (
+        "bank" in lower_fn
+        or "statement" in lower_fn
+        or "hdfc" in lower_fn
+        or "icici" in lower_fn
+        or "sbi" in lower_fn
+    ):
         doc_type = "bank_entries"
-    elif "payment" in lower_fn or "pay_" in lower_fn:
-        doc_type = "payments"
     elif "settle" in lower_fn or "payout" in lower_fn:
         doc_type = "settlements"
     elif "refund" in lower_fn:
         doc_type = "refunds"
+    elif "payment" in lower_fn or "pay_" in lower_fn:
+        doc_type = "payments"
 
-    # Require currency symbol OR explicit financial ID pattern to avoid matching random numbers
     strict_amount_pattern = re.compile(
         r"(?:₹|inr|rs\.?)\s*(\d+(?:,\d+)*(?:\.\d{2})?)", re.IGNORECASE
     )
@@ -207,11 +223,10 @@ def _offline_heuristic_extractor(text_or_filename: str, raw_bytes: bytes) -> dic
         re.IGNORECASE,
     )
     loose_amount_pattern = re.compile(r"\b(\d+(?:,\d+)*\.\d{2})\b")
-
     code_keywords = ["import ", "public class", "void main", "function(", "const ", "let "]
+
     seen_ids: set[str] = set()
     for idx, line in enumerate(lines):
-        # Ignore code lines or common non-financial text
         if any(w in line.lower() for w in code_keywords):
             continue
 
@@ -221,92 +236,112 @@ def _offline_heuristic_extractor(text_or_filename: str, raw_bytes: bytes) -> dic
 
         amounts = strict_amounts or loose_amounts
         if amounts and (ids or strict_amounts):
-            clean_amt = float(amounts[0].replace(",", ""))
-            if clean_amt <= 0.0:
-                continue
-            rec_id = ids[0] if ids else f"{doc_type[:3]}_scanned_{idx + 1:03d}"
-            if rec_id in seen_ids:
-                continue
-            seen_ids.add(rec_id)
+            clean_amt_str = amounts[0].replace(",", "").strip()
+            with contextlib.suppress(Exception):
+                p_val = int(paise_from_decimal_rupees(clean_amt_str))
+                if p_val <= 0:
+                    continue
+                amt_formatted = _paise_text(p_val)
+                rec_id = ids[0] if ids else f"{doc_type[:3]}_scanned_{idx + 1:03d}"
+                if rec_id in seen_ids:
+                    continue
+                seen_ids.add(rec_id)
 
-            # Smart extraction based on detected document type
-            if doc_type == "ledger_entries":
-                records.append(
-                    {
-                        "record_id": rec_id,
-                        "ledger_entry_id": rec_id,
-                        "account_code": "2100-PAYMENTS-CLEARING",
-                        "accounting_date": "2026-03-01",
-                        "currency": "INR",
-                        "signed_amount": clean_amt,
-                        "source_reference": ids[1] if len(ids) > 1 else rec_id,
-                        "source_type": "PAYMENT",
-                        "description": f"Ledger entry {rec_id}",
-                    }
-                )
-            elif doc_type == "bank_entries":
-                bank_id = f"bnk_STL_{idx + 1:03d}"
-                utr_id = (
-                    ids[1]
-                    if len(ids) > 1
-                    else (ids[0] if ids and "utr" in ids[0].lower() else f"UTR_RZP_{idx + 1:03d}")
-                )
-                stl_ref = (
-                    ids[0] if ids and "stl" in ids[0].lower() else f"stl_DEMO_SETTLE_{idx + 1:02d}"
-                )
-                records.append(
-                    {
-                        "record_id": bank_id,
-                        "bank_entry_id": bank_id,
-                        "posted_at_utc": "2026-03-02T17:00:00Z",
-                        "value_date": "2026-03-02",
-                        "currency": "INR",
-                        "signed_amount": clean_amt,
-                        "narration": f"CMS/RAZORPAY NODAL SETTLEMENT/{stl_ref}",
-                        "utr": utr_id,
-                        "account_fingerprint": "acc_hdfc_corp_001",
-                    }
-                )
-            else:
-                records.append(
-                    {
-                        "record_id": rec_id,
-                        "payment_id": rec_id,
-                        "order_id": ids[1] if (len(ids) > 1 and "ord" in ids[1].lower()) else None,
-                        "status": "CAPTURED",
-                        "currency": "INR",
-                        "gross_amount": clean_amt,
-                        "fee_amount": float(amounts[1].replace(",", ""))
-                        if len(amounts) > 1
-                        else round(clean_amt * 0.02, 2),
-                        "tax_amount": round(clean_amt * 0.02 * 0.18, 2),
-                        "captured_at_utc": "2026-03-02T10:00:00Z",
-                        "settlement_id": ids[2]
-                        if (len(ids) > 2 and "stl" in ids[2].lower())
-                        else (
-                            ids[1]
-                            if (len(ids) > 1 and "stl" in ids[1].lower())
-                            else "stl_DEMO_SETTLE_01"
-                        ),
-                    }
-                )
+                if doc_type == "ledger_entries":
+                    records.append(
+                        {
+                            "record_id": rec_id,
+                            "ledger_entry_id": rec_id,
+                            "account_code": "2100-PAYMENTS-CLEARING",
+                            "accounting_date": "2026-03-01",
+                            "currency": "INR",
+                            "signed_amount": amt_formatted,
+                            "source_reference": ids[1] if len(ids) > 1 else rec_id,
+                            "source_type": "PAYMENT",
+                            "description": f"Ledger entry {rec_id}",
+                        }
+                    )
+                elif doc_type == "bank_entries":
+                    utr_id = (
+                        ids[1]
+                        if len(ids) > 1
+                        else (rec_id if "utr" in rec_id.lower() else f"UTR_RZP_{rec_id}")
+                    )
+                    records.append(
+                        {
+                            "record_id": rec_id,
+                            "bank_entry_id": rec_id,
+                            "posted_at_utc": "2026-03-02T10:00:00Z",
+                            "value_date": "2026-03-02",
+                            "currency": "INR",
+                            "signed_amount": amt_formatted,
+                            "narration": f"Bank settlement {rec_id}",
+                            "utr": utr_id,
+                            "account_fingerprint": "acc_hdfc_corp_001",
+                        }
+                    )
+                elif doc_type == "settlements":
+                    records.append(
+                        {
+                            "record_id": rec_id,
+                            "settlement_id": rec_id,
+                            "settled_at_utc": "2026-03-02T10:00:00Z",
+                            "window_start_utc": "2026-03-01T00:00:00Z",
+                            "window_end_utc": "2026-03-02T00:00:00Z",
+                            "status": "PROCESSED",
+                            "currency": "INR",
+                            "gross_amount": amt_formatted,
+                            "net_amount": amt_formatted,
+                            "utr": ids[1] if len(ids) > 1 else f"UTR_{rec_id}",
+                        }
+                    )
+                elif doc_type == "refunds":
+                    records.append(
+                        {
+                            "record_id": rec_id,
+                            "refund_id": rec_id,
+                            "payment_id": ids[1] if len(ids) > 1 else "",
+                            "status": "PROCESSED",
+                            "currency": "INR",
+                            "refund_amount": amt_formatted,
+                            "created_at_utc": "2026-03-02T10:00:00Z",
+                        }
+                    )
+                else:  # payments
+                    fee_paise = (p_val * 200 + 5000) // 10000
+                    tax_paise = (fee_paise * 1800 + 5000) // 10000
+                    records.append(
+                        {
+                            "record_id": rec_id,
+                            "payment_id": rec_id,
+                            "order_id": ids[1] if len(ids) > 1 else f"ord_{rec_id}",
+                            "status": "CAPTURED",
+                            "currency": "INR",
+                            "gross_amount": amt_formatted,
+                            "fee_amount": _paise_text(fee_paise),
+                            "tax_amount": _paise_text(tax_paise),
+                            "captured_at_utc": "2026-03-02T10:00:00Z",
+                            "settlement_id": ids[2] if len(ids) > 2 else "stl_DEMO_SETTLE_01",
+                        }
+                    )
 
     if not records:
         return {
             "is_financial": False,
             "document_type": "unrecognized",
             "records": [],
-            "error": "No valid financial transaction rows or amount records could be extracted.",
+            "error": (
+                "Document contains recognizable keywords but no structured financial rows "
+                "could be extracted."
+            ),
             "extractor": "heuristic_validator_v1",
-            "confidence": 0.0,
         }
 
     return {
         "is_financial": True,
         "document_type": doc_type,
         "records": records,
-        "extractor": "heuristic_ocr_engine_v1",
-        "confidence": 0.98,
+        "extractor": "heuristic_validator_v1",
     }
 
 
@@ -314,12 +349,11 @@ def extract_financial_data_from_document(
     filename: str,
     content_base64: str,
     mime_type: str = "application/pdf",
+    settings: Settings | None = None,
 ) -> dict[str, Any]:
     """Extract financial table records from base64 PDF or image using Gemini Vision or fallback."""
     raw_bytes = base64.b64decode(content_base64)
-    settings = get_settings()
-
-    if settings.gemini_api_key:
+    if settings is not None and settings.gemini_api_key:
         try:
             import urllib.request
 
@@ -361,7 +395,7 @@ def extract_financial_data_from_document(
             with urllib.request.urlopen(req, timeout=30.0) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 text = str(data["candidates"][0]["content"]["parts"][0]["text"])
-                parsed = json.loads(text)
+                parsed = json.loads(text, parse_float=str)
                 if not parsed.get("is_financial", True):
                     return {
                         "is_financial": False,
@@ -369,7 +403,6 @@ def extract_financial_data_from_document(
                         "records": [],
                         "error": parsed.get("error", "Not a financial transaction document."),
                         "extractor": "gemini_multimodal_vision",
-                        "confidence": 0.0,
                     }
 
                 return {
@@ -377,13 +410,12 @@ def extract_financial_data_from_document(
                     "document_type": parsed.get("document_type", "payments"),
                     "records": parsed.get("records", []),
                     "extractor": "gemini_multimodal_vision",
-                    "confidence": 0.99,
                 }
         except Exception:
             pass
 
     # Groq Vision support (Llama 3.2 11B/90B Vision)
-    if settings.groq_api_key:
+    if settings is not None and settings.groq_api_key:
         try:
             import urllib.request
 
@@ -430,7 +462,7 @@ def extract_financial_data_from_document(
             with urllib.request.urlopen(req, timeout=30.0) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 text = str(data["choices"][0]["message"]["content"])
-                parsed = json.loads(text)
+                parsed = json.loads(text, parse_float=str)
                 if not parsed.get("is_financial", True):
                     return {
                         "is_financial": False,
@@ -438,7 +470,6 @@ def extract_financial_data_from_document(
                         "records": [],
                         "error": parsed.get("error", "Not a financial transaction document."),
                         "extractor": "groq_llama_vision",
-                        "confidence": 0.0,
                     }
 
                 return {
@@ -446,7 +477,6 @@ def extract_financial_data_from_document(
                     "document_type": parsed.get("document_type", "payments"),
                     "records": parsed.get("records", []),
                     "extractor": "groq_llama_vision",
-                    "confidence": 0.99,
                 }
         except Exception:
             pass
@@ -478,22 +508,22 @@ def convert_extracted_records_to_csv(records: list[dict[str, Any]], doc_type: st
                 "account_fingerprint",
             ]
         )
-        for idx, r in enumerate(records, start=1):
+        for r in records:
             ts = _clean_date_str(r.get("captured_at_utc") or r.get("posted_at_utc"))
-            vdate = ts[:10]
+            vdate = str(r.get("value_date") or "")
             amt = _clean_amt_str(
-                r.get("gross_amount") or r.get("amount") or r.get("signed_amount"), 1000.0
+                _first_present(r.get("gross_amount"), r.get("amount"), r.get("signed_amount"))
             )
             writer.writerow(
                 [
-                    r.get("record_id") or r.get("bank_entry_id") or f"bnk_ext_{idx:03d}",
+                    r.get("record_id") or r.get("bank_entry_id") or "",
                     ts,
                     vdate,
-                    r.get("currency", "INR"),
+                    r.get("currency") or "",
                     amt,
-                    r.get("narration") or r.get("description") or f"Settlement credit {idx}",
-                    r.get("utr") or f"UTR_RZP_EXT_{idx:03d}",
-                    "acc_hdfc_corp_001",
+                    r.get("narration") or r.get("description") or "",
+                    r.get("utr") or "",
+                    r.get("account_fingerprint") or "",
                 ]
             )
 
@@ -515,30 +545,22 @@ def convert_extracted_records_to_csv(records: list[dict[str, Any]], doc_type: st
                 "utr",
             ]
         )
-        for idx, r in enumerate(records, start=1):
+        for r in records:
             ts = _clean_date_str(r.get("captured_at_utc") or r.get("settled_at_utc"))
-            gross = float(
-                _clean_amt_str(
-                    r.get("gross_amount") or r.get("gross_credit") or r.get("amount"), 1000.0
-                )
-            )
-            fee = float(_clean_amt_str(r.get("fee_amount"), gross * 0.02))
-            tax = float(_clean_amt_str(r.get("tax_amount"), fee * 0.18))
-            net = gross - fee - tax
             writer.writerow(
                 [
-                    r.get("record_id") or r.get("settlement_id") or f"stl_ext_{idx:03d}",
+                    r.get("record_id") or r.get("settlement_id") or "",
                     ts,
-                    ts,
-                    ts,
-                    "PROCESSED",
-                    r.get("currency", "INR"),
-                    f"{gross:.2f}",
-                    f"{fee:.2f}",
-                    f"{tax:.2f}",
-                    "0.00",
-                    f"{net:.2f}",
-                    r.get("utr") or f"UTR_RZP_EXT_{idx:03d}",
+                    _clean_date_str(r.get("window_start_utc")),
+                    _clean_date_str(r.get("window_end_utc")),
+                    str(r.get("status") or "").upper(),
+                    r.get("currency") or "",
+                    _clean_amt_str(_first_present(r.get("gross_amount"), r.get("gross_credit"))),
+                    _clean_amt_str(r.get("fee_amount")),
+                    _clean_amt_str(r.get("tax_amount")),
+                    _clean_amt_str(r.get("adjustment_amount")),
+                    _clean_amt_str(r.get("net_amount")),
+                    r.get("utr") or "",
                 ]
             )
 
@@ -557,20 +579,51 @@ def convert_extracted_records_to_csv(records: list[dict[str, Any]], doc_type: st
                 "entry_origin",
             ]
         )
-        for idx, r in enumerate(records, start=1):
+        for r in records:
             ts = _clean_date_str(r.get("captured_at_utc") or r.get("posted_at_utc"))
-            amt = _clean_amt_str(r.get("gross_amount") or r.get("signed_amount"), 1000.0)
+            accounting_date = str(r.get("accounting_date") or (ts[:10] if ts else ""))
+            amt = _clean_amt_str(_first_present(r.get("gross_amount"), r.get("signed_amount")))
             writer.writerow(
                 [
-                    r.get("record_id") or r.get("ledger_entry_id") or f"led_ext_{idx:03d}",
-                    r.get("account_code") or "1100-BANK-CLEARING",
-                    ts[:10],
-                    r.get("currency", "INR"),
+                    r.get("record_id") or r.get("ledger_entry_id") or "",
+                    r.get("account_code") or "",
+                    accounting_date,
+                    r.get("currency") or "",
                     amt,
-                    r.get("source_reference") or r.get("transaction_ref") or f"ref_{idx:03d}",
-                    "PAYMENT",
-                    r.get("description") or "Customer Payment Journal",
-                    "IMPORTED",
+                    r.get("source_reference") or r.get("transaction_ref") or "",
+                    r.get("source_type") or "",
+                    r.get("description") or "",
+                    r.get("entry_origin") or "",
+                ]
+            )
+
+    elif doc_type == "refunds":
+        writer = csv.writer(out)
+        writer.writerow(
+            [
+                "refund_id",
+                "payment_id",
+                "status",
+                "currency",
+                "refund_amount",
+                "created_at_utc",
+                "settlement_id",
+            ]
+        )
+        for idx, r in enumerate(records, start=1):
+            ts = _clean_date_str(r.get("created_at_utc") or r.get("captured_at_utc"))
+            amount = _clean_amt_str(
+                _first_present(r.get("refund_amount"), r.get("gross_amount"), r.get("amount"))
+            )
+            writer.writerow(
+                [
+                    r.get("record_id") or r.get("refund_id") or f"rfnd_ext_{idx:03d}",
+                    r.get("payment_id") or "",
+                    str(r.get("status") or "PROCESSED").upper(),
+                    r.get("currency") or "INR",
+                    amount,
+                    ts,
+                    r.get("settlement_id") or "",
                 ]
             )
 
@@ -591,18 +644,22 @@ def convert_extracted_records_to_csv(records: list[dict[str, Any]], doc_type: st
         )
         for idx, r in enumerate(records, start=1):
             ts = _clean_date_str(r.get("captured_at_utc") or r.get("created_at_utc"))
-            gross = float(_clean_amt_str(r.get("gross_amount") or r.get("amount"), 1000.0))
-            fee = float(_clean_amt_str(r.get("fee_amount"), gross * 0.02))
-            tax = float(_clean_amt_str(r.get("tax_amount"), fee * 0.18))
+            gross_paise = _clean_amt_paise(_first_present(r.get("gross_amount"), r.get("amount")))
+            if gross_paise is None:
+                gross_paise = 100000
+            fee_val = _clean_amt_paise(r.get("fee_amount"))
+            fee_paise = fee_val if fee_val is not None else (gross_paise * 200 + 5000) // 10000
+            tax_val = _clean_amt_paise(r.get("tax_amount"))
+            tax_paise = tax_val if tax_val is not None else (fee_paise * 1800 + 5000) // 10000
             writer.writerow(
                 [
                     r.get("record_id") or r.get("payment_id") or f"pay_ext_{idx:03d}",
                     r.get("order_id") or f"order_ext_{idx:03d}",
                     "CAPTURED",
-                    r.get("currency", "INR"),
-                    f"{gross:.2f}",
-                    f"{fee:.2f}",
-                    f"{tax:.2f}",
+                    r.get("currency") or "INR",
+                    _paise_text(gross_paise),
+                    _paise_text(fee_paise),
+                    _paise_text(tax_paise),
                     ts,
                     r.get("settlement_id") or "stl_DEMO_SETTLE_01",
                 ]
@@ -611,7 +668,9 @@ def convert_extracted_records_to_csv(records: list[dict[str, Any]], doc_type: st
     return out.getvalue()
 
 
-def canonicalize_csv_text(raw_csv_text: str, doc_type: str) -> str:
+def canonicalize_csv_text(
+    raw_csv_text: str, doc_type: str, settings: Settings | None = None
+) -> str:
     """Canonicalize raw uploaded CSV text using intelligent LLM schema mapping or fallback."""
     reader = csv.DictReader(io.StringIO(raw_csv_text.strip()))
     if not reader.fieldnames:
@@ -640,6 +699,7 @@ def canonicalize_csv_text(raw_csv_text: str, doc_type: str) -> str:
                 filename=f"{doc_type}.csv",
                 content_base64=b64_content,
                 mime_type="text/csv",
+                settings=settings,
             )
             if ai_res.get("is_financial") and ai_res.get("records"):
                 return convert_extracted_records_to_csv(ai_res["records"], doc_type)

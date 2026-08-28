@@ -16,6 +16,7 @@ import time
 from collections.abc import Generator
 from typing import Any
 
+from app.config import Settings
 from app.importers.document_extractor import (
     canonicalize_csv_text,
     convert_extracted_records_to_csv,
@@ -61,7 +62,7 @@ for idx, row in enumerate(records):
     row["fee_amount_paise"] = fee_paise
     row["tax_amount_paise"] = tax_paise
 
-print(f">>> [SANDBOX] Verified integer-paise math: 100% check passed.")
+print(">>> [SANDBOX] Integer-paise conversion completed for extracted rows.")
 '''
     return f'''# ARGUS Sandbox Ingestion Script: {filename}
 import csv
@@ -80,7 +81,7 @@ print(f">>> [SANDBOX] Normalized {row_count} rows into AdapterSpec {doc_type}.cs
 
 # Verify integer-paise consistency
 print(">>> [SANDBOX] Invariant check: signed_paise != 0, currency == 'INR'")
-print(">>> [SANDBOX] Status: VALIDATED (0 errors, 100% confidence)")
+print(">>> [SANDBOX] Schema mapping completed; canonical rows are ready for validation.")
 '''
 
 
@@ -91,6 +92,7 @@ def run_sandbox_extraction_stream(
     mime_type: str = "text/csv",
     file_type: str = "auto",
     session_id: str = "default_session",
+    settings: Settings | None = None,
 ) -> Generator[str, None, None]:
     """Generator yielding formatted Server-Sent Event (SSE) strings for live UI streaming."""
 
@@ -199,6 +201,7 @@ def run_sandbox_extraction_stream(
             filename=filename,
             content_base64=content_base64,
             mime_type=mime_type,
+            settings=settings,
         )
         if not extracted.get("is_financial", True) or not extracted.get("records"):
             yield emit_event("task_update", {"task_id": 2, "status": "error"})
@@ -228,7 +231,7 @@ def run_sandbox_extraction_stream(
         for _idx, row in enumerate(reader):
             extracted_records.append(dict(row))
 
-        canonical_csv = canonicalize_csv_text(raw_content, norm_type)
+        canonical_csv = canonicalize_csv_text(raw_content, norm_type, settings=settings)
 
     code_snippet = _generate_python_script_snippet(
         filename, norm_type, len(extracted_records), is_pdf
@@ -236,7 +239,7 @@ def run_sandbox_extraction_stream(
     yield emit_event("code_ready", {"code": code_snippet, "language": "python"})
     yield emit_event(
         "stdout",
-        {"line": f"[INFO] Extracted {len(extracted_records)} records with high confidence."},
+        {"line": f"[INFO] Extracted {len(extracted_records)} candidate financial records."},
     )
     yield emit_event("task_update", {"task_id": 2, "status": "done"})
     time.sleep(0.05)
@@ -263,7 +266,7 @@ def run_sandbox_extraction_stream(
     )
     yield emit_event(
         "stdout",
-        {"line": "[SUCCESS] 100% Invariants verified. Ready for deterministic reconciliation."},
+        {"line": "[SUCCESS] Canonical CSV and SHA-256 checksum are ready for reconciliation."},
     )
     yield emit_event("task_update", {"task_id": 4, "status": "done"})
     time.sleep(0.05)

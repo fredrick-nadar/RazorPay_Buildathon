@@ -19,6 +19,7 @@ import uuid
 from typing import Any
 
 from app.audit.service import record_audit_event
+from app.config import Settings
 from app.domain.enums import ActorType
 from app.persistence.database import Database
 from app.voice.conversational_agent import answer_custom_voice_query
@@ -50,21 +51,24 @@ _HELP_MESSAGE = (
 )
 
 
-def _get_sarvam_client() -> SarvamClient:
-    return SarvamClient()
+def _get_sarvam_client(settings: Settings) -> SarvamClient:
+    return SarvamClient(settings=settings)
 
 
-def _get_elevenlabs_client() -> ElevenLabsClient:
-    return ElevenLabsClient()
+def _get_elevenlabs_client(settings: Settings) -> ElevenLabsClient:
+    return ElevenLabsClient(settings=settings)
 
 
 def transcribe_voice_audio(
     audio_bytes: bytes,
     language_code: str = "unknown",
     content_type: str = "audio/wav",
+    settings: Settings | None = None,
 ) -> tuple[bool, str, str]:
     """Transcribe raw audio bytes using Sarvam Saaras v3."""
-    sarvam = _get_sarvam_client()
+    if settings is None:
+        return False, "", "voice settings were not supplied"
+    sarvam = _get_sarvam_client(settings)
     if sarvam.is_configured:
         res = sarvam.transcribe(audio_bytes, language_code=language_code, content_type=content_type)
         return res.success, res.transcript, res.reason
@@ -76,13 +80,16 @@ def synthesize_voice_speech(
     language: VoiceLanguage = VoiceLanguage.EN_IN,
     provider: str = "auto",
     speaker: str | None = None,
+    settings: Settings | None = None,
 ) -> tuple[str | None, str, str]:
     """Synthesize speech audio into base64 string using Sarvam or ElevenLabs."""
     if not text.strip():
         return None, "audio/wav", "none"
+    if settings is None:
+        return None, "audio/wav", "none"
 
-    sarvam = _get_sarvam_client()
-    elevenlabs = _get_elevenlabs_client()
+    sarvam = _get_sarvam_client(settings)
+    elevenlabs = _get_elevenlabs_client(settings)
 
     # If provider is explicitly specified
     if provider == "sarvam" and sarvam.is_configured:
@@ -110,7 +117,10 @@ def synthesize_voice_speech(
 
 
 def parse_command(
-    transcript: str, language: VoiceLanguage, db: Database | None = None
+    transcript: str,
+    language: VoiceLanguage,
+    db: Database | None = None,
+    settings: Settings | None = None,
 ) -> VoiceParseResult:
     """Classify one utterance; forbidden commands are refused and audited."""
     normalized = normalize_transcript(transcript)
@@ -119,7 +129,7 @@ def parse_command(
 
     if classification.category.value == "FORBIDDEN":
         msg = classification.refusal or "Voice command refused."
-        audio_b64, ctype, _ = synthesize_voice_speech(msg, language)
+        audio_b64, ctype, _ = synthesize_voice_speech(msg, language, settings=settings)
         result = VoiceParseResult(
             token="",
             transcript=transcript[:280],
@@ -135,31 +145,22 @@ def parse_command(
         _audit(db, "VOICE_COMMAND_REFUSED", transcript, language, result, classification)
         return result
 
-    # Informational, conversational, case explanations, and status queries
-    # go directly to Gemini with live SQLite context
-    action_intents = (
-        VoiceIntent.RUN_RECONCILIATION,
-        VoiceIntent.PREPARE_VERIFIED_CORRECTION_PREVIEWS,
-        VoiceIntent.CANCEL_VOICE_REQUEST,
-    )
-
-    if classification.intent not in action_intents and db is not None:
-        conv_answer, nav, resolved_lang = answer_custom_voice_query(db, normalized, language)
-        audio_b64, ctype, _ = synthesize_voice_speech(conv_answer, language=resolved_lang)
-        token = uuid.uuid4().hex
-        _TOKENS[token] = (
-            classification.intent or VoiceIntent.EXPLAIN_CASE,
-            entities,
-            resolved_lang,
-            normalized,
-            time.monotonic() + _TOKEN_TTL_SECONDS,
+    # Known allowlisted intents always use the deterministic executor. Only an
+    # otherwise unsupported informational question may use the read-only
+    # conversational answer path; it receives no execution token.
+    if classification.intent is None and db is not None:
+        conv_answer, nav, resolved_lang = answer_custom_voice_query(
+            db, normalized, language, settings=settings
+        )
+        audio_b64, ctype, _ = synthesize_voice_speech(
+            conv_answer, language=resolved_lang, settings=settings
         )
         res = VoiceParseResult(
-            token=token,
+            token="",
             transcript=transcript[:280],
             language=resolved_lang,
             status=VoiceRequestStatus.OK,
-            intent=classification.intent or VoiceIntent.EXPLAIN_CASE,
+            intent=None,
             entities=entities,
             requires_confirmation=False,
             message=conv_answer,
@@ -216,6 +217,7 @@ def execute_command(
     db: Database,
     token: str,
     confirmed: bool = False,
+    settings: Settings | None = None,
 ) -> VoiceExecutionResult:
     """Execute a server-parsed intent. Re-checks guardrails (defense in depth)."""
     entry = _TOKENS.get(token)
@@ -232,7 +234,7 @@ def execute_command(
     forbidden = classify_command(normalized, language)
     if forbidden.category.value == "FORBIDDEN":
         msg = forbidden.refusal or "Voice command refused."
-        audio_b64, ctype, _ = synthesize_voice_speech(msg, language)
+        audio_b64, ctype, _ = synthesize_voice_speech(msg, language, settings=settings)
         result = VoiceExecutionResult(
             status=VoiceRequestStatus.REFUSED,
             intent=None,
@@ -263,7 +265,7 @@ def execute_command(
     result = execute_intent(db, intent, entity, language)
     # Synthesize speech output with Sarvam or ElevenLabs
     if result.message:
-        audio_b64, ctype, _ = synthesize_voice_speech(result.message, language)
+        audio_b64, ctype, _ = synthesize_voice_speech(result.message, language, settings=settings)
         result = VoiceExecutionResult(
             status=result.status,
             intent=result.intent,
@@ -347,6 +349,7 @@ def command(
     transcript: str,
     language: VoiceLanguage = VoiceLanguage.EN_IN,
     confirmed: bool = False,
+    settings: Settings | None = None,
 ) -> dict[str, Any]:
     """Atomic parse -> guard -> execute in ONE round trip (latency path).
 
@@ -354,7 +357,7 @@ def command(
     ran. For confirmation-required intents executed without `confirmed`, the
     response carries `requires_confirmation` and a token for /voice/execute.
     """
-    parsed = parse_command(transcript, language, db=db)
+    parsed = parse_command(transcript, language, db=db, settings=settings)
     base: dict[str, Any] = {
         "status": parsed.status.value,
         "intent": parsed.intent.value if parsed.intent else None,
@@ -389,7 +392,7 @@ def command(
         }
         return base
 
-    executed = execute_command(db, parsed.token, confirmed=True)
+    executed = execute_command(db, parsed.token, confirmed=True, settings=settings)
     base["status"] = executed.status.value
     base["message"] = executed.message
     base["message_key"] = executed.message_key

@@ -4,23 +4,23 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from app.ai.chain import build_chain
-from app.config import get_settings
+from app.config import Settings
 
 router = APIRouter(prefix="/api/v1/ai", tags=["ai"])
 
 
 @router.get("/status")
-def ai_status() -> dict[str, Any]:
+def ai_status(request: Request) -> dict[str, Any]:
     """Which AI backends are configured, in fallback order.
 
     No keys are ever returned - only ids and model names. With nothing
     configured the investigator runs on the deterministic fake provider
     (rules-only invariant).
     """
-    settings = get_settings()
+    settings: Settings = request.app.state.settings
     chain = build_chain(settings)
     models = [
         {"provider": member.provider_id, "model": getattr(member, "model", "")}

@@ -690,6 +690,9 @@ export default function ControlRoomPage() {
           </div>
 
           <div className="flex items-center gap-2.5">
+            <span className="hidden md:inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
+              Synthetic data only
+            </span>
             <button
               onClick={() => setDossierModalOpen(true)}
               className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-2xs cursor-pointer"

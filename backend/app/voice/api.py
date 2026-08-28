@@ -25,7 +25,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from app.config import get_settings
+from app.config import Settings
 from app.persistence.database import Database
 from app.voice import service
 from app.voice.schemas import (
@@ -46,13 +46,17 @@ router = APIRouter(prefix="/api/v1/voice", tags=["voice"])
 @router.post("/parse")
 def parse_voice_command(payload: VoiceParseRequest, request: Request) -> VoiceParseResult:
     db: Database = request.app.state.db
-    return service.parse_command(payload.transcript, payload.language, db=db)
+    settings: Settings = request.app.state.settings
+    return service.parse_command(payload.transcript, payload.language, db=db, settings=settings)
 
 
 @router.post("/execute")
 def execute_voice_command(payload: VoiceExecuteRequest, request: Request) -> dict[str, object]:
     db: Database = request.app.state.db
-    result = service.execute_command(db, payload.token, confirmed=payload.confirmed)
+    settings: Settings = request.app.state.settings
+    result = service.execute_command(
+        db, payload.token, confirmed=payload.confirmed, settings=settings
+    )
     return result.model_dump()
 
 
@@ -60,14 +64,23 @@ def execute_voice_command(payload: VoiceExecuteRequest, request: Request) -> dic
 def voice_command(payload: VoiceCommandRequest, request: Request) -> dict[str, object]:
     """Atomic parse -> guard -> execute. One round trip for the fast path."""
     db: Database = request.app.state.db
-    return service.command(db, payload.transcript, payload.language, confirmed=payload.confirmed)
+    settings: Settings = request.app.state.settings
+    return service.command(
+        db,
+        payload.transcript,
+        payload.language,
+        confirmed=payload.confirmed,
+        settings=settings,
+    )
 
 
 @router.post("/transcribe", response_model=None)
-def transcribe_voice_audio(payload: VoiceTranscribeRequest) -> dict[str, object] | JSONResponse:
+def transcribe_voice_audio(
+    payload: VoiceTranscribeRequest, request: Request
+) -> dict[str, object] | JSONResponse:
     """Optional server-side STT. 501 + machine-readable fallback when the
     provider key is unset, so the copilot uses on-device recognition."""
-    settings = get_settings()
+    settings: Settings = request.app.state.settings
     try:
         result = transcribe_audio(
             payload.audio_base64, payload.language.value, payload.content_type, settings
@@ -86,9 +99,11 @@ def transcribe_voice_audio(payload: VoiceTranscribeRequest) -> dict[str, object]
 
 
 @router.post("/tts", response_model=None)
-def synthesize_voice(payload: VoiceTTSRequest) -> dict[str, object] | JSONResponse:
+def synthesize_voice(
+    payload: VoiceTTSRequest, request: Request
+) -> dict[str, object] | JSONResponse:
     """Optional server-side natural-voice synthesis. 501 fallback otherwise."""
-    settings = get_settings()
+    settings: Settings = request.app.state.settings
     try:
         result = synthesize_speech(payload.text, payload.language.value, settings)
     except VoiceProviderUnavailable as exc:
@@ -105,9 +120,11 @@ def synthesize_voice(payload: VoiceTTSRequest) -> dict[str, object] | JSONRespon
 
 
 @router.post("/synthesize", response_model=None)
-def synthesize_voice_alias(payload: VoiceTTSRequest) -> dict[str, object] | JSONResponse:
+def synthesize_voice_alias(
+    payload: VoiceTTSRequest, request: Request
+) -> dict[str, object] | JSONResponse:
     """Alias of /tts for clients that use the /synthesize verb."""
-    return synthesize_voice(payload)
+    return synthesize_voice(payload, request)
 
 
 @router.get("/languages")
@@ -123,9 +140,9 @@ def list_voice_languages() -> VoiceLanguagesResponse:
 
 
 @router.get("/capabilities")
-def voice_capabilities() -> dict[str, str]:
+def voice_capabilities(request: Request) -> dict[str, str]:
     """Honest engine availability so the client picks the right path."""
-    settings = get_settings()
+    settings: Settings = request.app.state.settings
     has_stt = settings.voice_stt_api_key is not None or settings.sarvam_api_key is not None
     has_tts = settings.voice_tts_api_key is not None or settings.sarvam_api_key is not None
     stt = "sarvam" if has_stt else "unavailable"

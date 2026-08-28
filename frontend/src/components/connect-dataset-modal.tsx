@@ -53,7 +53,7 @@ const SYNC_PROGRESS_MESSAGES = [
   "Cross-checking evidence across connected records...",
   "Running deterministic financial checks...",
   "Validating every proposed match...",
-  "Computing confidence for unresolved records...",
+  "Checking evidence for unresolved records...",
   "Preparing the exception set...",
   "Finalizing verified reconciliation...",
   "Compiling the reconciliation report...",
@@ -88,6 +88,8 @@ export function ConnectDatasetModal({
     payments_count: number;
     refunds_count: number;
     settlements_count: number;
+    data_source: "razorpay_test_mode" | "synthetic_fallback";
+    provider_warning: string | null;
   } | null>(null);
 
   // CSV Ingest state
@@ -177,6 +179,8 @@ export function ConnectDatasetModal({
         payments_count: data.payments_count,
         refunds_count: data.refunds_count,
         settlements_count: data.settlements_count,
+        data_source: data.data_source,
+        provider_warning: data.provider_warning,
       });
 
       if (data.run_id) {
@@ -456,11 +460,16 @@ export function ConnectDatasetModal({
                 )}
 
                 {syncResult && (
-                  <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-900 flex items-center justify-between">
+                  <div className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-between ${
+                    syncResult.data_source === "synthetic_fallback"
+                      ? "border-amber-200 bg-amber-50 text-amber-900"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-900"
+                  }`}>
                     <span>
-                      ✓ Synced {syncResult.payments_count} payments, {syncResult.refunds_count} refunds, {syncResult.settlements_count} settlements!
+                      {syncResult.data_source === "synthetic_fallback" ? "Synthetic fallback loaded" : "Razorpay Test Mode synced"}: {syncResult.payments_count} payments, {syncResult.refunds_count} refunds, {syncResult.settlements_count} settlements.
+                      {syncResult.provider_warning ? ` ${syncResult.provider_warning}` : ""}
                     </span>
-                    <span className="text-[11px] font-mono text-emerald-700">Reconciling…</span>
+                    <span className="text-[11px] font-mono opacity-75">Reconciling…</span>
                   </div>
                 )}
 

@@ -12,6 +12,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from app.domain.money import format_paise, require_paise
 from app.persistence.database import Database
 from app.voice.enums import VoiceIntent, VoiceLanguage, VoiceRequestStatus
 from app.voice.schemas import (
@@ -193,7 +194,7 @@ def _filter_cases(
     if entity.amount_paise is not None:
         sql += " AND proposed_delta_paise IS NOT NULL AND abs(proposed_delta_paise) <= ?"
         params.append(entity.amount_paise)
-    sql += " ORDER BY c.rowid DESC LIMIT 10"
+    sql += " ORDER BY rowid DESC LIMIT 10"
     rows = db.query_all(sql, tuple(params))
     cards = [_case_card(row) for row in rows]
     filters = []
@@ -413,11 +414,11 @@ def _brief_status(db: Database, language: VoiceLanguage) -> VoiceExecutionResult
     approval = sum(1 for c in cases if c.get("status") == "APPROVAL_REQUIRED")
     totals = summary.get("financial_control_totals", {})
     variance = int(totals.get("residual_abs_variance_paise", 0))
-    rupees = variance // 100
+    variance_text = format_paise(require_paise(variance))
     lines = [
         f"Latest batch: {eligible} records, {matched} matched, match rate {rate}.",
         f"{len(cases)} exception cases: {approval} awaiting approval, {unresolved} unresolved.",
-        f"Residual variance {rupees} rupees.",
+        f"Residual variance {variance_text}.",
     ]
     message = " ".join(lines)
     return VoiceExecutionResult(

@@ -14,7 +14,7 @@ from pathlib import Path
 import httpx
 from pydantic import SecretStr
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -52,21 +52,22 @@ class ElevenLabsClient:
         api_key: str | SecretStr | None = None,
         voice_id: str | None = None,
         timeout_s: float = 12.0,
+        settings: Settings | None = None,
     ) -> None:
-        settings = get_settings()
-        raw_key = api_key or getattr(settings, "elevenlabs_api_key", None)
+        resolved_settings = settings if settings is not None else get_settings()
+        raw_key = api_key if api_key is not None else resolved_settings.elevenlabs_api_key
         if isinstance(raw_key, SecretStr):
             self.api_key: str | None = raw_key.get_secret_value()
         elif raw_key:
             self.api_key = str(raw_key).strip()
-        else:
+        elif settings is None:
             self.api_key = os.environ.get("ELEVENLABS_API_KEY") or _read_key_from_env_local(
                 "ELEVENLABS_API_KEY"
             )
+        else:
+            self.api_key = None
 
-        self.voice_id = (
-            voice_id or getattr(settings, "elevenlabs_voice_id", None) or DEFAULT_VOICE_ID
-        )
+        self.voice_id = voice_id or resolved_settings.elevenlabs_voice_id or DEFAULT_VOICE_ID
         self.timeout_s = timeout_s
 
     @property

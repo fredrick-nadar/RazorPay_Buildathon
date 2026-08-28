@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.routes_runs import _resolve_agent_provider
+from app.config import Settings
 from app.persistence.database import Database
 from app.runs import execute_run
 
@@ -31,14 +32,14 @@ FILE_TYPE_MAP = {
 }
 
 SESSION_DIRS: dict[str, Path] = {}
-
-PRIMARY_ID_MAP = {
-    "payments.csv": "payment_id",
-    "refunds.csv": "refund_id",
-    "settlements.csv": "settlement_id",
-    "bank_entries.csv": "bank_entry_id",
-    "ledger_entries.csv": "ledger_entry_id",
-}
+SESSION_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+CanonicalFilename = Literal[
+    "payments.csv",
+    "refunds.csv",
+    "settlements.csv",
+    "bank_entries.csv",
+    "ledger_entries.csv",
+]
 
 
 def _get_or_create_session_dir(session_id: str) -> Path:
@@ -57,10 +58,10 @@ def _merge_and_save_csv(
 ) -> int:
     """Save or append new CSV records with existing records in the session staging dir.
 
-    Enables stacking multiple files (e.g. Live API + manual PDF/CSV uploads) to test
-    large data volumes (1,000+ to 5,000+ records) without overwriting or duplicate ID collisions.
+    Enables stacking multiple files (e.g. API + manual PDF/CSV uploads) without
+    altering source identifiers. Duplicate IDs are intentionally preserved so the
+    normalizer can apply its deterministic duplicate/conflict policy.
     """
-    id_field = PRIMARY_ID_MAP.get(target_filename, "payment_id")
     cleaned_new = new_csv_text.strip()
     if not cleaned_new:
         return 0
@@ -90,20 +91,7 @@ def _merge_and_save_csv(
             if h not in fieldnames:
                 fieldnames.append(h)
 
-    seen_ids = {r.get(id_field) for r in existing_rows if r.get(id_field)}
-
     for r in new_reader:
-        orig_id = r.get(id_field)
-        if orig_id and orig_id in seen_ids:
-            # Suffix colliding IDs so multi-file uploads stack up smoothly without quarantine
-            counter = 2
-            while f"{orig_id}_imp{counter}" in seen_ids:
-                counter += 1
-            new_id = f"{orig_id}_imp{counter}"
-            r[id_field] = new_id
-            seen_ids.add(new_id)
-        elif orig_id:
-            seen_ids.add(orig_id)
         existing_rows.append(dict(r))
 
     # Write merged file back
@@ -121,11 +109,13 @@ class UploadCsvPayload(BaseModel):
     file_type: str = Field(
         default="auto", description="Target file category (payments, settlements, bank, ledger)"
     )
-    session_id: str = Field(default="default_session", description="Session identifier")
+    session_id: str = Field(
+        default="default_session", pattern=SESSION_ID_PATTERN, description="Session identifier"
+    )
 
 
 @router.post("/upload-csv")
-def upload_csv_file(payload: UploadCsvPayload) -> dict[str, Any]:
+def upload_csv_file(payload: UploadCsvPayload, request: Request) -> dict[str, Any]:
     """Upload and validate a single CSV file (payments, refunds, settlements, bank, or ledger)."""
     text_content = payload.content.strip()
     if not text_content:
@@ -159,7 +149,8 @@ def upload_csv_file(payload: UploadCsvPayload) -> dict[str, Any]:
     # Canonicalize CSV format to strict AdapterSpec invariants
     from app.importers.document_extractor import canonicalize_csv_text
 
-    canonical_csv = canonicalize_csv_text(text_content, norm_type)
+    settings: Settings = request.app.state.settings
+    canonical_csv = canonicalize_csv_text(text_content, norm_type, settings=settings)
     if not canonical_csv.strip():
         raise HTTPException(
             status_code=400,
@@ -198,11 +189,13 @@ class UploadDocumentPayload(BaseModel):
     filename: str = Field(description="Name of the uploaded PDF or image file")
     content_base64: str = Field(description="Base64 encoded file content")
     mime_type: str = Field(default="application/pdf", description="MIME type of document")
-    session_id: str = Field(default="default_session", description="Session identifier")
+    session_id: str = Field(
+        default="default_session", pattern=SESSION_ID_PATTERN, description="Session identifier"
+    )
 
 
 @router.post("/upload-document")
-def upload_document_file(payload: UploadDocumentPayload) -> dict[str, Any]:
+def upload_document_file(payload: UploadDocumentPayload, request: Request) -> dict[str, Any]:
     """Extract tabular financial data from an uploaded PDF or image using Vision / OCR."""
     from app.importers.document_extractor import (
         convert_extracted_records_to_csv,
@@ -216,6 +209,7 @@ def upload_document_file(payload: UploadDocumentPayload) -> dict[str, Any]:
         filename=payload.filename,
         content_base64=payload.content_base64,
         mime_type=payload.mime_type,
+        settings=request.app.state.settings,
     )
 
     records = extracted.get("records", [])
@@ -249,7 +243,6 @@ def upload_document_file(payload: UploadDocumentPayload) -> dict[str, Any]:
         "preview_rows": records[:5],
         "session_id": payload.session_id,
         "extractor": extracted.get("extractor", "multimodal_vision"),
-        "confidence": extracted.get("confidence", 0.99),
         "status": "VALIDATED",
     }
 
@@ -260,11 +253,15 @@ class StreamExtractPayload(BaseModel):
     content_base64: str = Field(default="", description="Base64 encoded PDF or image content")
     mime_type: str = Field(default="text/csv", description="MIME type")
     file_type: str = Field(default="auto", description="File category")
-    session_id: str = Field(default="default_session", description="Session identifier")
+    session_id: str = Field(
+        default="default_session", pattern=SESSION_ID_PATTERN, description="Session identifier"
+    )
 
 
 @router.post("/stream-extract")
-def stream_document_extraction(payload: StreamExtractPayload) -> StreamingResponse:
+def stream_document_extraction(
+    payload: StreamExtractPayload, request: Request
+) -> StreamingResponse:
     """Stream live Python sandbox execution, task checklist, and terminal STDOUT via SSE."""
     from app.importers.sandbox_runner import run_sandbox_extraction_stream
 
@@ -275,13 +272,16 @@ def stream_document_extraction(payload: StreamExtractPayload) -> StreamingRespon
         mime_type=payload.mime_type,
         file_type=payload.file_type,
         session_id=payload.session_id,
+        settings=request.app.state.settings,
     )
     return StreamingResponse(gen, media_type="text/event-stream")
 
 
 class CommitExtractedPayload(BaseModel):
-    session_id: str = Field(description="Session ID to save into")
-    target_filename: str = Field(description="Normalized target filename (e.g. bank_entries.csv)")
+    session_id: str = Field(pattern=SESSION_ID_PATTERN, description="Session ID to save into")
+    target_filename: CanonicalFilename = Field(
+        description="Canonical normalized target filename (e.g. bank_entries.csv)"
+    )
     canonical_csv: str = Field(description="Normalized CSV text to save")
 
 
@@ -310,7 +310,7 @@ def commit_extracted_file(payload: CommitExtractedPayload) -> dict[str, Any]:
 
 
 class ReconcileSessionPayload(BaseModel):
-    session_id: str = "default_session"
+    session_id: str = Field(default="default_session", pattern=SESSION_ID_PATTERN)
     fallback_profile: str = "dev"
     mode: str = Field(
         default="agent",
@@ -325,6 +325,7 @@ def reconcile_uploaded_session(
 ) -> dict[str, Any]:
     """Execute deterministic reconciliation on uploaded session files."""
     db: Database = request.app.state.db
+    settings: Settings = request.app.state.settings
     session_dir = SESSION_DIRS.get(payload.session_id)
 
     if not session_dir or not session_dir.is_dir():
@@ -417,87 +418,10 @@ def reconcile_uploaded_session(
                 writer = csv.writer(f)
                 writer.writerow(headers)
 
-    # Extract gateway settlement batch records if user uploaded combined Razorpay file
-    settlements_file = session_dir / "settlements.csv"
-    payments_file = session_dir / "payments.csv"
-    bank_file = session_dir / "bank_entries.csv"
-
-    if (
-        not settlements_file.exists() or settlements_file.stat().st_size < 150
-    ) and payments_file.exists():
-        import decimal
-
-        payments_by_settle: dict[str, list[dict[str, Any]]] = {}
-        with open(payments_file, encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for r in reader:
-                stl_id = r.get("settlement_id") or "stl_default_01"
-                if stl_id not in payments_by_settle:
-                    payments_by_settle[stl_id] = []
-                payments_by_settle[stl_id].append(r)
-
-        utr_by_settle: dict[str, str] = {}
-        bank_utrs: list[str] = []
-        if bank_file.exists():
-            with open(bank_file, encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                for r in reader:
-                    narration = r.get("narration", "")
-                    utr = r.get("utr", "")
-                    if utr:
-                        bank_utrs.append(utr)
-                        for stl_id in payments_by_settle:
-                            if stl_id in narration:
-                                utr_by_settle[stl_id] = utr
-
-        with open(settlements_file, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(
-                [
-                    "settlement_id",
-                    "settled_at_utc",
-                    "window_start_utc",
-                    "window_end_utc",
-                    "status",
-                    "currency",
-                    "gross_credit",
-                    "fee_amount",
-                    "tax_amount",
-                    "adjustment_amount",
-                    "net_amount",
-                    "utr",
-                ]
-            )
-            for idx, (stl_id, p_list) in enumerate(payments_by_settle.items()):
-                gross_tot = sum(decimal.Decimal(p.get("gross_amount", "0")) for p in p_list)
-                fee_tot = sum(decimal.Decimal(p.get("fee_amount", "0")) for p in p_list)
-                tax_tot = sum(decimal.Decimal(p.get("tax_amount", "0")) for p in p_list)
-                net_tot = gross_tot - fee_tot - tax_tot
-                utr = utr_by_settle.get(stl_id) or (
-                    bank_utrs[idx] if idx < len(bank_utrs) else f"UTR_RZP_{stl_id}"
-                )
-                ts = p_list[0].get("captured_at_utc", "2026-03-02T16:00:00Z")
-                writer.writerow(
-                    [
-                        stl_id,
-                        ts,
-                        ts,
-                        ts,
-                        "PROCESSED",
-                        "INR",
-                        f"{gross_tot:.2f}",
-                        f"{fee_tot:.2f}",
-                        f"{tax_tot:.2f}",
-                        "0.00",
-                        f"{net_tot:.2f}",
-                        utr,
-                    ]
-                )
-
     exec_mode: Literal["rules-only", "agent"] = (
         "agent" if payload.mode.lower() in ("agent", "ai-assisted") else "rules-only"
     )
-    provider = _resolve_agent_provider() if exec_mode == "agent" else None
+    provider = _resolve_agent_provider(settings) if exec_mode == "agent" else None
 
     try:
         res = execute_run(

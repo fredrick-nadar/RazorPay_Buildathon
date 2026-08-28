@@ -12,22 +12,18 @@ import {
 export interface MatrixRecord {
   payment_id: string;
   order_id: string | null;
-  gross_amount: number;
   gross_amount_paise: number;
-  fee_amount: number;
   fee_paise: number;
-  tax_amount: number;
   tax_paise: number;
-  net_amount: number;
   net_amount_paise: number;
   captured_at_utc: string;
   settlement_id: string | null;
-  settlement_gross: number | null;
+  settlement_gross_paise: number | null;
   utr: string | null;
   bank_entry_id: string | null;
-  bank_amount: number | null;
+  bank_amount_paise: number | null;
   ledger_entry_id: string | null;
-  ledger_amount: number | null;
+  ledger_amount_paise: number | null;
   account_code: string;
   match_rule: string;
   status: string;
@@ -202,24 +198,24 @@ export function MasterMatrixTable({ runId }: { runId: string | null }) {
 
                     <td className="px-3 py-2.5">
                       <span className="inline-flex rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-700 border border-slate-200">
-                        {r.settlement_id || "stl_batch_01"}
+                        {r.settlement_id || "—"}
                       </span>
                     </td>
 
                     <td className="px-3 py-2.5">
                       <div className="text-slate-800 font-bold text-[11px] truncate max-w-[150px]" title={r.utr || ""}>
-                        {r.utr || "UTR_VERIFIED"}
+                        {r.utr || "—"}
                       </div>
-                      {r.bank_amount && (
+                      {r.bank_amount_paise !== null && (
                         <div className="text-[10px] text-slate-400 font-sans">
-                          Batch: {formatINR(Math.round(r.bank_amount * 100))}
+                          Batch: {formatINR(r.bank_amount_paise)}
                         </div>
                       )}
                     </td>
 
                     <td className="px-3 py-2.5">
                       <span className="text-purple-700 font-bold text-[11px]">
-                        {r.ledger_entry_id || `led_${r.payment_id.slice(-4)}`}
+                        {r.ledger_entry_id || "—"}
                       </span>
                       <div className="text-[10px] text-slate-400 font-sans">
                         {r.account_code}
@@ -296,6 +292,8 @@ function TraceGraphModal({
   const [selectedNode, setSelectedNode] = useState<number>(0);
   const [tab, setTab] = useState<"visual" | "math" | "json">("visual");
   const [copied, setCopied] = useState(false);
+  const ledgerPaise = record.ledger_amount_paise ?? 0;
+  const ledgerDeltaPaise = ledgerPaise - record.net_amount_paise;
 
   const nodes = [
     {
@@ -321,76 +319,72 @@ function TraceGraphModal({
       idx: 1,
       code: "PRICING",
       title: "2. ORDER & PRICING",
-      subtitle: "MDR 2% + GST 18%",
-      badge: "AUDITED",
+      subtitle: "Recorded fee + GST",
+      badge: "RECORDED",
       color: "#4f46e5",
-      id: record.order_id || "ORD_DEMO",
+      id: record.order_id || "Not linked",
       amountLabel: "MDR + GST Deductions",
       amountValue: `${formatINR(record.fee_paise)} + ${formatINR(record.tax_paise)}`,
       details: {
-        "Order ID": record.order_id || "ORD_DEMO",
-        "Gateway MDR Fee (2.0%)": formatINR(record.fee_paise) + ` (${record.fee_paise} paise)`,
-        "Govt GST on MDR (18%)": formatINR(record.tax_paise) + ` (${record.tax_paise} paise)`,
+        "Order ID": record.order_id || "Not linked",
+        "Gateway Fee": formatINR(record.fee_paise) + ` (${record.fee_paise} paise)`,
+        "Recorded Tax": formatINR(record.tax_paise) + ` (${record.tax_paise} paise)`,
         "Total Deductions": formatINR(record.fee_paise + record.tax_paise),
         "Net Value Payable": formatINR(record.net_amount_paise),
-        "Pricing Rule Applied": "RZP_STANDARD_MDR_V1",
+        "Source": "Normalized payment record",
       },
     },
     {
       idx: 2,
       code: "SETTLEMENT",
       title: "3. SETTLEMENT BATCH",
-      subtitle: "T+1 Disbursement",
-      badge: "DISBURSED",
+      subtitle: "Linked settlement",
+      badge: "LINKED",
       color: "#9333ea",
-      id: record.settlement_id || "stl_DEMO_01",
-      amountLabel: "Net Disbursed",
+      id: record.settlement_id || "Not linked",
+      amountLabel: "Payment Net",
       amountValue: formatINR(record.net_amount_paise),
       details: {
-        "Settlement Batch ID": record.settlement_id || "stl_DEMO_01",
+        "Settlement Batch ID": record.settlement_id || "Not linked",
         "Transaction Net Contribution": formatINR(record.net_amount_paise),
-        "Settlement Window": "T+1 Daily Cycle (Automated)",
-        "Gross Batch Sum": record.settlement_gross ? formatINR(Math.round(record.settlement_gross * 100)) : "Aggregated",
-        "Disbursement State": "PROCESSED_TO_NODAL",
-        "Payout Protocol": "Razorpay Automated Payout Engine",
+        "Gross Batch Sum": record.settlement_gross_paise !== null ? formatINR(record.settlement_gross_paise) : "Aggregated",
+        "Relationship Rule": record.match_rule,
       },
     },
     {
       idx: 3,
       code: "BANK",
       title: "4. RBI NODAL WIRE",
-      subtitle: "HDFC / ICICI Feed",
-      badge: "CLEARED",
+      subtitle: "Linked bank entry",
+      badge: "LINKED",
       color: "#d97706",
-      id: record.utr || "UTR_VERIFIED",
-      amountLabel: "Wire Reference",
-      amountValue: record.bank_amount ? formatINR(Math.round(record.bank_amount * 100)) : "UTR Matched",
+      id: record.utr || "Not linked",
+      amountLabel: "Bank Entry Amount",
+      amountValue: record.bank_amount_paise !== null ? formatINR(record.bank_amount_paise) : "UTR Matched",
       details: {
-        "RBI Wire UTR": record.utr || "UTR_VERIFIED",
-        "Bank Internal Entry ID": record.bank_entry_id || "bnk_STL_001",
-        "Target Account": "HDFC Corporate Current (IFSC: HDFC0000053)",
-        "Bank Narration": `CMS/RAZORPAY NODAL SETTLEMENT/${record.settlement_id || ""}`,
-        "Wire Protocol": "RBI RTGS/NEFT Interbank Settlement",
-        "Verification Status": "MATCHED_WITH_ZERO_VARIANCE",
+        "Bank UTR": record.utr || "Not linked",
+        "Bank Entry ID": record.bank_entry_id || "Not linked",
+        "Signed Amount": record.bank_amount_paise !== null ? formatINR(record.bank_amount_paise) : "Not linked",
+        "Relationship Rule": record.match_rule,
       },
     },
     {
       idx: 4,
       code: "LEDGER",
       title: "5. ERP GENERAL LEDGER",
-      subtitle: "Double-Entry Accounting",
-      badge: "BALANCED",
+      subtitle: "Linked ledger entry",
+      badge: "LINKED",
       color: "#059669",
-      id: record.ledger_entry_id || `led_${record.payment_id.slice(-4)}`,
-      amountLabel: "Journal Debit",
-      amountValue: formatINR(record.net_amount_paise),
+      id: record.ledger_entry_id || "Not linked",
+      amountLabel: "Signed Ledger Amount",
+      amountValue: formatINR(ledgerPaise),
       details: {
-        "Journal Voucher ID": record.ledger_entry_id || `led_${record.payment_id.slice(-4)}`,
+        "Journal Voucher ID": record.ledger_entry_id || "Not linked",
         "General Ledger Head": record.account_code,
-        "Signed Journal Debit": formatINR(record.net_amount_paise) + ` (${record.net_amount_paise} paise)`,
+        "Signed Ledger Amount": formatINR(ledgerPaise) + ` (${ledgerPaise} paise)`,
         "Source Reference": record.payment_id,
-        "Reconciliation Invariant": "Gross - Fee - Tax == Net (0.00 Delta)",
-        "Statutory Audit Standard": "Signed Integer Paise (0 Floats)",
+        "Ledger vs Computed Net Delta": formatINR(ledgerDeltaPaise),
+        "Arithmetic": "Signed integer paise",
       },
     },
   ];
@@ -408,11 +402,11 @@ function TraceGraphModal({
     details: {},
   };
 
-  const copyJsonProof = () => {
+  const copyJsonTrace = () => {
     navigator.clipboard.writeText(
       JSON.stringify(
         {
-          proof_type: "5_PILLAR_RECONCILIATION_CERTIFICATE",
+          trace_type: "5_WAY_RECONCILIATION_RELATIONSHIP",
           transaction_ref: record.payment_id,
           order_id: record.order_id,
           settlement_id: record.settlement_id,
@@ -423,12 +417,10 @@ function TraceGraphModal({
             fee_paise: record.fee_paise,
             tax_paise: record.tax_paise,
             net_paise: record.net_amount_paise,
-            floating_point_error: 0.0,
-            delta_paise: 0,
+            ledger_signed_paise: ledgerPaise,
+            ledger_delta_paise: ledgerDeltaPaise,
           },
-          verifier_rule: record.match_rule,
-          verification_outcome: "PASS_ZERO_DRIFT",
-          cryptographic_seal: "SHA256: " + record.payment_id + "-SEALED-ARGUS",
+          relationship_rule: record.match_rule,
         },
         null,
         2
@@ -456,11 +448,11 @@ function TraceGraphModal({
             <div>
               <div className="flex items-center gap-2.5">
                 <h3 className="text-base font-bold text-slate-900">
-                  5-Pillar Cryptographic Evidence Trace
+                  5-Way Reconciliation Evidence Trace
                 </h3>
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800 border border-emerald-200">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                  100% DETERMINISTIC MATCH (PASS)
+                  DETERMINISTIC RELATIONSHIPS
                 </span>
               </div>
               <p className="text-xs text-slate-500 font-mono mt-0.5">
@@ -500,7 +492,7 @@ function TraceGraphModal({
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Proof JSON
+                Trace JSON
               </button>
             </div>
 
@@ -572,11 +564,11 @@ function TraceGraphModal({
 
                 {/* Connecting Edge Text Labels */}
                 <g>
-                  <text className="edge-tag" x="235" y="115">MDR Pricing</text>
-                  <text className="edge-tag" x="465" y="115">T+1 Batch</text>
-                  <text className="edge-tag" x="695" y="115">RBI Wire</text>
-                  <text className="edge-tag" x="925" y="115">ERP Double-Entry</text>
-                  <text className="edge-tag" x="640" y="240">Zero Drift Invariant</text>
+                  <text className="edge-tag" x="235" y="115">Fee Fields</text>
+                  <text className="edge-tag" x="465" y="115">Settlement ID</text>
+                  <text className="edge-tag" x="695" y="115">Bank UTR</text>
+                  <text className="edge-tag" x="925" y="115">Source Reference</text>
+                  <text className="edge-tag" x="640" y="240">Ledger Comparison</text>
                 </g>
 
                 {/* Node 1: Gateway Ingest */}
@@ -605,7 +597,7 @@ function TraceGraphModal({
                     rx="12"
                   />
                   <text className="node-text" x="350" y="115">2. ORDER & PRICING</text>
-                  <text className="node-sub" x="350" y="132">{record.order_id || "ORD_DEMO"}</text>
+                  <text className="node-sub" x="350" y="132">{record.order_id || "Not linked"}</text>
                   <text className="node-val" x="350" y="152" fill="#d97706">
                     Fee: {formatINR(record.fee_paise + record.tax_paise)}
                   </text>
@@ -622,7 +614,7 @@ function TraceGraphModal({
                     rx="12"
                   />
                   <text className="node-text" x="580" y="115">3. SETTLEMENT BATCH</text>
-                  <text className="node-sub" x="580" y="132">{record.settlement_id || "stl_batch_01"}</text>
+                  <text className="node-sub" x="580" y="132">{record.settlement_id || "Not linked"}</text>
                   <text className="node-val" x="580" y="152">Net: {formatINR(record.net_amount_paise)}</text>
                 </g>
 
@@ -637,8 +629,10 @@ function TraceGraphModal({
                     rx="12"
                   />
                   <text className="node-text" x="810" y="115">4. RBI NODAL WIRE</text>
-                  <text className="node-sub" x="810" y="132">{record.utr || "UTR_VERIFIED"}</text>
-                  <text className="node-val" x="810" y="152" fill="#2563eb">Interbank Cleared</text>
+                  <text className="node-sub" x="810" y="132">{record.utr || "Not linked"}</text>
+                  <text className="node-val" x="810" y="152" fill="#2563eb">
+                    {record.bank_amount_paise !== null ? formatINR(record.bank_amount_paise) : "Not linked"}
+                  </text>
                 </g>
 
                 {/* Node 5: ERP General Ledger */}
@@ -652,8 +646,8 @@ function TraceGraphModal({
                     rx="12"
                   />
                   <text className="node-text" x="1040" y="115">5. ERP GENERAL LEDGER</text>
-                  <text className="node-sub" x="1040" y="132">{record.ledger_entry_id || `led_${record.payment_id.slice(-4)}`}</text>
-                  <text className="node-val" x="1040" y="152">Debit: {formatINR(record.net_amount_paise)}</text>
+                  <text className="node-sub" x="1040" y="132">{record.ledger_entry_id || "Not linked"}</text>
+                  <text className="node-val" x="1040" y="152">Ledger: {formatINR(ledgerPaise)}</text>
                 </g>
 
                 {/* Verification Box at Bottom */}
@@ -670,10 +664,10 @@ function TraceGraphModal({
                     className="cursor-pointer"
                   />
                   <text className="node-text" x="590" y="308" fill="#047857">
-                    DETERMINISTIC MATHEMATICAL VERIFIER · PASS
+                    DETERMINISTIC RELATIONSHIP TRACE
                   </text>
                   <text className="node-sub" x="590" y="326">
-                    Rule: {record.match_rule} · Residual Variance: ₹0.00 (Zero Drift)
+                    Rule: {record.match_rule} · Ledger delta: {formatINR(ledgerDeltaPaise)}
                   </text>
                 </g>
               </svg>
@@ -715,16 +709,16 @@ function TraceGraphModal({
           </div>
         )}
 
-        {/* Tab 2: Exact Mathematical Proof */}
+        {/* Tab 2: Exact Integer Arithmetic */}
         {tab === "math" && (
           <div className="flex-1 overflow-auto p-6 space-y-4">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 font-mono">
-                  Deterministic Integer-Paise Balance Equation
+                  Exact Integer-Paise Calculation
                 </h4>
                 <span className="rounded bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800 border border-emerald-200">
-                  ✓ Verified Zero Float Error
+                  Signed integer paise only
                 </span>
               </div>
 
@@ -738,7 +732,7 @@ function TraceGraphModal({
                 <span className="text-lg font-bold text-slate-400">-</span>
 
                 <div>
-                  <span className="text-[10px] font-bold text-slate-500 block">2. Gateway MDR (2%)</span>
+                  <span className="text-[10px] font-bold text-slate-500 block">2. Recorded Gateway Fee</span>
                   <span className="font-bold text-amber-700 text-base">{formatINR(record.fee_paise)}</span>
                   <span className="text-[10px] text-slate-400 block font-sans">({record.fee_paise} paise)</span>
                 </div>
@@ -746,7 +740,7 @@ function TraceGraphModal({
                 <span className="text-lg font-bold text-slate-400">-</span>
 
                 <div>
-                  <span className="text-[10px] font-bold text-slate-500 block">3. Govt GST (18%)</span>
+                  <span className="text-[10px] font-bold text-slate-500 block">3. Recorded Tax</span>
                   <span className="font-bold text-amber-700 text-base">{formatINR(record.tax_paise)}</span>
                   <span className="text-[10px] text-slate-400 block font-sans">({record.tax_paise} paise)</span>
                 </div>
@@ -754,7 +748,7 @@ function TraceGraphModal({
                 <span className="text-lg font-bold text-slate-400">=</span>
 
                 <div>
-                  <span className="text-[10px] font-bold text-emerald-700 block">4. Net Settled & Ledger</span>
+                  <span className="text-[10px] font-bold text-emerald-700 block">4. Computed Net</span>
                   <span className="font-bold text-emerald-700 text-base">{formatINR(record.net_amount_paise)}</span>
                   <span className="text-[10px] text-slate-400 block font-sans">({record.net_amount_paise} paise)</span>
                 </div>
@@ -762,15 +756,15 @@ function TraceGraphModal({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <span className="text-[10px] font-bold uppercase text-slate-500 block">Floating Point Error</span>
+                  <span className="text-[10px] font-bold uppercase text-slate-500 block">Arithmetic Mode</span>
                   <p className="font-mono text-xs font-bold text-emerald-700 mt-1">
-                    0.00000000000000 (Exact Signed Integer Arithmetic)
+                    Exact signed integer paise; no float conversion
                   </p>
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <span className="text-[10px] font-bold uppercase text-slate-500 block">Residual Variance</span>
-                  <p className="font-mono text-xs font-bold text-emerald-700 mt-1">
-                    ₹0.00 (Zero Drift Verified)
+                  <span className="text-[10px] font-bold uppercase text-slate-500 block">Ledger Delta</span>
+                  <p className={`font-mono text-xs font-bold mt-1 ${ledgerDeltaPaise === 0 ? "text-emerald-700" : "text-amber-700"}`}>
+                    {formatINR(ledgerDeltaPaise)} (ledger − computed net)
                   </p>
                 </div>
               </div>
@@ -778,28 +772,26 @@ function TraceGraphModal({
           </div>
         )}
 
-        {/* Tab 3: Raw JSON Proof Certificate */}
+        {/* Tab 3: Raw Relationship Trace */}
         {tab === "json" && (
           <div className="flex-1 overflow-auto p-6 space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-xs font-mono text-slate-600">
-                Cryptographic Flight Recorder Payload
+                Relationship trace from normalized records
               </span>
               <button
-                onClick={copyJsonProof}
+                onClick={copyJsonTrace}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-mono font-bold text-slate-700 hover:bg-slate-200 transition-colors"
               >
-                {copied ? "✓ Copied Proof JSON!" : "Copy JSON Certificate"}
+                {copied ? "✓ Copied Trace JSON!" : "Copy Trace JSON"}
               </button>
             </div>
 
             <pre className="max-h-[340px] overflow-auto rounded-2xl border border-slate-200 bg-slate-900 p-4 font-mono text-xs text-indigo-300">
               {JSON.stringify(
                 {
-                  proof_id: `prf-${record.payment_id}`,
-                  verifier_rule: record.match_rule,
-                  rule_version: "1.0",
-                  verification_status: "PASS",
+                  trace_type: "5_WAY_RECONCILIATION_RELATIONSHIP",
+                  relationship_rule: record.match_rule,
                   transaction_id: record.payment_id,
                   order_id: record.order_id,
                   settlement_batch_id: record.settlement_id,
@@ -811,10 +803,9 @@ function TraceGraphModal({
                     mdr_fee: record.fee_paise,
                     gst: record.tax_paise,
                     net_disbursed: record.net_amount_paise,
-                    ledger_signed: record.net_amount_paise,
-                    variance: 0,
+                    ledger_signed: ledgerPaise,
+                    ledger_delta: ledgerDeltaPaise,
                   },
-                  audit_digest: `sha256:${record.payment_id}-SEALED-CRYPTOGRAPHIC-PROOF`,
                 },
                 null,
                 2
@@ -827,18 +818,17 @@ function TraceGraphModal({
         <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-6 py-3.5 text-xs">
           <div className="flex items-center gap-2 text-slate-600 font-sans">
             <IconShield size={14} className="text-emerald-600" />
-            <span>Click any of the 5 pillar nodes in the architectural canvas to inspect its cryptographic state.</span>
+            <span>Click any node to inspect the linked source IDs and exact paise values.</span>
           </div>
 
           <button
-            onClick={copyJsonProof}
+            onClick={copyJsonTrace}
             className="rounded-xl bg-slate-900 px-4 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-slate-800 transition-colors"
           >
-            {copied ? "✓ Copied!" : "Copy Proof JSON"}
+            {copied ? "✓ Copied!" : "Copy Trace JSON"}
           </button>
         </div>
       </div>
     </div>
   );
 }
-

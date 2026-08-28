@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from app.config import get_settings
+from app.config import Settings
 from app.voice.conversational_agent import _gather_live_financial_context
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class ChatResponse(BaseModel):
 def handle_chat_message(payload: ChatRequest, request: Request) -> ChatResponse:
     """Answer a user query with full live SQLite ledger context and rich markdown formatting."""
     start_time = time.perf_counter()
-    settings = get_settings()
+    settings: Settings = request.app.state.settings
     db = getattr(request.app.state, "db", None)
     if db is None:
         from app.persistence.database import open_database
@@ -65,7 +65,7 @@ def handle_chat_message(payload: ChatRequest, request: Request) -> ChatResponse:
     if selected_case_id:
         try:
             row = db.query_one(
-                "SELECT * FROM recon_cases WHERE case_id = ?",
+                "SELECT * FROM cases WHERE case_id = ?",
                 (selected_case_id,),
             )
             if row:
@@ -154,10 +154,10 @@ def handle_chat_message(payload: ChatRequest, request: Request) -> ChatResponse:
     if not reply:
         provider_used = "deterministic-synthesizer"
         # Fallback intelligent synthesizer
-        rate_str = summary.get("deterministic_match_rate", "96.81%")
-        total_var = summary.get("total_variance_inr", "₹83,633.95")
-        unresolved = summary.get("unresolved_cases", 3)
-        total_cases = summary.get("total_cases", 12)
+        rate_str = summary.get("deterministic_match_rate", "not measured")
+        total_var = summary.get("total_variance_inr", "not available")
+        unresolved = summary.get("unresolved_cases", 0)
+        total_cases = summary.get("total_cases", 0)
         q = payload.message.lower()
 
         if any(w in q for w in ("match rate", "deterministic", "accuracy", "rate")):

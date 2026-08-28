@@ -16,7 +16,7 @@ from typing import Any
 
 import httpx
 
-from app.config import get_settings
+from app.config import Settings
 from app.persistence.database import Database
 from app.voice.enums import VoiceLanguage
 
@@ -45,20 +45,25 @@ def _get_api_key_from_env_local(key_names: Sequence[str]) -> str | None:
 def _gather_live_financial_context(db: Database) -> dict[str, Any]:
     """Extract complete real numbers, runs, cases, and facts from SQLite to ground Groq."""
     try:
-        cases = [dict(r) for r in db.query_all("SELECT * FROM recon_cases")]
-    except Exception:
-        cases = []
-
-    try:
-        runs = [dict(r) for r in db.query_all("SELECT * FROM runs ORDER BY started_at_utc DESC")]
-        if not runs:
-            runs = [dict(r) for r in db.query_all("SELECT * FROM recon_runs")]
+        runs = [dict(r) for r in db.query_all("SELECT * FROM runs ORDER BY rowid DESC")]
     except Exception:
         runs = []
 
+    latest_run_id = str(runs[0]["run_id"]) if runs else None
+    cases = (
+        [
+            dict(r)
+            for r in db.query_all(
+                "SELECT * FROM cases WHERE run_id = ? ORDER BY rowid ASC", (latest_run_id,)
+            )
+        ]
+        if latest_run_id is not None
+        else []
+    )
+
     try:
         audit_events = [
-            dict(r) for r in db.query_all("SELECT * FROM audit_events ORDER BY id DESC LIMIT 8")
+            dict(r) for r in db.query_all("SELECT * FROM audit_log ORDER BY rowid DESC LIMIT 8")
         ]
     except Exception:
         audit_events = []
@@ -70,16 +75,18 @@ def _gather_live_financial_context(db: Database) -> dict[str, Any]:
         "norm_payments",
         "norm_refunds",
         "norm_settlements",
-        "norm_bank_feed",
-        "norm_ledger_postings",
+        "norm_bank_entries",
+        "norm_ledger_entries",
     ):
         try:
-            row = db.query_one(f"SELECT COUNT(*) AS c FROM {tbl}")
-            table_counts[tbl] = int(row["c"]) if row and "c" in row else 0
+            row = db.query_one(
+                f"SELECT COUNT(*) AS c FROM {tbl} WHERE run_id = ?", (latest_run_id,)
+            )
+            table_counts[tbl] = int(row["c"]) if row is not None else 0
         except Exception:
             table_counts[tbl] = 0
 
-    # If cases table was clean, extract from latest run summary
+    # Old database snapshots may lack case rows; retain a summary-only fallback.
     if not cases and runs:
         raw_sum = runs[0].get("summary_json")
         if raw_sum:
@@ -139,17 +146,22 @@ def _gather_live_financial_context(db: Database) -> dict[str, Any]:
     elif match_rate_pct is None:
         match_rate_pct = 0.0
 
+    def format_inr(paise: int) -> str:
+        sign = "-" if paise < 0 else ""
+        absolute = abs(paise)
+        return f"{sign}₹{absolute // 100}.{absolute % 100:02d}"
+
     case_details = []
     for c in cases[:30]:
         v_paise = int(c.get("variance_paise") or c.get("proposed_delta_paise") or 0)
         case_details.append(
             {
                 "case_id": str(c.get("case_id")),
-                "category": str(c.get("category")),
+                "category": str(c.get("category_candidate") or c.get("category") or ""),
                 "status": str(
                     c.get("status") or c.get("case_status") or c.get("authority_decision")
                 ),
-                "variance_inr": f"₹{abs(v_paise) / 100:.2f}",
+                "variance_inr": format_inr(v_paise),
                 "rule_id": str(c.get("rule_id", "")),
                 "summary": str(c.get("summary", "")),
             }
@@ -176,7 +188,7 @@ def _gather_live_financial_context(db: Database) -> dict[str, Any]:
             "resolved_cases": resolved_count,
             "pending_approval": pending_approval,
             "total_variance_paise": total_variance_paise,
-            "total_variance_inr": f"₹{total_variance_paise / 100:.2f}",
+            "total_variance_inr": format_inr(total_variance_paise),
             "active_runs": len(runs),
         },
         "table_row_counts": table_counts,
@@ -185,8 +197,8 @@ def _gather_live_financial_context(db: Database) -> dict[str, Any]:
         "recent_audit_events": [
             {
                 "action": str(a.get("action")),
-                "actor": str(a.get("actor_type")),
-                "timestamp": str(a.get("created_at_utc", "")),
+                "actor": str(a.get("actor")),
+                "timestamp": str(a.get("timestamp_utc", "")),
             }
             for a in audit_events[:5]
         ],
@@ -523,6 +535,7 @@ def answer_custom_voice_query(
     db: Database,
     query: str,
     language: VoiceLanguage = VoiceLanguage.EN_IN,
+    settings: Settings | None = None,
 ) -> tuple[str, dict[str, Any] | None, VoiceLanguage]:
     """Produce a grounded conversational answer to any natural language question.
 
@@ -531,7 +544,6 @@ def answer_custom_voice_query(
     """
     resolved_language = detect_language_preference(query, language)
     context = _gather_live_financial_context(db)
-    settings = get_settings()
 
     ctx_json = json.dumps(context, indent=2)
     system_prompt = (
@@ -557,15 +569,15 @@ def answer_custom_voice_query(
     )
 
     groq_key: str | None = None
-    if settings.model_api_key:
+    if settings is not None and settings.model_api_key:
         groq_key = settings.model_api_key.get_secret_value().strip()
-    if not groq_key and settings.openai_api_key:
+    if not groq_key and settings is not None and settings.openai_api_key:
         groq_key = settings.openai_api_key.get_secret_value().strip()
 
     answer: str | None = None
 
     # 1. Groq Cloud LPU (Primary LLM engine)
-    if not answer and groq_key:
+    if not answer and groq_key and settings is not None:
         answer = _call_groq_llm(
             groq_key,
             system_prompt,

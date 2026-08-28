@@ -89,6 +89,21 @@ def test_sandbox_stream_endpoint(tmp_path: Path) -> None:
         assert commit_res.json()["status"] == "COMMITTED"
 
 
+def test_commit_rejects_path_traversal_target(tmp_path: Path) -> None:
+    settings = Settings(db_path=tmp_path / "sandbox_traversal.sqlite3", _env_file=None)
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/api/v1/ingest/commit-extracted",
+            json={
+                "session_id": "safe_session",
+                "target_filename": "../escaped.csv",
+                "canonical_csv": "payment_id,gross_amount\npay_1,10.00\n",
+            },
+        )
+
+    assert response.status_code == 422
+
+
 def test_sandbox_stream_pdf_document(tmp_path: Path) -> None:
     settings = Settings(db_path=tmp_path / "test_sandbox_pdf.db")
     app = create_app(settings)

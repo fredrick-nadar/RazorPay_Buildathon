@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.ai.chain import build_chain
-from app.config import get_settings
+from app.config import Settings
 from app.investigator.llm_provider import LLMInvestigatorProvider
 from app.investigator.provider import FakeProvider, InvestigatorProvider
 from app.persistence.database import Database
@@ -19,7 +19,9 @@ from app.runs import execute_run
 router = APIRouter(prefix="/api/v1/runs", tags=["runs"])
 
 
-def _resolve_agent_provider(provider_id: str | None = None) -> InvestigatorProvider:
+def _resolve_agent_provider(
+    settings: Settings, provider_id: str | None = None
+) -> InvestigatorProvider:
     """Agent mode: live LLM chain when configured & requested, deterministic fake otherwise.
 
     The provider id is persisted in the run summary either way, so the UI and
@@ -27,7 +29,6 @@ def _resolve_agent_provider(provider_id: str | None = None) -> InvestigatorProvi
     """
     if not provider_id or "fake" in provider_id.lower():
         return FakeProvider()
-    settings = get_settings()
     try:
         chain = build_chain(settings)
         if chain.member_ids:
@@ -53,6 +54,7 @@ class ReconcileRequest(BaseModel):
 @router.post("/reconcile")
 def reconcile_dataset(payload: ReconcileRequest, request: Request) -> dict[str, Any]:
     db: Database = request.app.state.db
+    settings: Settings = request.app.state.settings
     repo_root = Path(__file__).resolve().parents[3]
     inputs_path = repo_root / "datasets" / payload.dataset_profile / "inputs"
 
@@ -62,7 +64,9 @@ def reconcile_dataset(payload: ReconcileRequest, request: Request) -> dict[str, 
             detail=f"dataset inputs directory not found at {inputs_path}",
         )
 
-    provider = _resolve_agent_provider() if payload.mode == "agent" else None
+    provider = (
+        _resolve_agent_provider(settings, payload.provider_id) if payload.mode == "agent" else None
+    )
 
     try:
         res = execute_run(
@@ -380,32 +384,32 @@ def get_run_matrix(
         bank_row = bank_by_utr.get(utr) if utr else None
         led_row = ledger_by_ref.get(pay_id)
 
-        match_rule = (
-            rule_by_record.get(pay_id)
-            or rule_by_record.get(led_row["ledger_entry_id"] if led_row else "")
-            or "R-EXACT-LEDGER-SOURCE"
+        match_rule = rule_by_record.get(pay_id) or rule_by_record.get(
+            str(led_row["ledger_entry_id"]) if led_row else ""
         )
+
+        # This endpoint is the fully linked 5-way matrix, not the unmatched
+        # record inventory. Incomplete relationships remain visible in cases
+        # and evidence views and must never be presented here as reconciled.
+        if not (match_rule and stl_row and bank_row and led_row):
+            continue
 
         matrix_item = {
             "payment_id": pay_id,
             "order_id": order_id,
-            "gross_amount": gross_p / 100.0,
             "gross_amount_paise": gross_p,
-            "fee_amount": fee_p / 100.0,
             "fee_paise": fee_p,
-            "tax_amount": tax_p / 100.0,
             "tax_paise": tax_p,
-            "net_amount": net_p / 100.0,
             "net_amount_paise": net_p,
             "captured_at_utc": str(p["captured_at_utc"]),
             "settlement_id": stl_id,
-            "settlement_gross": int(stl_row["gross_credit_paise"]) / 100.0 if stl_row else None,
+            "settlement_gross_paise": int(stl_row["gross_credit_paise"]) if stl_row else None,
             "utr": utr,
             "bank_entry_id": str(bank_row["bank_entry_id"]) if bank_row else None,
-            "bank_amount": int(bank_row["signed_amount_paise"]) / 100.0 if bank_row else None,
+            "bank_amount_paise": int(bank_row["signed_amount_paise"]) if bank_row else None,
             "ledger_entry_id": str(led_row["ledger_entry_id"]) if led_row else None,
-            "ledger_amount": int(led_row["signed_amount_paise"]) / 100.0 if led_row else None,
-            "account_code": str(led_row["account_code"]) if led_row else "2100-PAYMENTS-CLEARING",
+            "ledger_amount_paise": int(led_row["signed_amount_paise"]) if led_row else None,
+            "account_code": str(led_row["account_code"]),
             "match_rule": match_rule,
             "status": "RECONCILED",
         }

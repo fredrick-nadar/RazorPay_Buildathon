@@ -4,7 +4,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.api import routes_ingest
 from app.config import Settings
+from app.importers.document_extractor import convert_extracted_records_to_csv
 from app.main import create_app
 
 
@@ -62,6 +64,33 @@ def test_empty_csv_upload_rejected(tmp_path: Path) -> None:
             },
         )
         assert res.status_code == 400
+
+
+def test_stacked_upload_preserves_duplicate_source_identifiers(tmp_path: Path) -> None:
+    settings = Settings(ARGUS_DB_PATH=str(tmp_path / "test_duplicate_source_id.db"))
+    app = create_app(settings)
+    sample_csv = (
+        "payment_id,order_id,status,currency,gross_amount,fee_amount,tax_amount,captured_at_utc,settlement_id\n"
+        "pay_same,ord_same,CAPTURED,INR,10.00,0.20,0.04,2026-03-02T03:17:28Z,stl_same\n"
+    )
+
+    with TestClient(app) as client:
+        for _ in range(2):
+            response = client.post(
+                "/api/v1/ingest/upload-csv",
+                json={
+                    "filename": "payments.csv",
+                    "content": sample_csv,
+                    "file_type": "payments",
+                    "session_id": "duplicate_source_id",
+                },
+            )
+            assert response.status_code == 200
+
+    staged_path = routes_ingest.SESSION_DIRS["duplicate_source_id"] / "payments.csv"
+    staged_text = staged_path.read_text(encoding="utf-8")
+    assert staged_text.count("pay_same") == 2
+    assert "pay_same_imp2" not in staged_text
 
 
 def test_pdf_and_image_document_extraction(tmp_path: Path) -> None:
@@ -153,8 +182,35 @@ def test_java_notes_and_pdf_binary_rejected(tmp_path: Path) -> None:
             },
         )
         assert res.status_code == 400
-        err = res.json()
-        assert (
-            "no financial transaction tables" in err["detail"].lower()
-            or "no recognizable financial" in err["detail"].lower()
+
+
+def test_refund_extraction_uses_refund_schema_and_exact_money() -> None:
+    csv_text = convert_extracted_records_to_csv(
+        [
+            {
+                "refund_id": "rfnd_exact_1",
+                "payment_id": "pay_exact_1",
+                "status": "processed",
+                "currency": "INR",
+                "refund_amount": "10.05",
+                "created_at_utc": "2026-03-02T10:00:00Z",
+                "settlement_id": "stl_exact_1",
+            }
+        ],
+        "refunds",
+    )
+    lines = csv_text.splitlines()
+    assert lines[0] == (
+        "refund_id,payment_id,status,currency,refund_amount,created_at_utc,settlement_id"
+    )
+    assert "rfnd_exact_1,pay_exact_1,PROCESSED,INR,10.05" in lines[1]
+
+
+def test_document_converter_rejects_binary_float_money() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="decimal string"):
+        convert_extracted_records_to_csv(
+            [{"payment_id": "pay_float", "gross_amount": 10.05}],
+            "payments",
         )

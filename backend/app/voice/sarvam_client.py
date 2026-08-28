@@ -15,7 +15,7 @@ from typing import Any
 import httpx
 from pydantic import SecretStr
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -68,17 +68,25 @@ def _read_key_from_env_local(key_name: str) -> str | None:
 class SarvamClient:
     """Client for Sarvam AI speech-to-text (Saaras) and text-to-speech (Bulbul)."""
 
-    def __init__(self, api_key: str | SecretStr | None = None, timeout_s: float = 15.0) -> None:
-        settings = get_settings()
-        raw_key = api_key or getattr(settings, "sarvam_api_key", None)
+    def __init__(
+        self,
+        api_key: str | SecretStr | None = None,
+        timeout_s: float = 15.0,
+        settings: Settings | None = None,
+    ) -> None:
+        resolved_settings = settings if settings is not None else get_settings()
+        raw_key = api_key if api_key is not None else resolved_settings.sarvam_api_key
         if isinstance(raw_key, SecretStr):
             self.api_key: str | None = raw_key.get_secret_value()
         elif raw_key:
             self.api_key = str(raw_key).strip()
-        else:
+        elif settings is None:
             self.api_key = os.environ.get("SARVAM_API_KEY") or _read_key_from_env_local(
                 "SARVAM_API_KEY"
             )
+        else:
+            self.api_key = None
+        self._settings = resolved_settings
         self.timeout_s = timeout_s
 
     @property
@@ -194,7 +202,7 @@ class SarvamClient:
         # Truncate to reasonable sentence length for instant sub-second synthesis
         clean_text = text.strip()[:500]
 
-        settings = get_settings()
+        settings = self._settings
         resolved_speaker = speaker or settings.voice_tts_speaker
 
         headers = {
