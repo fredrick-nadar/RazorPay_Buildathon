@@ -12,6 +12,9 @@ const backendOrigin = process.env.ARGUS_BACKEND_ORIGIN ?? "http://127.0.0.1:8000
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Shared backend fetch budget: 90s including retries. Allow local staging too.
+  // Supported by the pinned Next 15 runtime; never use an unbounded proxy.
+  experimental: { proxyTimeout: 120_000 },
   async rewrites() {
     return [
       {

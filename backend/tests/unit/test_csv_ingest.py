@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.importers.schema_mapping import analyze_csv
-from app.importers.session_staging import resolve_session_dir
+from app.importers.session_staging import load_manifest, resolve_session_dir
 from app.main import create_app
 
 PAYMENT_CSV = (
@@ -84,7 +84,9 @@ def test_reviewed_commit_preserves_raw_file_and_is_idempotent(tmp_path: Path) ->
     assert second.json()["reused"] is True
     session = resolve_session_dir(settings, "reviewed_commit", create=False)
     assert (session / "payments.csv").read_text(encoding="utf-8").count("pay_1") == 1
-    source_files = list((session / ".source").iterdir())
+    source_files = [
+        session / row["raw_path"] for row in load_manifest(session)["revisions"].values()
+    ]
     assert len(source_files) == 1
     assert source_files[0].read_text(encoding="utf-8") == PAYMENT_CSV
 
@@ -120,8 +122,10 @@ def test_new_revision_replaces_active_source_without_overwriting_history(tmp_pat
     assert status["active_sources"]["payments"]["revision_id"] == responses[1]["revision_id"]
     assert "pay_2" in (session / "payments.csv").read_text(encoding="utf-8")
     assert "pay_1" not in (session / "payments.csv").read_text(encoding="utf-8")
-    assert len(list((session / ".source").iterdir())) == 2
-    assert len(list((session / ".revisions" / "payments").iterdir())) == 2
+    revisions = load_manifest(session)["revisions"]
+    assert len(revisions) == 2
+    assert all((session / row["raw_path"]).is_file() for row in revisions.values())
+    assert all((session / row["canonical_path"]).is_file() for row in revisions.values())
 
 
 def test_session_status_survives_application_restart(tmp_path: Path) -> None:
@@ -263,7 +267,9 @@ def test_three_source_session_runs_only_after_all_evidence_is_ready(tmp_path: Pa
     assert response.status_code == 200
     assert response.json()["status"] == "COMPLETED"
     session = resolve_session_dir(settings, "complete_session", create=False)
-    assert (session / "refunds.csv").is_file()
+    snapshots = list((session / ".runs").iterdir())
+    assert len(snapshots) == 1
+    assert (snapshots[0] / "refunds.csv").is_file()
 
 
 def test_ocr_and_direct_upload_paths_are_not_exposed(tmp_path: Path) -> None:

@@ -70,12 +70,12 @@ def persist_gateway_snapshot(
     import_id = f"gwi-{sha256(identity.encode('utf-8')).hexdigest()[:20]}"
     eligible_count = sum(1 for entity, _, _ in encoded if entity.reconciliation_eligible)
 
-    existing = db.query_one(
-        "SELECT import_id FROM gateway_imports WHERE import_id = ?", (import_id,)
-    )
-    reused = existing is not None
-    if not reused:
-        with db.transaction():
+    with db.transaction(immediate=True):
+        existing = db.query_one(
+            "SELECT import_id FROM gateway_imports WHERE import_id = ?", (import_id,)
+        )
+        reused = existing is not None
+        if not reused:
             db.execute(
                 "INSERT INTO gateway_imports (import_id, provider, mode, credential_fingerprint,"
                 " snapshot_hash, status, source_records_count, reconciliation_eligible_count,"

@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.ai.router import router as ai_router
@@ -17,6 +18,7 @@ from app.api.routes_meta import router as meta_router
 from app.api.routes_razorpay import router as razorpay_router
 from app.api.routes_runs import router as runs_router
 from app.config import APP_NAME, Settings, get_settings
+from app.importers.session_staging import SourceRecoveryError, SourceRevisionError
 from app.persistence.database import open_database
 from app.voice.api import router as voice_router
 
@@ -32,6 +34,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.db.close()
 
     app = FastAPI(title=APP_NAME, version=__version__, lifespan=lifespan)
+
+    @app.exception_handler(SourceRecoveryError)
+    async def source_recovery_error(request: Request, exc: SourceRecoveryError) -> JSONResponse:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": str(exc), "code": "ACTIVATION_RECOVERY_PENDING"},
+            headers={"Retry-After": "2"},
+        )
+
+    @app.exception_handler(SourceRevisionError)
+    async def source_revision_error(request: Request, exc: SourceRevisionError) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],

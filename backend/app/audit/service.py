@@ -64,9 +64,11 @@ def record_audit_event(
     case_id: str | None = None,
     run_id: str | None = None,
     timestamp_utc: str | None = None,
+    *,
+    event_id: str | None = None,
 ) -> AuditEvent:
     """Append a single audit record into the SQLite audit_log table."""
-    event_id = f"evt-{uuid4().hex[:12]}"
+    event_id = event_id or f"evt-{uuid4().hex[:12]}"
     ts = timestamp_utc or datetime.now(UTC).isoformat()
     actor_str = actor.value if isinstance(actor, ActorType) else str(actor)
     digest = compute_audit_digest(

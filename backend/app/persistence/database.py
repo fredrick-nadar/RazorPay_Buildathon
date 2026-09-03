@@ -115,7 +115,7 @@ class Database:
             self._conn.executemany(sql, rows)
 
     @contextmanager
-    def transaction(self) -> Iterator[None]:
+    def transaction(self, *, immediate: bool = False) -> Iterator[None]:
         """Run a block inside one explicit transaction.
 
         The connection is in autocommit mode, so every standalone execute()
@@ -124,7 +124,7 @@ class Database:
         exception rolls the whole block back.
         """
         with self._lock:
-            self._conn.execute("BEGIN")
+            self._conn.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
             try:
                 yield
             except BaseException:

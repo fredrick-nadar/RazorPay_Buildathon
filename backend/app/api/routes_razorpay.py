@@ -17,9 +17,7 @@ from app.api.routes_ingest import (
     get_or_create_session_dir,
     validate_canonical_rows,
 )
-from app.audit.service import record_audit_event
 from app.config import Settings
-from app.domain.enums import ActorType
 from app.domain.money import MoneyError, require_paise
 from app.importers.demo_settlement import (
     DEMO_BUNDLE_SOURCES,
@@ -28,12 +26,13 @@ from app.importers.demo_settlement import (
     build_demo_evidence,
     derive_demo_activation,
 )
-from app.importers.razorpay_client import RazorpayClient
+from app.importers.intake_activation import activate_gateway_bundle, recover_session_activation
+from app.importers.razorpay_client import RazorpayClient, RazorpayFetchResult
 from app.importers.session_staging import (
     SourceRevisionError,
+    SourceRevisionInput,
     SourceType,
     resolve_session_dir,
-    stage_source_revision,
     verified_active_sources,
 )
 from app.persistence.database import Database
@@ -44,12 +43,21 @@ from app.persistence.gateway_imports import (
     get_demo_evidence,
     get_gateway_entities,
     get_gateway_import,
-    mark_gateway_import_staged,
     persist_gateway_snapshot,
-    record_demo_evidence,
 )
 
 router = APIRouter(prefix="/api/v1/razorpay", tags=["razorpay"])
+
+
+def _require_resource(name: str, result: RazorpayFetchResult) -> RazorpayFetchResult:
+    """Stop the read sequence at its first failure; never stage a partial response."""
+    if result.success:
+        return result
+    raise HTTPException(
+        status_code=(504 if result.error_code == "DEADLINE_EXCEEDED" else 502),
+        detail=f"Razorpay {name} API failed: {result.reason}. No data was imported.",
+    )
+
 
 _INPUT_SCHEMAS: dict[str, tuple[str, ...]] = {
     "payments.csv": (
@@ -508,6 +516,15 @@ def get_razorpay_import(
 ) -> dict[str, Any]:
     """Re-read a staged snapshot so a reopened session restores persisted state."""
     db: Database = request.app.state.db
+    session_error = None
+    if session_id is not None:
+        try:
+            recover_session_activation(
+                db, resolve_session_dir(request.app.state.settings, session_id, create=False)
+            )
+        except SourceRevisionError as exc:
+            # Keep immutable history readable, but never claim corrupt evidence is active.
+            session_error = str(exc)
     result = get_gateway_import(
         db, import_id, dossier_limit=dossier_limit, dossier_offset=dossier_offset
     )
@@ -517,6 +534,9 @@ def get_razorpay_import(
         db, request.app.state.settings, import_id=import_id, session_id=session_id
     )
     result["demo_generation"] = _demo_generation_availability(db, result)
+    if session_error:
+        result["session_integrity_error"] = session_error
+        result["demo_generation"] = {"eligible": False, "reason": session_error}
     return result
 
 
@@ -626,6 +646,9 @@ def generate_demo_evidence(
     except DemoEvidenceError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    settings: Settings = request.app.state.settings
+    session_dir = get_or_create_session_dir(payload.session_id, settings)
+    recover_session_activation(db, session_dir)
     existing = get_demo_evidence(db, import_id=import_id, session_id=payload.session_id)
     if (
         existing is not None
@@ -636,8 +659,6 @@ def generate_demo_evidence(
             status_code=409, detail="Gateway demo content differs from its immutable history."
         )
 
-    settings: Settings = request.app.state.settings
-    session_dir = get_or_create_session_dir(payload.session_id, settings)
     source_by_file: dict[str, SourceType] = {
         "payments.csv": "payments",
         "refunds.csv": "refunds",
@@ -658,30 +679,55 @@ def generate_demo_evidence(
             )
         validation[filename] = (accepted, quarantined, preview)
     revisions: dict[str, dict[str, Any]] = {}
+    sources: list[SourceRevisionInput] = []
     try:
         for filename, source_type in source_by_file.items():
             canonical_csv = bundle["files"][filename]
             accepted, quarantined, preview = validation[filename]
-            activation = stage_source_revision(
-                session_dir=session_dir,
-                source_type=source_type,
-                original_filename=f"synthetic-demo-{import_id}-{filename}",
-                raw_content=json.dumps(
-                    {
-                        "provenance": "SYNTHETIC_DEMO",
-                        "derived_from_gateway_import": import_id,
-                        "manifest_hash": bundle["manifest_hash"],
-                        "canonical_filename": filename,
-                        "scope": bundle["scope"],
-                    },
-                    sort_keys=True,
-                ),
-                canonical_csv=canonical_csv,
-                accepted_count=accepted,
-                quarantined_count=quarantined,
-                origin="SYNTHETIC_DEMO",
-                external_import_id=import_id,
+            sources.append(
+                SourceRevisionInput(
+                    source_type=source_type,
+                    original_filename=f"synthetic-demo-{import_id}-{filename}",
+                    raw_content=json.dumps(
+                        {
+                            "provenance": "SYNTHETIC_DEMO",
+                            "derived_from_gateway_import": import_id,
+                            "manifest_hash": bundle["manifest_hash"],
+                            "canonical_filename": filename,
+                            "scope": bundle["scope"],
+                        },
+                        sort_keys=True,
+                    ),
+                    canonical_csv=canonical_csv,
+                    accepted_count=accepted,
+                    quarantined_count=quarantined,
+                    origin="SYNTHETIC_DEMO",
+                    external_import_id=import_id,
+                )
             )
+        activations = activate_gateway_bundle(
+            db,
+            session_dir=session_dir,
+            sources=sources,
+            receipt={
+                "action": "SYNTHETIC_DEMO_EVIDENCE_STAGED",
+                "import_id": import_id,
+                "session_id": payload.session_id,
+                "manifest_hash": bundle["manifest_hash"],
+                "scope": bundle["scope"],
+                "counts": {
+                    key: bundle[key]
+                    for key in (
+                        "payments_count",
+                        "refunds_count",
+                        "settlements_count",
+                    )
+                },
+            },
+        )
+        for filename, source_type in source_by_file.items():
+            activation = activations[source_type]
+            accepted, quarantined, preview = validation[filename]
             revisions[source_type] = {
                 "revision_id": activation.revision_id,
                 "revision_number": activation.revision_number,
@@ -693,37 +739,10 @@ def generate_demo_evidence(
     except SourceRevisionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    try:
-        evidence_id, reused = record_demo_evidence(
-            db,
-            import_id=import_id,
-            session_id=payload.session_id,
-            manifest_hash=str(bundle["manifest_hash"]),
-            scope=bundle["scope"],
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    record_audit_event(
-        db,
-        actor=ActorType.SYSTEM,
-        action="SYNTHETIC_DEMO_EVIDENCE_STAGED",
-        payload={
-            "evidence_id": evidence_id,
-            "import_id": import_id,
-            "session_id": payload.session_id,
-            "manifest_hash": bundle["manifest_hash"],
-            "scope": bundle["scope"],
-            "reused": reused,
-            "counts": {
-                key: bundle[key]
-                for key in (
-                    "payments_count",
-                    "refunds_count",
-                    "settlements_count",
-                )
-            },
-        },
-    )
+    evidence = get_demo_evidence(db, import_id=import_id, session_id=payload.session_id)
+    assert evidence is not None  # activate_gateway_bundle delivered the durable receipt
+    evidence_id = evidence["evidence_id"]
+    reused = existing is not None and existing["scope"] == "GATEWAY_ONLY"
     return {
         "success": True,
         "evidence_id": evidence_id,
@@ -772,34 +791,39 @@ def sync_razorpay_data(payload: RazorpaySyncRequest, request: Request) -> dict[s
         datetime.datetime.combine(payload.period_end, datetime.time.max, datetime.UTC).timestamp()
     )
     resources = {
-        "orders": client.fetch_all_orders(
-            max_records=payload.count, from_ts=from_timestamp, to_ts=to_timestamp
+        "orders": _require_resource(
+            "orders",
+            client.fetch_all_orders(
+                max_records=payload.count, from_ts=from_timestamp, to_ts=to_timestamp
+            ),
         ),
-        "payments": client.fetch_all_payments(
-            max_records=payload.count, from_ts=from_timestamp, to_ts=to_timestamp
+        "payments": _require_resource(
+            "payments",
+            client.fetch_all_payments(
+                max_records=payload.count, from_ts=from_timestamp, to_ts=to_timestamp
+            ),
         ),
-        "refunds": client.fetch_all_refunds(
-            max_records=payload.count, from_ts=from_timestamp, to_ts=to_timestamp
+        "refunds": _require_resource(
+            "refunds",
+            client.fetch_all_refunds(
+                max_records=payload.count, from_ts=from_timestamp, to_ts=to_timestamp
+            ),
         ),
-        "settlements": client.fetch_all_settlements(
-            max_records=payload.count, from_ts=from_timestamp, to_ts=to_timestamp
+        "settlements": _require_resource(
+            "settlements",
+            client.fetch_all_settlements(
+                max_records=payload.count, from_ts=from_timestamp, to_ts=to_timestamp
+            ),
         ),
-        "settlement_reconciliation": client.fetch_settlement_reconciliation(
-            period_start=payload.period_start,
-            period_end=payload.period_end,
-            max_records=payload.count,
+        "settlement_reconciliation": _require_resource(
+            "settlement_reconciliation",
+            client.fetch_settlement_reconciliation(
+                period_start=payload.period_start,
+                period_end=payload.period_end,
+                max_records=payload.count,
+            ),
         ),
     }
-    failed = next(((name, value) for name, value in resources.items() if not value.success), None)
-    if failed is not None:
-        resource_name, resource_result = failed
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                f"Razorpay {resource_name} API failed: {resource_result.reason}. "
-                "No data was imported."
-            ),
-        )
     order_items = resources["orders"].items
     payment_items = resources["payments"].items
     refund_items = resources["refunds"].items
@@ -838,23 +862,45 @@ def sync_razorpay_data(payload: RazorpaySyncRequest, request: Request) -> dict[s
         ),
     }
     source_revisions: dict[str, dict[str, Any]] = {}
+    sources = []
+    validation = {}
     try:
         for source_type, (filename, raw_items) in api_sources.items():
             canonical_csv = rendered_inputs[filename]
             accepted_count, quarantined_count, quarantine_preview = validate_canonical_rows(
                 canonical_csv, source_type
             )
-            activation = stage_source_revision(
-                session_dir=session_dir,
-                source_type=source_type,
-                original_filename=f"razorpay-{source_type}-{gateway_import.import_id}.json",
-                raw_content=json.dumps(raw_items, indent=2, sort_keys=True),
-                canonical_csv=canonical_csv,
-                accepted_count=accepted_count,
-                quarantined_count=quarantined_count,
-                origin="RAZORPAY_TEST_MODE",
-                external_import_id=gateway_import.import_id,
+            validation[source_type] = (accepted_count, quarantined_count, quarantine_preview)
+            sources.append(
+                SourceRevisionInput(
+                    source_type=source_type,
+                    original_filename=f"razorpay-{source_type}-{gateway_import.import_id}.json",
+                    raw_content=json.dumps(raw_items, indent=2, sort_keys=True),
+                    canonical_csv=canonical_csv,
+                    accepted_count=accepted_count,
+                    quarantined_count=quarantined_count,
+                    origin="RAZORPAY_TEST_MODE",
+                    external_import_id=gateway_import.import_id,
+                )
             )
+        activations = activate_gateway_bundle(
+            db,
+            session_dir=session_dir,
+            sources=sources,
+            receipt={
+                "action": "GATEWAY_SNAPSHOT_STAGED",
+                "import_id": gateway_import.import_id,
+                "session_id": payload.session_id,
+                "source_records_count": gateway_import.source_records_count,
+                "reconciliation_eligible_count": gateway_import.reconciliation_eligible_count,
+                "counts": gateway_import.counts,
+                "period_start": payload.period_start.isoformat(),
+                "period_end": payload.period_end.isoformat(),
+            },
+        )
+        for source_type in api_sources:
+            activation = activations[source_type]
+            accepted_count, quarantined_count, quarantine_preview = validation[source_type]
             source_revisions[source_type] = {
                 "revision_id": activation.revision_id,
                 "revision_number": activation.revision_number,
@@ -867,29 +913,9 @@ def sync_razorpay_data(payload: RazorpaySyncRequest, request: Request) -> dict[s
     except SourceRevisionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    mark_gateway_import_staged(db, gateway_import.import_id)
     import_dossier = get_gateway_import(db, gateway_import.import_id)
     if import_dossier is None:
         raise HTTPException(status_code=500, detail="Staged gateway import could not be read")
-    record_audit_event(
-        db,
-        actor=ActorType.SYSTEM,
-        action="GATEWAY_SNAPSHOT_STAGED",
-        payload={
-            "import_id": gateway_import.import_id,
-            "session_id": payload.session_id,
-            "reused": gateway_import.reused,
-            "source_records_count": gateway_import.source_records_count,
-            "reconciliation_eligible_count": gateway_import.reconciliation_eligible_count,
-            "counts": gateway_import.counts,
-            "period_start": payload.period_start.isoformat(),
-            "period_end": payload.period_end.isoformat(),
-            "source_revisions": {
-                source_type: revision["revision_id"]
-                for source_type, revision in source_revisions.items()
-            },
-        },
-    )
 
     gateway_ready = (
         source_revisions["payments"]["accepted_count"] > 0

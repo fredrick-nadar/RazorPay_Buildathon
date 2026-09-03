@@ -26,6 +26,7 @@ from app.importers.adapters import (
     parse_refund_row,
     parse_settlement_row,
 )
+from app.importers.intake_activation import recover_session_activation
 from app.importers.schema_mapping import (
     DocumentType,
     analyze_csv,
@@ -36,8 +37,11 @@ from app.importers.session_staging import (
     SourceRevisionError,
     materialize_active_sources,
     resolve_session_dir,
+    session_lock,
     session_source_status,
+    snapshot_active_sources,
     stage_source_revision,
+    verified_active_sources,
 )
 from app.persistence.database import Database
 from app.runs import execute_run
@@ -149,19 +153,22 @@ def commit_csv_file(payload: CommitCsvPayload, request: Request) -> dict[str, An
         canonical_csv, payload.file_type
     )
     settings: Settings = request.app.state.settings
+    db: Database = request.app.state.db
     session_dir = get_or_create_session_dir(payload.session_id, settings)
     try:
-        activation = stage_source_revision(
-            session_dir=session_dir,
-            source_type=payload.file_type,
-            original_filename=payload.filename,
-            raw_content=payload.content,
-            canonical_csv=canonical_csv,
-            accepted_count=accepted,
-            quarantined_count=quarantined,
-            origin="MANUAL_CSV",
-            mapping=mapping,
-        )
+        with session_lock(session_dir):
+            recover_session_activation(db, session_dir)
+            activation = stage_source_revision(
+                session_dir=session_dir,
+                source_type=payload.file_type,
+                original_filename=payload.filename,
+                raw_content=payload.content,
+                canonical_csv=canonical_csv,
+                accepted_count=accepted,
+                quarantined_count=quarantined,
+                origin="MANUAL_CSV",
+                mapping=mapping,
+            )
     except SourceRevisionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -197,8 +204,11 @@ _REQUIRED_SOURCE_LABELS = {
 
 
 def _session_readiness(session_dir: Path) -> dict[str, Any]:
-    materialize_active_sources(session_dir)
-    status = session_source_status(session_dir)
+    with session_lock(session_dir):
+        status = session_source_status(session_dir)
+        if status["active_sources"]:
+            verified_active_sources(session_dir, require_demo_metadata=False)
+            materialize_active_sources(session_dir)
     active = status["active_sources"]
     missing = [label for source, label in _REQUIRED_SOURCE_LABELS.items() if source not in active]
     empty = [
@@ -286,6 +296,7 @@ def get_ingest_session_status(session_id: str, request: Request) -> dict[str, An
             "revision_counts": {source: 0 for source in CANONICAL_FILENAMES},
         }
     try:
+        recover_session_activation(request.app.state.db, session_dir)
         return {"session_id": session_id, **_session_readiness(session_dir)}
     except SourceRevisionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -328,7 +339,16 @@ def reconcile_uploaded_session(
         )
 
     try:
-        readiness = _session_readiness(session_dir)
+        with session_lock(session_dir):
+            recover_session_activation(db, session_dir)
+            readiness = _session_readiness(session_dir)
+            inputs_snapshot = None
+            if readiness["ready"]:
+                refunds_buffer = io.StringIO(newline="")
+                csv.writer(refunds_buffer).writerow(REFUND_SPEC.columns)
+                inputs_snapshot = snapshot_active_sources(
+                    session_dir, empty_refunds=refunds_buffer.getvalue()
+                )
     except SourceRevisionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not readiness["ready"]:
@@ -354,25 +374,19 @@ def reconcile_uploaded_session(
             ),
         )
 
-    # A period with no refunds is legitimate. Represent it explicitly with a
-    # header-only source instead of fabricating refund events.
-    refund_path = session_dir / "refunds.csv"
-    if not refund_path.exists():
-        with refund_path.open("w", newline="", encoding="utf-8") as handle:
-            csv.writer(handle).writerow(REFUND_SPEC.columns)
-
     exec_mode: Literal["rules-only", "agent"] = (
         "agent" if payload.mode.lower() in ("agent", "ai-assisted") else "rules-only"
     )
     provider = _resolve_agent_provider(settings) if exec_mode == "agent" else None
 
     try:
+        assert inputs_snapshot is not None
         res = execute_run(
-            inputs_dir=session_dir,
+            inputs_dir=inputs_snapshot,
             database=db,
             mode=exec_mode,
             provider=provider,
-            force=True,
+            force=False,
         )
         return {
             "run_id": res.run_id,

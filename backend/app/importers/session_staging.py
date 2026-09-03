@@ -13,8 +13,11 @@ import hashlib
 import io
 import json
 import os
-import re
+import tempfile
 import threading
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -61,6 +64,10 @@ class SourceRevisionError(ValueError):
     """The immutable session-revision store is invalid or inconsistent."""
 
 
+class SourceRecoveryError(RuntimeError):
+    """An authoritative activation is safe but its derived files need retry."""
+
+
 @dataclass(frozen=True)
 class RevisionActivation:
     revision_id: str
@@ -70,14 +77,73 @@ class RevisionActivation:
     canonical_filename: str
 
 
+@dataclass(frozen=True)
+class SourceRevisionInput:
+    source_type: SourceType
+    original_filename: str
+    raw_content: str
+    canonical_csv: str
+    accepted_count: int
+    quarantined_count: int
+    origin: str
+    mapping: dict[str, str] | None = None
+    external_import_id: str | None = None
+
+
 _LOCKS_GUARD = threading.Lock()
 _SESSION_LOCKS: dict[str, threading.RLock] = {}
+_HELD_LOCKS = threading.local()
 
 
-def _session_lock(session_dir: Path) -> threading.RLock:
+@contextmanager
+def session_lock(session_dir: Path) -> Iterator[None]:
+    """Reentrant thread + OS lock, released by the OS even on process termination."""
     key = str(session_dir.resolve())
     with _LOCKS_GUARD:
-        return _SESSION_LOCKS.setdefault(key, threading.RLock())
+        local_lock = _SESSION_LOCKS.setdefault(key, threading.RLock())
+    with local_lock:
+        held: set[str] = getattr(_HELD_LOCKS, "paths", set())
+        if key in held:
+            yield
+            return
+        session_dir.mkdir(parents=True, exist_ok=True)
+        with (session_dir / ".lock").open("a+b") as handle:
+            if handle.seek(0, os.SEEK_END) == 0:
+                handle.write(b"0")
+                handle.flush()
+            deadline = time.monotonic() + 10
+            while True:
+                try:
+                    handle.seek(0)
+                    if os.name == "nt":
+                        import msvcrt
+
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    else:
+                        import fcntl
+
+                        posix_lock: Any = fcntl  # platform-dependent stubs on Windows
+                        posix_lock.flock(handle, posix_lock.LOCK_EX | posix_lock.LOCK_NB)
+                    break
+                except OSError as exc:
+                    if time.monotonic() >= deadline:
+                        raise SourceRevisionError("Import session is busy; retry shortly.") from exc
+                    time.sleep(0.05)
+            _HELD_LOCKS.paths = held | {key}
+            try:
+                yield
+            finally:
+                _HELD_LOCKS.paths = held
+                handle.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    posix_lock = fcntl
+                    posix_lock.flock(handle, posix_lock.LOCK_UN)
 
 
 def resolve_session_dir(settings: Settings, session_id: str, *, create: bool) -> Path:
@@ -85,7 +151,13 @@ def resolve_session_dir(settings: Settings, session_id: str, *, create: bool) ->
     db_identity = hashlib.sha256(str(settings.db_path.resolve()).encode("utf-8")).hexdigest()[:16]
     session_dir = settings.import_staging_root / db_identity / session_id
     if create:
-        session_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            session_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise SourceRevisionError(
+                "Import staging directory is unavailable. "
+                "Check its configured path and permissions."
+            ) from exc
     return session_dir
 
 
@@ -137,15 +209,32 @@ def _contained_path(session_dir: Path, relative_value: str) -> Path:
 
 
 def _write_manifest(session_dir: Path, manifest: dict[str, Any]) -> None:
-    path = session_dir / MANIFEST_FILENAME
-    temporary = session_dir / f"{MANIFEST_FILENAME}.tmp"
-    temporary.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-    os.replace(temporary, path)
+    _atomic_write(
+        session_dir / MANIFEST_FILENAME,
+        json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8"),
+    )
 
 
-def _safe_filename(filename: str) -> str:
-    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(filename).name)
-    return cleaned[:120] or "source.bin"
+def _atomic_write(path: Path, content: bytes) -> None:
+    """Never expose partially written bytes at a final name (including on retry)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".w-", delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        if os.name != "nt":
+            descriptor = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _write_immutable(path: Path, content: bytes) -> None:
@@ -154,12 +243,8 @@ def _write_immutable(path: Path, content: bytes) -> None:
         if path.read_bytes() != content:
             raise SourceRevisionError(f"Immutable source collision at {path.name!r}.")
         return
-    try:
-        with path.open("xb") as handle:
-            handle.write(content)
-    except FileExistsError:
-        if path.read_bytes() != content:
-            raise SourceRevisionError(f"Immutable source collision at {path.name!r}.") from None
+    # All callers hold the session OS lock; immutable names are never overwritten.
+    _atomic_write(path, content)
 
 
 def _csv_row_count(canonical_csv: str) -> int:
@@ -180,6 +265,90 @@ def stage_source_revision(
     external_import_id: str | None = None,
 ) -> RevisionActivation:
     """Preserve a source revision and make it the only active revision of its type."""
+    source = SourceRevisionInput(
+        source_type,
+        original_filename,
+        raw_content,
+        canonical_csv,
+        accepted_count,
+        quarantined_count,
+        origin,
+        mapping,
+        external_import_id,
+    )
+    with session_lock(session_dir):
+        try:
+            result = stage_source_bundle(session_dir=session_dir, sources=[source])
+        except OSError as exc:
+            raise SourceRevisionError(
+                "Evidence could not be saved; active sources were not changed. "
+                "Check storage space, permissions and staging path length, then retry."
+            ) from exc
+        try:
+            materialize_active_sources(session_dir)
+        except OSError as exc:
+            raise SourceRecoveryError(
+                "Evidence activation is saved; derived CSV recovery is pending. "
+                "Check storage and reopen this import."
+            ) from exc
+        return result[source_type]
+
+
+def stage_source_bundle(
+    *,
+    session_dir: Path,
+    sources: list[SourceRevisionInput],
+    receipt: dict[str, Any] | None = None,
+) -> dict[str, RevisionActivation]:
+    """One manifest switch for all sources; any preparation failure leaves it unchanged.
+
+    An optional durable outbox receipt is committed WITH the active pointers. SQLite
+    projections can be replayed after a process crash; no distributed transaction
+    between SQLite and the filesystem is assumed.
+    """
+    if not sources or len({source.source_type for source in sources}) != len(sources):
+        raise SourceRevisionError("A bundle must contain distinct source types.")
+    with session_lock(session_dir):
+        manifest = load_manifest(session_dir)
+        result: dict[str, RevisionActivation] = {
+            source.source_type: _prepare_revision(session_dir, manifest, source)
+            for source in sources
+        }
+        if receipt is not None:
+            receipts = manifest.setdefault("activation_receipts", {})
+            if not isinstance(receipts, dict):
+                raise SourceRevisionError("Import activation receipts are invalid.")
+            receipt = dict(receipt)
+            receipt["source_revisions"] = {key: value.revision_id for key, value in result.items()}
+            unchanged = all(
+                row.reused and row.replaced_revision_id is None for row in result.values()
+            )
+            identical = any(
+                {key: value for key, value in old.items() if key != "sequence"} == receipt
+                for old in receipts.values()
+            )
+            if unchanged and identical:
+                return result
+            receipt["sequence"] = len(receipts) + 1
+            material = json.dumps(receipt, sort_keys=True, separators=(",", ":"))
+            receipt_id = "act-" + hashlib.sha256(material.encode()).hexdigest()
+            receipts.setdefault(receipt_id, receipt)
+        _write_manifest(session_dir, manifest)
+        return result
+
+
+def _prepare_revision(
+    session_dir: Path,
+    manifest: dict[str, Any],
+    source: SourceRevisionInput,
+) -> RevisionActivation:
+    source_type = source.source_type
+    original_filename = source.original_filename
+    raw_content, canonical_csv = source.raw_content, source.canonical_csv
+    accepted_count, quarantined_count = source.accepted_count, source.quarantined_count
+    origin, mapping, external_import_id = source.origin, source.mapping, source.external_import_id
+    if source_type not in CANONICAL_FILENAMES:
+        raise SourceRevisionError("Unknown source type.")
     if accepted_count < 0 or quarantined_count < 0:
         raise SourceRevisionError("Revision row counts cannot be negative.")
     row_count = _csv_row_count(canonical_csv)
@@ -204,9 +373,7 @@ def stage_source_revision(
     )
     revision_id = f"src-{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:24]}"
 
-    with _session_lock(session_dir):
-        session_dir.mkdir(parents=True, exist_ok=True)
-        manifest = load_manifest(session_dir)
+    with session_lock(session_dir):
         revisions: dict[str, Any] = manifest["revisions"]
         active_by_type: dict[str, str] = manifest["active_by_type"]
         previous_revision_id = active_by_type.get(source_type)
@@ -216,8 +383,9 @@ def stage_source_revision(
             raw_relative = Path(str(revisions[revision_id]["raw_path"]))
             canonical_relative = Path(str(revisions[revision_id]["canonical_path"]))
         else:
-            raw_relative = Path(".source") / f"{revision_id}-{_safe_filename(original_filename)}"
-            canonical_relative = Path(".revisions") / source_type / f"{revision_id}.csv"
+            # Original names remain in metadata, never in deep on-disk paths.
+            raw_relative = Path(".s") / f"{revision_id}.raw"
+            canonical_relative = Path(".s") / f"{revision_id}.csv"
             revision_number = 1 + sum(
                 1 for value in revisions.values() if value.get("source_type") == source_type
             )
@@ -242,8 +410,6 @@ def stage_source_revision(
         _write_immutable(_contained_path(session_dir, str(canonical_relative)), canonical_bytes)
         revision_number = int(revisions[revision_id]["revision_number"])
         active_by_type[source_type] = revision_id
-        _write_manifest(session_dir, manifest)
-        materialize_active_sources(session_dir)
 
     return RevisionActivation(
         revision_id=revision_id,
@@ -260,7 +426,7 @@ def stage_source_revision(
 
 def materialize_active_sources(session_dir: Path) -> None:
     """Rebuild derived input files from the manifest's active immutable revisions."""
-    with _session_lock(session_dir):
+    with session_lock(session_dir):
         manifest = load_manifest(session_dir)
         for source_type, revision_id in manifest["active_by_type"].items():
             revision = manifest["revisions"][revision_id]
@@ -271,14 +437,14 @@ def materialize_active_sources(session_dir: Path) -> None:
             if hashlib.sha256(content).hexdigest() != revision["canonical_sha256"]:
                 raise SourceRevisionError(f"Active revision {revision_id!r} failed its hash check.")
             destination = session_dir / CANONICAL_FILENAMES[source_type]
-            temporary = session_dir / f".{destination.name}.tmp"
-            temporary.write_bytes(content)
-            os.replace(temporary, destination)
+            _atomic_write(destination, content)
 
 
-def verified_active_sources(session_dir: Path) -> dict[str, Any]:
+def verified_active_sources(
+    session_dir: Path, *, require_demo_metadata: bool = True
+) -> dict[str, Any]:
     """Read one locked manifest and verify immutable active bytes, without writes."""
-    with _session_lock(session_dir):
+    with session_lock(session_dir):
         if not (session_dir / MANIFEST_FILENAME).is_file():
             raise SourceRevisionError("Import revision manifest is missing.")
         manifest = load_manifest(session_dir)
@@ -292,7 +458,11 @@ def verified_active_sources(session_dir: Path) -> dict[str, Any]:
                     ).read_bytes()
                     if hashlib.sha256(content).hexdigest() != revision[f"{kind}_sha256"]:
                         raise SourceRevisionError("Active source content failed its hash check.")
-                    if kind == "raw" and revision["origin"] == "SYNTHETIC_DEMO":
+                    if (
+                        kind == "raw"
+                        and revision["origin"] == "SYNTHETIC_DEMO"
+                        and require_demo_metadata
+                    ):
                         metadata = json.loads(content)
                         if not isinstance(metadata, dict):
                             raise SourceRevisionError("Demo provenance metadata is invalid.")
@@ -305,7 +475,7 @@ def verified_active_sources(session_dir: Path) -> dict[str, Any]:
 
 def session_source_status(session_dir: Path) -> dict[str, Any]:
     """Return active-source and revision metadata without exposing raw values."""
-    with _session_lock(session_dir):
+    with session_lock(session_dir):
         manifest = load_manifest(session_dir)
         active_sources: dict[str, dict[str, Any]] = {}
         for source_type, revision_id in manifest["active_by_type"].items():
@@ -338,10 +508,31 @@ def session_source_status(session_dir: Path) -> dict[str, Any]:
         return {"active_sources": active_sources, "revision_counts": revision_counts}
 
 
+def snapshot_active_sources(session_dir: Path, *, empty_refunds: str) -> Path:
+    """Pin a hash-verified immutable input set; concurrent uploads cannot change a run."""
+    with session_lock(session_dir):
+        active = verified_active_sources(session_dir, require_demo_metadata=False)
+        identity = json.dumps(
+            {key: row["revision_id"] for key, row in active.items()}, sort_keys=True
+        )
+        snapshot_id = hashlib.sha256(identity.encode()).hexdigest()[:24]
+        snapshot_dir = session_dir / ".runs" / snapshot_id
+        for key, row in active.items():
+            content = _contained_path(session_dir, row["canonical_path"]).read_bytes()
+            _write_immutable(snapshot_dir / f"{key}.csv", content)
+        if "refunds" not in active:
+            _write_immutable(snapshot_dir / "refunds.csv", empty_refunds.encode("utf-8"))
+        _write_immutable(
+            snapshot_dir / ".evidence.json", json.dumps(active, sort_keys=True).encode("utf-8")
+        )
+        return snapshot_dir
+
+
 __all__ = [
     "CANONICAL_FILENAMES",
     "RevisionActivation",
     "SourceRevisionError",
+    "SourceRecoveryError",
     "SourceType",
     "load_manifest",
     "materialize_active_sources",
