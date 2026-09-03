@@ -1,0 +1,80 @@
+{
+  "cases": [
+    {
+      "anchor": "demo_setl_d888961c211c22a3",
+      "delta_paise": 0,
+      "journal": "syn_journal_df5c1acf995f929b",
+      "kind": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "source": "SETTLEMENT",
+      "story": "Accounting date is actual simulated booking date, outside the imported window. This is a policy/window warning, not proof of a bank delay."
+    },
+    {
+      "anchor": "demo_setl_ae383dc1b241e899",
+      "delta_paise": 0,
+      "journal": "syn_journal_f802e9f4d1e1f41f",
+      "kind": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "source": "SETTLEMENT",
+      "story": "Accounting date is actual simulated booking date, outside the imported window. This is a policy/window warning, not proof of a bank delay."
+    },
+    {
+      "anchor": "demo_setl_bb09b59790c97b96",
+      "delta_paise": 0,
+      "journal": "syn_journal_e7f10133a6ebe31b",
+      "kind": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "source": "SETTLEMENT",
+      "story": "Accounting date is actual simulated booking date, outside the imported window. This is a policy/window warning, not proof of a bank delay."
+    },
+    {
+      "anchor": "pay_TX2y3Hv4fN6Ttq",
+      "delta_paise": -219300,
+      "kind": "DUPLICATE_LEDGER_POSTING",
+      "source": "PAYMENT",
+      "story": "ERP retry created a second journal ID for one payment."
+    },
+    {
+      "anchor": "syn_journal_e17698701618298b",
+      "delta_paise": null,
+      "kind": "AMBIGUOUS_EVIDENCE",
+      "source": "LEDGER_ENTRY",
+      "story": "Payment booking is overstated by a fictional INR 1.00 entry error; no supported automatic correction category."
+    },
+    {
+      "anchor": "syn_journal_6aa183deef34074c",
+      "delta_paise": null,
+      "kind": "AMBIGUOUS_EVIDENCE",
+      "source": "LEDGER_ENTRY",
+      "story": "ERP export lost a payment reference; amount alone is insufficient."
+    },
+    {
+      "anchor": "rfnd_TX2yb8O9RSZEtZ",
+      "delta_paise": -3220,
+      "kind": "MISSING_REFUND_POSTING",
+      "source": "REFUND",
+      "story": "Accounting connector failed to deliver this refund posting in the simulated completed export."
+    },
+    {
+      "anchor": "rfnd_TX2ynsdDqyCFCW",
+      "delta_paise": -75000,
+      "kind": "MISSING_REFUND_POSTING",
+      "source": "REFUND",
+      "story": "Accounting connector failed to deliver this refund posting in the simulated completed export."
+    },
+    {
+      "anchor": "demo_setl_bb09b59790c97b96",
+      "bank_record_withheld": "syn_bank_9610401f4fefaada",
+      "delta_paise": null,
+      "kind": "AMBIGUOUS_EVIDENCE",
+      "source": "SETTLEMENT",
+      "story": "The supplied bank extract lacks one settlement credit. Receipt is unproven; never infer loss or create a credit."
+    },
+    {
+      "anchor": "syn_charge_36feef6dba67a0f3",
+      "delta_paise": null,
+      "kind": "AMBIGUOUS_EVIDENCE",
+      "source": "BANK_ENTRY",
+      "story": "A fictional bank service debit is outside this gateway-reconciliation scope; preserve for review."
+    }
+  ],
+  "duplicate_deliveries": 1,
+  "quarantined_rows": 1
+}

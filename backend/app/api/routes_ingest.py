@@ -3,310 +3,300 @@
 from __future__ import annotations
 
 import csv
-import hashlib
 import io
-import tempfile
+import re
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.routes_runs import _resolve_agent_provider
 from app.config import Settings
+from app.importers.adapters import (
+    BANK_SPEC,
+    LEDGER_SPEC,
+    PAYMENT_SPEC,
+    REFUND_SPEC,
+    SETTLEMENT_SPEC,
+    QuarantineSignal,
+    parse_bank_row,
+    parse_ledger_row,
+    parse_payment_row,
+    parse_refund_row,
+    parse_settlement_row,
+)
+from app.importers.schema_mapping import (
+    DocumentType,
+    analyze_csv,
+    canonicalize_with_mapping,
+)
+from app.importers.session_staging import (
+    CANONICAL_FILENAMES,
+    SourceRevisionError,
+    materialize_active_sources,
+    resolve_session_dir,
+    session_source_status,
+    stage_source_revision,
+)
 from app.persistence.database import Database
 from app.runs import execute_run
 
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
 
-FILE_TYPE_MAP = {
-    "payments": "payments.csv",
-    "refunds": "refunds.csv",
-    "settlements": "settlements.csv",
-    "bank_entries": "bank_entries.csv",
-    "bank_statements": "bank_entries.csv",
-    "bank": "bank_entries.csv",
-    "ledger_entries": "ledger_entries.csv",
-    "ledger": "ledger_entries.csv",
+SESSION_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+
+
+def get_or_create_session_dir(session_id: str, settings: Settings) -> Path:
+    """Public staging boundary shared by manual and Razorpay Test Mode imports."""
+    return resolve_session_dir(settings, session_id, create=True)
+
+
+class AnalyzeCsvPayload(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    content: str
+    file_type: DocumentType
+
+
+class MappingSelection(BaseModel):
+    target_field: str
+    source_column: str
+
+
+class CommitCsvPayload(AnalyzeCsvPayload):
+    session_id: str = Field(pattern=SESSION_ID_PATTERN)
+    mappings: list[MappingSelection]
+
+
+_PARSER_BY_TYPE = {
+    "payments": (PAYMENT_SPEC, parse_payment_row),
+    "refunds": (REFUND_SPEC, parse_refund_row),
+    "settlements": (SETTLEMENT_SPEC, parse_settlement_row),
+    "bank_entries": (BANK_SPEC, parse_bank_row),
+    "ledger_entries": (LEDGER_SPEC, parse_ledger_row),
 }
 
-SESSION_DIRS: dict[str, Path] = {}
-SESSION_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
-CanonicalFilename = Literal[
-    "payments.csv",
-    "refunds.csv",
-    "settlements.csv",
-    "bank_entries.csv",
-    "ledger_entries.csv",
-]
+
+def _groq_key(settings: Settings) -> str | None:
+    return settings.groq_api_key.get_secret_value() if settings.groq_api_key else None
 
 
-def _get_or_create_session_dir(session_id: str) -> Path:
-    if session_id in SESSION_DIRS and SESSION_DIRS[session_id].is_dir():
-        return SESSION_DIRS[session_id]
-
-    temp_dir = Path(tempfile.mkdtemp(prefix=f"argus_upload_{session_id}_"))
-    SESSION_DIRS[session_id] = temp_dir
-    return temp_dir
-
-
-def _merge_and_save_csv(
-    dest_path: Path,
-    new_csv_text: str,
-    target_filename: str,
-) -> int:
-    """Save or append new CSV records with existing records in the session staging dir.
-
-    Enables stacking multiple files (e.g. API + manual PDF/CSV uploads) without
-    altering source identifiers. Duplicate IDs are intentionally preserved so the
-    normalizer can apply its deterministic duplicate/conflict policy.
-    """
-    cleaned_new = new_csv_text.strip()
-    if not cleaned_new:
-        return 0
-
-    if not dest_path.exists() or dest_path.stat().st_size < 10:
-        with open(dest_path, "w", newline="", encoding="utf-8") as f:
-            f.write(cleaned_new + "\n")
-        return max(0, cleaned_new.count("\n"))
-
-    # Read existing rows
-    existing_rows: list[dict[str, str]] = []
-    fieldnames: list[str] = []
-    with open(dest_path, encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        fieldnames = list(reader.fieldnames or [])
-        for r in reader:
-            existing_rows.append(dict(r))
-
-    # Read incoming new rows
-    new_reader = csv.DictReader(io.StringIO(cleaned_new))
-    new_fieldnames = list(new_reader.fieldnames or [])
-    if not fieldnames:
-        fieldnames = new_fieldnames
-    else:
-        # Merge missing headers if any
-        for h in new_fieldnames:
-            if h not in fieldnames:
-                fieldnames.append(h)
-
-    for r in new_reader:
-        existing_rows.append(dict(r))
-
-    # Write merged file back
-    with open(dest_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(existing_rows)
-
-    return len(existing_rows)
-
-
-class UploadCsvPayload(BaseModel):
-    filename: str = Field(description="Name of the uploaded CSV file")
-    content: str = Field(description="Raw CSV text content")
-    file_type: str = Field(
-        default="auto", description="Target file category (payments, settlements, bank, ledger)"
-    )
-    session_id: str = Field(
-        default="default_session", pattern=SESSION_ID_PATTERN, description="Session identifier"
-    )
-
-
-@router.post("/upload-csv")
-def upload_csv_file(payload: UploadCsvPayload, request: Request) -> dict[str, Any]:
-    """Upload and validate a single CSV file (payments, refunds, settlements, bank, or ledger)."""
-    text_content = payload.content.strip()
-    if not text_content:
-        raise HTTPException(status_code=400, detail="Uploaded CSV content is empty.")
-
-    # Determine target filename & type
-    target_filename = payload.filename or "uploaded.csv"
-    norm_type = payload.file_type.lower().strip()
-
-    if norm_type in FILE_TYPE_MAP:
-        target_filename = FILE_TYPE_MAP[norm_type]
-    elif "payment" in payload.filename.lower():
-        target_filename = "payments.csv"
-        norm_type = "payments"
-    elif "refund" in payload.filename.lower():
-        target_filename = "refunds.csv"
-        norm_type = "refunds"
-    elif "settle" in payload.filename.lower():
-        target_filename = "settlements.csv"
-        norm_type = "settlements"
-    elif "bank" in payload.filename.lower():
-        target_filename = "bank_entries.csv"
-        norm_type = "bank_entries"
-    elif "ledger" in payload.filename.lower():
-        target_filename = "ledger_entries.csv"
-        norm_type = "ledger_entries"
-    else:
-        target_filename = "payments.csv"
-        norm_type = "payments"
-
-    # Canonicalize CSV format to strict AdapterSpec invariants
-    from app.importers.document_extractor import canonicalize_csv_text
-
-    settings: Settings = request.app.state.settings
-    canonical_csv = canonicalize_csv_text(text_content, norm_type, settings=settings)
-    if not canonical_csv.strip():
+@router.post("/analyze-csv")
+def analyze_csv_file(payload: AnalyzeCsvPayload, request: Request) -> dict[str, Any]:
+    """Profile a CSV and propose a bounded, reviewable header mapping."""
+    if not payload.filename.lower().endswith(".csv"):
         raise HTTPException(
-            status_code=400,
+            status_code=415,
             detail=(
-                f"The CSV file {payload.filename!r} does not contain recognizable financial "
-                "transaction headers (e.g. Amount, Date, UTR, Reference ID, Fee, Tax)."
+                "This cornerstone accepts CSV files only. Images, OCR, XLSX and PDF are disabled."
             ),
         )
+    settings: Settings = request.app.state.settings
+    try:
+        result = analyze_csv(
+            content=payload.content,
+            document_type=payload.file_type,
+            groq_api_key=_groq_key(settings),
+            groq_model=settings.groq_schema_model,
+            groq_base_url=settings.groq_base_url,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    result["filename"] = payload.filename
+    result["groq_configured"] = bool(_groq_key(settings))
+    return result
 
-    # Save / Stack into session input directory
-    session_dir = _get_or_create_session_dir(payload.session_id)
-    dest_path = session_dir / target_filename
-    total_stacked_rows = _merge_and_save_csv(dest_path, canonical_csv, target_filename)
 
-    canonical_bytes = canonical_csv.encode("utf-8")
-    sha256_hash = hashlib.sha256(canonical_bytes).hexdigest()
+def validate_canonical_rows(
+    canonical_csv: str, file_type: DocumentType
+) -> tuple[int, int, list[dict[str, Any]]]:
+    spec, parser = _PARSER_BY_TYPE[file_type]
+    reader = csv.DictReader(io.StringIO(canonical_csv))
+    accepted = 0
+    quarantined: list[dict[str, Any]] = []
+    for row_number, row in enumerate(reader, start=1):
+        canonical = {column: str(row.get(column) or "") for column in spec.columns}
+        try:
+            parser(canonical, row_number, f"staged/{spec.file_stem}.csv")
+            accepted += 1
+        except QuarantineSignal as exc:
+            quarantined.append(
+                {
+                    "row_number": row_number,
+                    "reason": exc.reason.value,
+                    "detail": exc.detail,
+                }
+            )
+    return accepted, len(quarantined), quarantined[:20]
 
-    # Parse preview rows
+
+@router.post("/commit-csv")
+def commit_csv_file(payload: CommitCsvPayload, request: Request) -> dict[str, Any]:
+    """Apply a reviewed mapping and stage every row without model-written values."""
+    mapping = {item.target_field: item.source_column for item in payload.mappings}
+    if len(mapping) != len(payload.mappings):
+        raise HTTPException(status_code=400, detail="A target field was mapped more than once.")
+    try:
+        canonical_csv, profile = canonicalize_with_mapping(
+            content=payload.content,
+            document_type=payload.file_type,
+            mapping=mapping,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    accepted, quarantined, quarantine_preview = validate_canonical_rows(
+        canonical_csv, payload.file_type
+    )
+    settings: Settings = request.app.state.settings
+    session_dir = get_or_create_session_dir(payload.session_id, settings)
+    try:
+        activation = stage_source_revision(
+            session_dir=session_dir,
+            source_type=payload.file_type,
+            original_filename=payload.filename,
+            raw_content=payload.content,
+            canonical_csv=canonical_csv,
+            accepted_count=accepted,
+            quarantined_count=quarantined,
+            origin="MANUAL_CSV",
+            mapping=mapping,
+        )
+    except SourceRevisionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     preview_reader = csv.DictReader(io.StringIO(canonical_csv))
-    preview_rows = [dict(r) for idx, r in enumerate(preview_reader) if idx < 5]
-
+    preview_rows = [dict(row) for index, row in enumerate(preview_reader) if index < 5]
     return {
         "filename": payload.filename,
-        "mapped_filename": target_filename,
-        "file_type": norm_type,
-        "rows_count": total_stacked_rows,
-        "headers": preview_reader.fieldnames or [],
-        "checksum_sha256": sha256_hash,
+        "mapped_filename": activation.canonical_filename,
+        "file_type": payload.file_type,
+        "rows_count": len(profile.rows),
+        "session_rows_count": len(profile.rows),
+        "accepted_count": accepted,
+        "quarantined_count": quarantined,
+        "quarantine_preview": quarantine_preview,
+        "checksum_sha256": profile.sha256,
         "preview_rows": preview_rows,
         "session_id": payload.session_id,
-        "status": "VALIDATED",
+        "status": "READY" if quarantined == 0 else "READY_WITH_WARNINGS",
+        "reused": activation.reused,
+        "revision_id": activation.revision_id,
+        "revision_number": activation.revision_number,
+        "replaced_revision_id": activation.replaced_revision_id,
+        "active": True,
     }
 
 
-class UploadDocumentPayload(BaseModel):
-    filename: str = Field(description="Name of the uploaded PDF or image file")
-    content_base64: str = Field(description="Base64 encoded file content")
-    mime_type: str = Field(default="application/pdf", description="MIME type of document")
-    session_id: str = Field(
-        default="default_session", pattern=SESSION_ID_PATTERN, description="Session identifier"
+_REQUIRED_SOURCE_LABELS = {
+    "payments": "Razorpay payments",
+    "settlements": "Razorpay settlements",
+    "bank_entries": "bank statement",
+    "ledger_entries": "merchant ledger",
+}
+
+
+def _session_readiness(session_dir: Path) -> dict[str, Any]:
+    materialize_active_sources(session_dir)
+    status = session_source_status(session_dir)
+    active = status["active_sources"]
+    missing = [label for source, label in _REQUIRED_SOURCE_LABELS.items() if source not in active]
+    empty = [
+        label
+        for source, label in _REQUIRED_SOURCE_LABELS.items()
+        if source in active and int(active[source]["accepted_count"]) == 0
+    ]
+    gateway_ready = all(
+        source in active and int(active[source]["accepted_count"]) > 0
+        for source in ("payments", "settlements")
     )
-
-
-@router.post("/upload-document")
-def upload_document_file(payload: UploadDocumentPayload, request: Request) -> dict[str, Any]:
-    """Extract tabular financial data from an uploaded PDF or image using Vision / OCR."""
-    from app.importers.document_extractor import (
-        convert_extracted_records_to_csv,
-        extract_financial_data_from_document,
+    # Legacy full-demo bundles generated both merchant sides from gateway data.
+    # Keep those immutable revisions for audit, but require independent uploads
+    # before this intake workflow can reconcile. Uploaded synthetic fixtures are
+    # valid demo inputs; automatically manufactured receipt/accounting is not.
+    merchant_upload_required = [
+        source
+        for source in ("bank_entries", "ledger_entries")
+        if source in active and active[source]["origin"] == "SYNTHETIC_DEMO"
+    ]
+    bank_ready = (
+        "bank_entries" in active
+        and int(active["bank_entries"]["accepted_count"]) > 0
+        and "bank_entries" not in merchant_upload_required
     )
-
-    if not payload.content_base64.strip():
-        raise HTTPException(status_code=400, detail="Document content is empty.")
-
-    extracted = extract_financial_data_from_document(
-        filename=payload.filename,
-        content_base64=payload.content_base64,
-        mime_type=payload.mime_type,
-        settings=request.app.state.settings,
+    ledger_ready = (
+        "ledger_entries" in active
+        and int(active["ledger_entries"]["accepted_count"]) > 0
+        and "ledger_entries" not in merchant_upload_required
     )
-
-    records = extracted.get("records", [])
-    if not extracted.get("is_financial", True) or not records:
-        err_msg = extracted.get(
-            "error",
-            (
-                f"The file {payload.filename!r} is not a recognized banking or payment record. "
-                "No financial transaction tables detected."
-            ),
-        )
-        raise HTTPException(status_code=400, detail=err_msg)
-
-    doc_type = extracted.get("document_type", "payments")
-    csv_text = convert_extracted_records_to_csv(records, doc_type)
-
-    target_filename = FILE_TYPE_MAP.get(doc_type, "payments.csv")
-    session_dir = _get_or_create_session_dir(payload.session_id)
-    dest_path = session_dir / target_filename
-    total_stacked_rows = _merge_and_save_csv(dest_path, csv_text, target_filename)
-
-    raw_bytes = csv_text.encode("utf-8")
-    sha256_hash = hashlib.sha256(raw_bytes).hexdigest()
-
+    payments_available = "payments" in active and int(active["payments"]["accepted_count"]) > 0
+    if gateway_ready and bank_ready and ledger_ready:
+        lifecycle_state = "READY_TO_RECONCILE"
+    elif gateway_ready and not bank_ready:
+        lifecycle_state = "AWAITING_BANK_EVIDENCE"
+    elif gateway_ready and not ledger_ready:
+        lifecycle_state = "AWAITING_LEDGER_EVIDENCE"
+    elif payments_available:
+        lifecycle_state = "AWAITING_RAZORPAY_SETTLEMENT"
+    else:
+        lifecycle_state = "GATEWAY_IMPORT_REQUIRED"
     return {
-        "filename": payload.filename,
-        "mapped_filename": target_filename,
-        "file_type": doc_type,
-        "rows_count": total_stacked_rows,
-        "checksum_sha256": sha256_hash,
-        "preview_rows": records[:5],
-        "session_id": payload.session_id,
-        "extractor": extracted.get("extractor", "multimodal_vision"),
-        "status": "VALIDATED",
+        **status,
+        "ready": gateway_ready and bank_ready and ledger_ready,
+        "gateway_ready": gateway_ready,
+        "bank_ready": bank_ready,
+        "ledger_ready": ledger_ready,
+        "ready_source_groups": sum((gateway_ready, bank_ready, ledger_ready)),
+        "missing_sources": missing,
+        "empty_sources": empty,
+        "merchant_upload_required": merchant_upload_required,
+        "settlement_reconciliation_required": (
+            "settlements" not in active or int(active["settlements"]["accepted_count"]) == 0
+        ),
+        "lifecycle_state": lifecycle_state,
+        "gateway_import_id": (
+            active.get("payments", {}).get("external_import_id")
+            if isinstance(active.get("payments"), dict)
+            else None
+        ),
     }
 
 
-class StreamExtractPayload(BaseModel):
-    filename: str = Field(description="Name of the file to extract")
-    content: str = Field(default="", description="Raw text or CSV content")
-    content_base64: str = Field(default="", description="Base64 encoded PDF or image content")
-    mime_type: str = Field(default="text/csv", description="MIME type")
-    file_type: str = Field(default="auto", description="File category")
-    session_id: str = Field(
-        default="default_session", pattern=SESSION_ID_PATTERN, description="Session identifier"
+@router.get("/sessions/{session_id}/status")
+def get_ingest_session_status(session_id: str, request: Request) -> dict[str, Any]:
+    if not re.fullmatch(SESSION_ID_PATTERN, session_id):
+        raise HTTPException(status_code=422, detail="Invalid import session identifier.")
+    settings: Settings = request.app.state.settings
+    session_dir = resolve_session_dir(settings, session_id, create=False)
+    if not session_dir.is_dir():
+        return {
+            "session_id": session_id,
+            "ready": False,
+            "gateway_ready": False,
+            "bank_ready": False,
+            "ledger_ready": False,
+            "ready_source_groups": 0,
+            "missing_sources": list(_REQUIRED_SOURCE_LABELS.values()),
+            "empty_sources": [],
+            "merchant_upload_required": [],
+            "settlement_reconciliation_required": True,
+            "lifecycle_state": "GATEWAY_IMPORT_REQUIRED",
+            "gateway_import_id": None,
+            "active_sources": {},
+            "revision_counts": {source: 0 for source in CANONICAL_FILENAMES},
+        }
+    try:
+        return {"session_id": session_id, **_session_readiness(session_dir)}
+    except SourceRevisionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/upload-csv", status_code=409)
+def legacy_upload_csv_disabled() -> None:
+    raise HTTPException(
+        status_code=409,
+        detail="Direct upload is disabled. Analyze the CSV, review its mapping, then commit it.",
     )
-
-
-@router.post("/stream-extract")
-def stream_document_extraction(
-    payload: StreamExtractPayload, request: Request
-) -> StreamingResponse:
-    """Stream live Python sandbox execution, task checklist, and terminal STDOUT via SSE."""
-    from app.importers.sandbox_runner import run_sandbox_extraction_stream
-
-    gen = run_sandbox_extraction_stream(
-        filename=payload.filename,
-        raw_content=payload.content,
-        content_base64=payload.content_base64,
-        mime_type=payload.mime_type,
-        file_type=payload.file_type,
-        session_id=payload.session_id,
-        settings=request.app.state.settings,
-    )
-    return StreamingResponse(gen, media_type="text/event-stream")
-
-
-class CommitExtractedPayload(BaseModel):
-    session_id: str = Field(pattern=SESSION_ID_PATTERN, description="Session ID to save into")
-    target_filename: CanonicalFilename = Field(
-        description="Canonical normalized target filename (e.g. bank_entries.csv)"
-    )
-    canonical_csv: str = Field(description="Normalized CSV text to save")
-
-
-@router.post("/commit-extracted")
-def commit_extracted_file(payload: CommitExtractedPayload) -> dict[str, Any]:
-    """Commit verified canonical CSV data directly into the session directory."""
-    if not payload.canonical_csv.strip():
-        raise HTTPException(status_code=400, detail="Cannot commit empty canonical CSV.")
-
-    session_dir = _get_or_create_session_dir(payload.session_id)
-    dest_path = session_dir / payload.target_filename
-    total_stacked_rows = _merge_and_save_csv(
-        dest_path, payload.canonical_csv, payload.target_filename
-    )
-
-    canonical_bytes = payload.canonical_csv.encode("utf-8")
-    sha256_hash = hashlib.sha256(canonical_bytes).hexdigest()
-
-    return {
-        "status": "COMMITTED",
-        "target_filename": payload.target_filename,
-        "rows_count": total_stacked_rows,
-        "session_id": payload.session_id,
-        "checksum_sha256": sha256_hash,
-    }
 
 
 class ReconcileSessionPayload(BaseModel):
@@ -326,7 +316,7 @@ def reconcile_uploaded_session(
     """Execute deterministic reconciliation on uploaded session files."""
     db: Database = request.app.state.db
     settings: Settings = request.app.state.settings
-    session_dir = SESSION_DIRS.get(payload.session_id)
+    session_dir = resolve_session_dir(settings, payload.session_id, create=False)
 
     if not session_dir or not session_dir.is_dir():
         raise HTTPException(
@@ -337,86 +327,39 @@ def reconcile_uploaded_session(
             ),
         )
 
-    # Ensure standard schema files exist (empty template with headers if unprovided by user)
-    standard_schemas = [
-        (
-            "payments.csv",
-            [
-                "payment_id",
-                "order_id",
-                "status",
-                "currency",
-                "gross_amount",
-                "fee_amount",
-                "tax_amount",
-                "captured_at_utc",
-                "settlement_id",
-            ],
-        ),
-        (
-            "refunds.csv",
-            [
-                "refund_id",
-                "payment_id",
-                "status",
-                "currency",
-                "refund_amount",
-                "created_at_utc",
-                "settlement_id",
-            ],
-        ),
-        (
-            "settlements.csv",
-            [
-                "settlement_id",
-                "settled_at_utc",
-                "window_start_utc",
-                "window_end_utc",
-                "status",
-                "currency",
-                "gross_credit",
-                "fee_amount",
-                "tax_amount",
-                "adjustment_amount",
-                "net_amount",
-                "utr",
-            ],
-        ),
-        (
-            "bank_entries.csv",
-            [
-                "bank_entry_id",
-                "posted_at_utc",
-                "value_date",
-                "currency",
-                "signed_amount",
-                "narration",
-                "utr",
-                "account_fingerprint",
-            ],
-        ),
-        (
-            "ledger_entries.csv",
-            [
-                "ledger_entry_id",
-                "account_code",
-                "accounting_date",
-                "currency",
-                "signed_amount",
-                "source_reference",
-                "source_type",
-                "description",
-                "entry_origin",
-            ],
-        ),
-    ]
+    try:
+        readiness = _session_readiness(session_dir)
+    except SourceRevisionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not readiness["ready"]:
+        details: list[str] = []
+        if readiness["missing_sources"]:
+            details.append("missing: " + ", ".join(readiness["missing_sources"]))
+        if readiness["empty_sources"]:
+            details.append("no eligible rows: " + ", ".join(readiness["empty_sources"]))
+        if readiness["merchant_upload_required"]:
+            details.append(
+                "separate merchant upload required: "
+                + ", ".join(
+                    _REQUIRED_SOURCE_LABELS[source]
+                    for source in readiness["merchant_upload_required"]
+                )
+            )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Full reconciliation is not ready (" + "; ".join(details) + "). "
+                "Imported sources remain available, but ARGUS will not create a complete run "
+                "until Razorpay, bank, and ledger evidence are present."
+            ),
+        )
 
-    for filename, headers in standard_schemas:
-        target = session_dir / filename
-        if not target.exists():
-            with open(target, "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(headers)
+    # A period with no refunds is legitimate. Represent it explicitly with a
+    # header-only source instead of fabricating refund events.
+    refund_path = session_dir / "refunds.csv"
+    if not refund_path.exists():
+        with refund_path.open("w", newline="", encoding="utf-8") as handle:
+            csv.writer(handle).writerow(REFUND_SPEC.columns)
 
     exec_mode: Literal["rules-only", "agent"] = (
         "agent" if payload.mode.lower() in ("agent", "ai-assisted") else "rules-only"

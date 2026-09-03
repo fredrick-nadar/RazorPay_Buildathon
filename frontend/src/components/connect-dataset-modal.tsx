@@ -1,17 +1,25 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { AnimatePresence, motion } from "motion/react";
-import DecryptedText from "./ui/decrypted-text";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { formatINR } from "../lib/format";
 import {
-  IconBolt,
-  IconCheck,
-  IconPlug,
-  IconRazorpay,
-  IconUpload,
-  IconX,
-} from "./icons";
-import { SandboxExtractionStudio, type ExtractedResult } from "./sandbox-extraction-studio";
+  buildDemoView,
+  buildGatewayView,
+  capturedPaymentCount,
+  describeDossierPage,
+  type GatewayImportDetail,
+  type RazorpaySyncResult,
+} from "../lib/gateway-view";
+import {
+  activeImportId,
+  importSessionReducer,
+  INITIAL_IMPORT_SESSION_STATE,
+} from "../lib/import-session-state";
+import { createImportSessionId } from "../lib/session-id";
+import { IconCheck, IconRazorpay, IconUpload, IconX } from "./icons";
+
+type DocumentType = "payments" | "refunds" | "settlements" | "bank_entries" | "ledger_entries";
 
 interface ConnectDatasetModalProps {
   open: boolean;
@@ -19,270 +27,406 @@ interface ConnectDatasetModalProps {
   onSyncSuccess: (runId: string, summary: Record<string, unknown> | null) => void;
 }
 
-interface UploadedFileSummary {
-  filename: string;
-  mapped_filename: string;
-  file_type: string;
-  rows_count: number;
-  checksum_sha256: string;
-  status: string;
+interface MappingDecision {
+  target_field: string;
+  source_column: string;
+  origin: "EXACT" | "ALIAS" | "GROQ";
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+  reason: string;
 }
 
-const SYNC_PROGRESS_MESSAGES = [
-  "Connecting to Razorpay Test Mode...",
-  "Establishing a secure data channel...",
-  "Authenticating the reconciliation request...",
-  "Fetching payment and settlement records...",
-  "Retrieving linked refunds and adjustments...",
-  "Normalizing transaction timestamps...",
-  "Aligning payment, order and settlement references...",
-  "Mapping records across the financial pipeline...",
-  "Building the five-way ledger graph...",
-  "Tracing each transaction to its settlement path...",
-  "Checking for duplicate ledger entries...",
-  "Checking for missing ledger postings...",
-  "Validating fees, taxes and adjustments...",
-  "Comparing expected and settled amounts...",
-  "Reconciling refunds against original payments...",
-  "Analyzing settlement timing windows...",
-  "Resolving cross-source reference mismatches...",
-  "Generating integer-paise proofs...",
-  "Verifying arithmetic consistency...",
-  "Evaluating reconciliation exceptions...",
-  "Tracing exceptions back to source records...",
-  "Cross-checking evidence across connected records...",
-  "Running deterministic financial checks...",
-  "Validating every proposed match...",
-  "Checking evidence for unresolved records...",
-  "Preparing the exception set...",
-  "Finalizing verified reconciliation...",
-  "Compiling the reconciliation report...",
-  "Preparing results for the control room..."
-];
+interface CsvAnalysis {
+  filename: string;
+  document_type: DocumentType;
+  source_sha256: string;
+  row_count: number;
+  headers: string[];
+  mappings: MappingDecision[];
+  required_fields: string[];
+  missing_required_fields: string[];
+  missing_optional_fields: string[];
+  warnings: string[];
+  status: "READY" | "REVIEW_REQUIRED";
+  mapping_provider: "DETERMINISTIC" | "GROQ_ASSISTED";
+  groq_configured: boolean;
+}
 
-const UPLOAD_PROGRESS_MESSAGES = [
-  "Reading financial documents...",
-  "Parsing columns with Vision...",
-  "Canonicalizing vendor headers...",
-  "Calculating deterministic matches...",
-  "Finalizing verified ledger...",
-];
+interface PendingCsv {
+  filename: string;
+  content: string;
+  fileType: DocumentType;
+  analysis: CsvAnalysis;
+}
 
-export function ConnectDatasetModal({
-  open,
-  onClose,
-  onSyncSuccess,
-}: ConnectDatasetModalProps) {
-  const [selectedSource, setSelectedSource] = useState<"razorpay" | "csv">("razorpay");
-  const [status, setStatus] = useState<{
-    configured: boolean;
-    key_id_masked: string | null;
-    base_url: string;
-  } | null>(null);
+interface ActiveSource {
+  revision_id: string;
+  revision_number: number;
+  source_type: DocumentType;
+  original_filename: string;
+  origin: string;
+  external_import_id: string | null;
+  row_count: number;
+  accepted_count: number;
+  quarantined_count: number;
+  canonical_sha256: string;
+}
 
-  const [customKeyId, setCustomKeyId] = useState("");
-  const [customKeySecret, setCustomKeySecret] = useState("");
+interface SessionStatus {
+  ready: boolean;
+  gateway_ready: boolean;
+  bank_ready: boolean;
+  ledger_ready: boolean;
+  ready_source_groups: number;
+  settlement_reconciliation_required: boolean;
+  active_sources: Partial<Record<DocumentType, ActiveSource>>;
+  revision_counts: Partial<Record<DocumentType, number>>;
+  lifecycle_state: string;
+  gateway_import_id: string | null;
+  merchant_upload_required?: DocumentType[];
+}
+
+interface DemoEvidenceResult {
+  evidence_id: string;
+  provenance: "SYNTHETIC_DEMO";
+  production_eligible: false;
+  reused: boolean;
+  message: string;
+}
+
+const IMPORT_SESSION_KEY = "argus_import_session_v1";
+
+function utcDateOffset(days: number): string {
+  const value = new Date();
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+const TARGET_FIELDS: Record<DocumentType, string[]> = {
+  payments: ["payment_id", "order_id", "status", "currency", "gross_amount", "fee_amount", "tax_amount", "captured_at_utc", "settlement_id"],
+  refunds: ["refund_id", "payment_id", "status", "currency", "refund_amount", "created_at_utc", "settlement_id"],
+  settlements: ["settlement_id", "settled_at_utc", "window_start_utc", "window_end_utc", "status", "currency", "gross_credit", "fee_amount", "tax_amount", "adjustment_amount", "net_amount", "utr"],
+  bank_entries: ["bank_entry_id", "posted_at_utc", "value_date", "currency", "signed_amount", "narration", "utr", "account_fingerprint"],
+  ledger_entries: ["ledger_entry_id", "account_code", "accounting_date", "currency", "signed_amount", "source_reference", "source_type", "description", "entry_origin"],
+};
+
+const LABELS: Record<DocumentType, string> = {
+  payments: "Razorpay payments",
+  refunds: "Razorpay refunds",
+  settlements: "Razorpay settlements",
+  bank_entries: "Bank statement",
+  ledger_entries: "Merchant ledger",
+};
+
+function ApiError({ message }: { message: string }) {
+  return (
+    <div role="alert" className="rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 text-xs font-medium text-slate-800">
+      {message}
+    </div>
+  );
+}
+
+function StatusMark({ ready, label }: { ready: boolean; label: string }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${ready ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${ready ? "bg-white" : "bg-slate-300"}`} />
+      {label}
+    </span>
+  );
+}
+
+export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDatasetModalProps) {
+  const [sessionId, setSessionId] = useState("");
+  const [keyId, setKeyId] = useState("");
+  const [keySecret, setKeySecret] = useState("");
+  const [periodStart, setPeriodStart] = useState(() => utcDateOffset(-30));
+  const [periodEnd, setPeriodEnd] = useState(() => utcDateOffset(0));
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [syncResult, setSyncResult] = useState<{
-    payments_count: number;
-    refunds_count: number;
-    settlements_count: number;
-    data_source: "razorpay_test_mode" | "synthetic_fallback";
-    provider_warning: string | null;
-  } | null>(null);
-
-  // CSV Ingest state
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFileSummary[]>([]);
-  const [activeSandboxFile, setActiveSandboxFile] = useState<{
-    filename: string;
-    content?: string;
-    contentBase64?: string;
-    mimeType?: string;
-  } | null>(null);
-  const [reconcilingSession, setReconcilingSession] = useState(false);
-  const [reconcileMode, setReconcileMode] = useState<"rules-only" | "ai-assisted">("ai-assisted");
-  const [csvError, setCsvError] = useState<string | null>(null);
-  const [sessionId] = useState(() => `session_${Math.random().toString(36).slice(2, 9)}`);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Dynamic progress message index
-  const [syncMsgIdx, setSyncMsgIdx] = useState(0);
-  const [uploadMsgIdx, setUploadMsgIdx] = useState(0);
-
-  useEffect(() => {
-    if (!syncing) {
-      setSyncMsgIdx(0);
-      return;
-    }
-    const timer = setInterval(() => {
-      setSyncMsgIdx((prev) => (prev + 1) % SYNC_PROGRESS_MESSAGES.length);
-    }, 2500);
-    return () => clearInterval(timer);
-  }, [syncing]);
-
-  useEffect(() => {
-    if (!reconcilingSession) {
-      setUploadMsgIdx(0);
-      return;
-    }
-    const timer = setInterval(() => {
-      setUploadMsgIdx((prev) => (prev + 1) % UPLOAD_PROGRESS_MESSAGES.length);
-    }, 2500);
-    return () => clearInterval(timer);
-  }, [reconcilingSession]);
+  const [demoGenerating, setDemoGenerating] = useState(false);
+  // Server state whose correctness depends on ordering and identity lives in
+  // one reducer, so a previous import cannot leak into a newer one and an
+  // out-of-order response cannot overwrite a newer one.
+  const [server, dispatch] = useReducer(importSessionReducer, INITIAL_IMPORT_SESSION_STATE);
+  const requestRef = useRef(0);
+  const [pending, setPending] = useState<PendingCsv | null>(null);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [analyzing, setAnalyzing] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [intendedType, setIntendedType] = useState<DocumentType>("payments");
+  const fileInput = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const mappingDialogRef = useRef<HTMLElement>(null);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     if (!open) return;
-    void (async () => {
-      try {
-        const res = await fetch("/api/v1/razorpay/status");
-        if (res.ok) {
-          const data = await res.json();
-          setStatus(data);
-        }
-      } catch {
-        /* best effort */
+    const dialog = pending ? mappingDialogRef.current : dialogRef.current;
+    if (!dialog) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), select:not(:disabled), summary, [tabindex="0"]',
+    )).filter((element) => element.getClientRects().length > 0);
+    focusable()[0]?.focus();
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (pending) setPending(null);
+        else onClose();
       }
-    })();
-  }, [open]);
+      if (event.key !== "Tab") return;
+      const elements = focusable();
+      const first = elements[0], last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault(); last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault(); first?.focus();
+      }
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [open, pending, onClose]);
 
-  async function handleRazorpaySync() {
-    setSyncing(true);
-    setSyncError(null);
-    setSyncResult(null);
+  useEffect(() => {
+    const existing = window.sessionStorage.getItem(IMPORT_SESSION_KEY);
+    const next = existing ?? createImportSessionId();
+    window.sessionStorage.setItem(IMPORT_SESSION_KEY, next);
+    setSessionId(next);
+  }, []);
+
+  const sessionStatus = server.sessionStatus as SessionStatus | null;
+
+  // Load the link first, then its detail, under ONE epoch. Never fetch an ID
+  // captured by a previous render. Close, reopen and mutations invalidate both.
+  const refreshSession = useCallback(async () => {
+    if (!sessionId) return;
+    const requestId = ++requestRef.current;
+    dispatch({ type: "REFRESH_STARTED", requestId });
     try {
-      const res = await fetch("/api/v1/razorpay/sync", {
+      const response = await fetch(`/api/v1/ingest/sessions/${sessionId}/status`);
+      const status = await response.json();
+      if (!response.ok) throw new Error(status.detail || "Import session status could not be loaded.");
+      if (requestRef.current !== requestId) return;
+      let detail: GatewayImportDetail | null = null;
+      if (status.gateway_import_id) {
+        const detailResponse = await fetch(
+          `/api/v1/razorpay/imports/${encodeURIComponent(status.gateway_import_id)}?session_id=${encodeURIComponent(sessionId)}`,
+        );
+        const result = await detailResponse.json();
+        if (!detailResponse.ok) throw new Error(result.detail || "The linked import could not be restored.");
+        detail = result as GatewayImportDetail;
+        if (detail.import_id !== status.gateway_import_id) throw new Error("Import identity did not match the session.");
+      }
+      if (requestRef.current !== requestId) return;
+      dispatch({ type: "REFRESH_LOADED", requestId, status: status as SessionStatus, detail });
+    } catch (error) {
+      if (requestRef.current !== requestId) return;
+      dispatch({ type: "REFRESH_FAILED", requestId });
+      setSyncError(error instanceof Error ? error.message : "Import state could not be loaded.");
+    }
+  }, [sessionId]);
+
+  const invalidateRequest = useCallback(() => {
+    dispatch({ type: "RESET", requestId: ++requestRef.current });
+  }, []);
+
+  useEffect(() => {
+    if (open) void refreshSession();
+    return invalidateRequest;
+  }, [open, refreshSession, invalidateRequest]);
+
+  const busy = syncing || demoGenerating || analyzing || committing || reconciling || server.refreshing;
+  const activeSources = sessionStatus?.active_sources ?? {};
+  const gatewayReady = sessionStatus?.gateway_ready ?? false;
+  const bankReady = sessionStatus?.bank_ready ?? false;
+  const ledgerReady = sessionStatus?.ledger_ready ?? false;
+  const readyCount = sessionStatus?.ready_source_groups ?? 0;
+  const fullReady = (sessionStatus?.ready ?? false) && !busy;
+  const stagedSources = Object.values(activeSources).filter(
+    (source): source is ActiveSource => source !== undefined,
+  );
+  const currentImportId = activeImportId(server);
+  const gatewayView = useMemo(
+    () =>
+      buildGatewayView(
+        server.syncResult,
+        server.detail,
+        sessionStatus
+          ? {
+              gatewayImportId: sessionStatus.gateway_import_id,
+              settlementReconciliationRequired: sessionStatus.settlement_reconciliation_required,
+            }
+          : null,
+      ),
+    [server.syncResult, server.detail, sessionStatus],
+  );
+  const demoView = useMemo(
+    () => buildDemoView(server.freshDemo, server.detail, currentImportId),
+    [server.freshDemo, server.detail, currentImportId],
+  );
+  const capturedPayments = capturedPaymentCount(gatewayView?.paymentCounts);
+
+  function chooseFile(type: DocumentType) {
+    if (busy) return;
+    setIntendedType(type);
+    setFileError(null);
+    if (fileInput.current) {
+      fileInput.current.value = "";
+      fileInput.current.click();
+    }
+  }
+
+  async function analyzeSelectedFile(file: File | undefined) {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      setFileError("CSV only for this cornerstone. Image, OCR, XLSX and PDF imports are disabled.");
+      return;
+    }
+    setAnalyzing(true);
+    setFileError(null);
+    try {
+      const content = await file.text();
+      const response = await fetch("/api/v1/ingest/analyze-csv", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          key_id: customKeyId.trim() || undefined,
-          key_secret: customKeySecret.trim() || undefined,
-          count: 25,
-          auto_reconcile: true,
-        }),
+        body: JSON.stringify({ filename: file.name, content, file_type: intendedType }),
       });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "The CSV could not be analyzed.");
+      const analysis = result as CsvAnalysis;
+      setPending({ filename: file.name, content, fileType: intendedType, analysis });
+      setMapping(Object.fromEntries(analysis.mappings.map((item) => [item.target_field, item.source_column])));
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : "The CSV could not be analyzed.");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
 
-      if (!res.ok) {
-        let errMsg = "Failed to sync with Razorpay API";
-        try {
-          const err = await res.json();
-          errMsg = err.detail || errMsg;
-        } catch {
-          /* ignore non-json error */
-        }
-        throw new Error(errMsg);
-      }
-
-      const data = await res.json();
-      setSyncResult({
-        payments_count: data.payments_count,
-        refunds_count: data.refunds_count,
-        settlements_count: data.settlements_count,
-        data_source: data.data_source,
-        provider_warning: data.provider_warning,
+  async function commitMapping() {
+    if (!pending || busy) return;
+    const requestId = ++requestRef.current;
+    dispatch({ type: "MUTATION_STARTED", requestId });
+    setCommitting(true);
+    setFileError(null);
+    try {
+      const mappings = Object.entries(mapping).filter(([, source]) => source).map(([target_field, source_column]) => ({ target_field, source_column }));
+      const response = await fetch("/api/v1/ingest/commit-csv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: pending.filename, content: pending.content, file_type: pending.fileType, session_id: sessionId, mappings }),
       });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "The reviewed mapping could not be committed.");
+      if (requestRef.current !== requestId) return;
+      await refreshSession();
+      setPending(null);
+      setMapping({});
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : "The reviewed mapping could not be committed.");
+    } finally {
+      setCommitting(false);
+    }
+  }
 
-      if (data.run_id) {
-        setTimeout(() => {
-          onSyncSuccess(data.run_id, data.summary);
-          onClose();
-        }, 1200);
-      }
-    } catch (e: unknown) {
-      setSyncError(e instanceof Error ? e.message : "Network error while connecting to Razorpay");
+  async function importRazorpay() {
+    if (busy) return;
+    const requestId = ++requestRef.current;
+    setSyncing(true);
+    setSyncError(null);
+    // Invalidates every value scoped to the previous import, including any
+    // demo badge and any detail response still in flight for it.
+    dispatch({ type: "MUTATION_STARTED", requestId });
+    try {
+      const credentials = {
+        key_id: keyId.trim() || undefined,
+        key_secret: keySecret.trim() || undefined,
+      };
+      setKeyId("");
+      setKeySecret("");
+      const response = await fetch("/api/v1/razorpay/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...credentials, count: 1000, session_id: sessionId, period_start: periodStart, period_end: periodEnd, auto_reconcile: false }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Razorpay Test Mode import failed.");
+      if (requestRef.current !== requestId) return;
+      dispatch({ type: "SYNC_SUCCEEDED", requestId, result: result as RazorpaySyncResult });
+      await refreshSession();
+    } catch (error) {
+      if (requestRef.current !== requestId) return;
+      setSyncError(error instanceof Error ? error.message : "Razorpay Test Mode import failed.");
+      await refreshSession();
     } finally {
       setSyncing(false);
     }
   }
 
-  async function handleFilesSelected(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    const file = files[0];
-    if (!file) return;
-
-    setCsvError(null);
-
-    const lowerName = file.name.toLowerCase();
-    const isCsv = lowerName.endsWith(".csv");
-    const isPdf = lowerName.endsWith(".pdf");
-    const isImage =
-      lowerName.endsWith(".png") ||
-      lowerName.endsWith(".jpg") ||
-      lowerName.endsWith(".jpeg") ||
-      lowerName.endsWith(".webp");
-
-    if (!isCsv && !isPdf && !isImage) return;
-
+  async function generateDemoEvidence() {
+    const importId = currentImportId;
+    if (!importId || !sessionId || busy || !server.detail?.demo_generation?.eligible) return;
+    const requestId = ++requestRef.current;
+    dispatch({ type: "MUTATION_STARTED", requestId });
+    setDemoGenerating(true);
+    setSyncError(null);
     try {
-      if (isCsv) {
-        const text = await file.text();
-        setActiveSandboxFile({
-          filename: file.name,
-          content: text,
-          mimeType: "text/csv",
-        });
-      } else {
-        const arrayBuffer = await file.arrayBuffer();
-        const bytes = new Uint8Array(arrayBuffer);
-        let binary = "";
-        for (let j = 0; j < bytes.byteLength; j++) {
-          binary += String.fromCharCode(bytes[j] ?? 0);
-        }
-        const base64Content = btoa(binary);
-        const mimeType = isPdf
-          ? "application/pdf"
-          : lowerName.endsWith(".png")
-            ? "image/png"
-            : lowerName.endsWith(".webp")
-              ? "image/webp"
-              : "image/jpeg";
-
-        setActiveSandboxFile({
-          filename: file.name,
-          contentBase64: base64Content,
-          mimeType,
-        });
+      // Never fall back to the legacy endpoint: an older running backend
+      // implements that action as a five-source bundle, including merchant files.
+      const response = await fetch(`/api/v1/razorpay/imports/${encodeURIComponent(importId)}/generate-gateway-evidence`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      if (response.status === 404 || response.status === 405) {
+        throw new Error("Gateway-only generation is unavailable on this backend. Restart the backend with the updated code; no legacy generation was attempted.");
       }
-    } catch (err) {
-      setCsvError(err instanceof Error ? err.message : "Error reading file");
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Demo evidence could not be generated.");
+      if (requestRef.current !== requestId) return;
+      const evidence = result as DemoEvidenceResult;
+      dispatch({
+        type: "DEMO_SUCCEEDED",
+        requestId,
+        evidence: {
+          importId,
+          evidence_id: evidence.evidence_id,
+          provenance: evidence.provenance,
+          message: evidence.message,
+        },
+      });
+      await refreshSession();
+    } catch (error) {
+      if (requestRef.current !== requestId) return;
+      setSyncError(error instanceof Error ? error.message : "Demo evidence could not be generated.");
+      await refreshSession();
+    } finally {
+      setDemoGenerating(false);
     }
   }
 
-  function handleRemoveFile(filename: string) {
-    setUploadedFiles((prev) => prev.filter((f) => f.filename !== filename));
-  }
-
-  async function handleReconcileUploadedSession() {
-    if (uploadedFiles.length === 0) return;
-    setReconcilingSession(true);
-    setCsvError(null);
-
+  async function runReconciliation() {
+    if (!fullReady) return;
+    setReconciling(true);
+    setFileError(null);
     try {
-      const res = await fetch("/api/v1/ingest/reconcile-session", {
+      const response = await fetch("/api/v1/ingest/reconcile-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: sessionId,
-          fallback_profile: "dev",
-          mode: reconcileMode === "ai-assisted" ? "agent" : "rules-only",
-        }),
+        body: JSON.stringify({ session_id: sessionId, mode: "agent" }),
       });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Failed to reconcile uploaded files");
-      }
-
-      const data = await res.json();
-      if (data.run_id) {
-        onSyncSuccess(data.run_id, data.summary);
-        onClose();
-      }
-    } catch (err) {
-      setCsvError(err instanceof Error ? err.message : "Error executing reconciliation");
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Full reconciliation could not start.");
+      onSyncSuccess(result.run_id, result.summary ?? null);
+      onClose();
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : "Full reconciliation could not start.");
     } finally {
-      setReconcilingSession(false);
+      setReconciling(false);
     }
   }
 
@@ -290,634 +434,214 @@ export function ConnectDatasetModal({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-        {/* Backdrop */}
-        <motion.div
+      <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-3 sm:p-6">
+        <motion.button
+          type="button"
+          aria-label="Close import dialog"
+          className="fixed inset-0 bg-slate-950/45 backdrop-blur-[2px]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
-          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity"
         />
-
-        {/* Modal Container */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 15 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          transition={{ type: "spring", stiffness: 380, damping: 28 }}
-          className="relative w-full max-w-3xl overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-2xl z-10 text-slate-900"
+        <motion.section
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
+          aria-labelledby="import-title"
+          initial={{ opacity: 0, y: 16, scale: 0.99 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 10, scale: 0.995 }}
+          transition={{ duration: reducedMotion ? 0 : 0.2, ease: [0.22, 1, 0.36, 1] }}
+          className="relative z-10 my-auto flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-[#f8fafc] text-slate-900 shadow-[0_32px_90px_rgba(15,23,42,0.22)] [&_button]:focus-visible:outline-2 [&_button]:focus-visible:outline-offset-2 [&_button]:focus-visible:outline-slate-900 [&_summary]:focus-visible:outline-2 [&_summary]:focus-visible:outline-slate-900"
         >
-          {/* Header */}
-          <div className="flex items-center justify-between pb-5 border-b border-slate-100">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-900 shadow-2xs">
-                <IconPlug size={20} />
-              </div>
+          <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-4 sm:px-5">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-bold tracking-tight text-slate-900">
-                  Connect Datasets & Multi-Source Ingest
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                  Source intake / session {sessionId.slice(-6).toUpperCase()}
+                </p>
+                <h2 id="import-title" className="mt-1 text-lg font-bold tracking-tight text-slate-950">
+                  Import evidence
                 </h2>
-                <p className="text-xs font-medium text-slate-500">
-                  Choose your data source for deterministic financial flight recording.
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
+                  Connect Razorpay, then upload your bank statement and ledger.
                 </p>
               </div>
+              <button type="button" onClick={onClose} className="rounded-full border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950" aria-label="Close">
+                <IconX size={16} />
+              </button>
             </div>
-            <button
-              onClick={onClose}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-              aria-label="Close dialog"
-            >
-              <IconX size={16} />
-            </button>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+              <div className="flex gap-1.5" aria-label="Source readiness">
+                <StatusMark ready={gatewayReady} label="1 · Gateway" />
+                <StatusMark ready={bankReady} label="2 · Bank" />
+                <StatusMark ready={ledgerReady} label="3 · Ledger" />
+              </div>
+              <span role="status" className="font-mono text-[11px] font-semibold text-slate-600">{server.refreshing ? "Checking sources…" : `${readyCount}/3 sources ready`}</span>
+            </div>
           </div>
 
-          {/* Source Tabs (2-way layout: Live API & User Uploads) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-6">
-            {/* Tab 1: Razorpay Live API */}
-            <button
-              type="button"
-              onClick={() => setSelectedSource("razorpay")}
-              className={`flex flex-col text-left p-4 rounded-2xl border transition-all ${selectedSource === "razorpay"
-                ? "border-slate-900 bg-slate-50/80 shadow-xs ring-1 ring-slate-900"
-                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
-                }`}
-            >
-              <div className="flex items-center justify-between w-full mb-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xs">
-                  <IconRazorpay size={18} />
+          <input ref={fileInput} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => void analyzeSelectedFile(event.target.files?.[0])} />
+
+          <div className="min-h-0 space-y-3 overflow-y-auto p-3 sm:p-5">
+            <article className="rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex gap-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-950 font-mono text-xs font-bold text-white">01</span>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-[13px] font-bold text-slate-950">Razorpay Test Mode</h3>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-slate-600">Official APIs</span>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-slate-500">Official API data · Test credentials only</p>
+                  </div>
                 </div>
-                {selectedSource === "razorpay" && (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-white">
-                    <IconCheck size={12} className="text-white" />
-                  </span>
-                )}
+                <StatusMark ready={gatewayReady} label={gatewayReady ? "Gateway ready" : "Required"} />
               </div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <h3 className="text-xs font-bold text-slate-900">Razorpay Live API</h3>
-                <span className="rounded-full bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 inline-flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Live Gateway
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
-                Fetch live test-mode orders, payments & settlements directly from Razorpay.
-              </p>
-            </button>
-
-            {/* Tab 2: Multi-Format Ingestion Zone */}
-            <button
-              type="button"
-              onClick={() => setSelectedSource("csv")}
-              className={`flex flex-col text-left p-4 rounded-2xl border transition-all ${selectedSource === "csv"
-                ? "border-slate-900 bg-slate-50/80 shadow-xs ring-1 ring-slate-900"
-                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
-                }`}
-            >
-              <div className="flex items-center justify-between w-full mb-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xs">
-                  <IconUpload size={16} />
+              <div className="mt-3 space-y-3">
+                <details key={currentImportId ?? "new-import"} open={!gatewayView} className="group rounded-lg border border-slate-200 px-3 py-2">
+                  <summary className="cursor-pointer text-xs font-semibold text-slate-700">{gatewayView ? "Import another period" : "Connect your Test Mode account"}</summary>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+                  {[
+                    ["Test Key ID", keyId, setKeyId, "rzp_test_...", "text"],
+                    ["Test Key Secret", keySecret, setKeySecret, "Never logged or returned", "password"],
+                  ].map(([label, value, setter, placeholder, inputType]) => (
+                    <label key={String(label)} className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                      {String(label)}
+                      <input type={String(inputType)} value={String(value)} onChange={(event) => (setter as typeof setKeyId)(event.target.value)} placeholder={String(placeholder)} autoComplete={inputType === "password" ? "new-password" : "off"} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 font-mono text-xs font-medium normal-case tracking-normal text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-900 focus:bg-white" />
+                    </label>
+                  ))}
+                  <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Period start<input type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 font-mono text-xs font-medium normal-case tracking-normal text-slate-900 outline-none transition-colors focus:border-slate-900 focus:bg-white" /></label>
+                  <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Period end<input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 font-mono text-xs font-medium normal-case tracking-normal text-slate-900 outline-none transition-colors focus:border-slate-900 focus:bg-white" /></label>
                 </div>
-                {selectedSource === "csv" && (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-white">
-                    <IconCheck size={12} className="text-white" />
-                  </span>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <button type="button" onClick={() => void importRazorpay()} disabled={busy || !sessionId || !keyId.trim() || !keySecret.trim() || !periodStart || !periodEnd || periodStart > periodEnd} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"><IconRazorpay size={14} />{syncing ? "Retrieving Razorpay data…" : "Connect and retrieve Razorpay data"}</button>
+                  <span className="text-[11px] text-slate-500">Credentials are not saved.</span>
+                </div>
+                </details>
+                {syncError && <ApiError message={syncError} />}
+                {gatewayView && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5">
+                      <p className="break-all font-mono text-[10px] text-slate-500">Import {gatewayView.importId}</p>
+                      <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-slate-600">{gatewayView.restored ? "Restored from backend" : "This request"}</span>
+                    </div>
+                    <div aria-label="Official Razorpay API counts" className="grid grid-cols-3 gap-3 border-t border-slate-200 pt-2.5 sm:grid-cols-5">
+                      {[["Orders", gatewayView.ordersCount], ["Payments", gatewayView.paymentCounts.total], ["Refunds", gatewayView.refundCounts.total], ["Settlements", gatewayView.settlementsCount], ["Recon rows", gatewayView.reconciliationCount]].map(([label, count]) => (
+                        <div key={String(label)}><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{label}</p><p className="mt-0.5 font-mono text-base font-semibold text-slate-950">{count}</p></div>
+                      ))}
+                    </div>
+                    <p className="mt-2 font-mono text-[9px] leading-4 uppercase tracking-wider text-slate-500">{gatewayView.paymentCounts.eligible} of {gatewayView.paymentCounts.total} payments reconciliation-eligible · {gatewayView.refundCounts.eligible} of {gatewayView.refundCounts.total} refunds eligible · official settlement rows {gatewayView.officialSettlementRowsReturned ? "returned" : "not returned"}</p>
+                    <p className="mt-2 text-[11px] text-slate-500">Official counts only — synthetic evidence does not change these totals.</p>
+                  </div>
                 )}
-              </div>
-              <div className="flex items-center gap-1">
-                <h3 className="text-xs font-bold text-slate-900">Upload Documents</h3>
-                <span className="rounded-full bg-blue-50 border border-blue-200 px-1.5 py-0.2 text-[9px] font-bold text-blue-700">
-                  PDF / CSV / OCR
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
-                Explicitly upload merchant bank statements, settlement sheets, or CSVs.
-              </p>
-            </button>
-          </div>
-
-          {/* Action Body Area */}
-          <div className="mt-6 pt-5 border-t border-slate-100">
-
-            {selectedSource === "razorpay" && (
-              <div className="space-y-4">
-                {status?.configured ? (
-                  <div className="flex items-center justify-between p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/60">
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500 text-white">
-                        <IconCheck size={14} className="text-white" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-emerald-900">
-                          Razorpay API Credentials Configured
-                        </p>
-                        <p className="font-mono text-[11px] text-emerald-700">
-                          {status.key_id_masked || "rzp_test_active"} · {status.base_url}
-                        </p>
+                {gatewayView && capturedPayments === 0 && (
+                  <div className="rounded-xl border border-slate-300 bg-white px-3 py-3 text-xs text-slate-900 shadow-2xs"><p className="font-bold">{gatewayView.paymentCounts.total === 0 ? "No payment records in this period" : `No captured payments among ${gatewayView.paymentCounts.total} payment records`}</p><p className="mt-1 text-[11px] leading-5 text-slate-500">{gatewayView.paymentCounts.total === 0 ? "Orders alone are not financial events. Complete Test Mode payments through Razorpay Checkout or choose a period containing captured payments." : `Every payment record in this import is uncaptured or otherwise ineligible (${gatewayView.paymentCounts.not_eligible} not eligible). Nothing here can be reconciled, and no demo evidence can be derived from it.`}</p></div>
+                )}
+                {gatewayView && capturedPayments > 0 && !gatewayView.workflowSettlementReady && (
+                  <div className="overflow-hidden rounded-xl border border-slate-300 bg-white text-xs text-slate-900 shadow-2xs">
+                    <div className="border-b border-slate-200 px-3 py-3 sm:px-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-bold">{gatewayView.paymentCounts.awaiting_settlement} eligible payment{gatewayView.paymentCounts.awaiting_settlement === 1 ? "" : "s"} awaiting settlement evidence</p>
+                          <p className="mt-1 text-[11px] leading-5 text-slate-500">{gatewayView.readinessConfirmed ? "Add labelled gateway evidence to continue this demo." : "Session readiness for this import has not been confirmed yet."}</p>
+                        </div>
+                        <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-wider text-slate-700">Awaiting settlement</span>
                       </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <p className="text-xs font-medium text-slate-600">
-                      Enter your Razorpay Test Mode API keys:
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1">
-                          Key ID
-                        </label>
-                        <input
-                          type="text"
-                          value={customKeyId}
-                          onChange={(e) => setCustomKeyId(e.target.value)}
-                          placeholder="rzp_test_..."
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1">
-                          Key Secret
-                        </label>
-                        <input
-                          type="password"
-                          value={customKeySecret}
-                          onChange={(e) => setCustomKeySecret(e.target.value)}
-                          placeholder="••••••••••••••••"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400"
-                        />
-                      </div>
+                    <div className="bg-slate-50/70 px-3 py-3 sm:px-4">
+                        <p className="text-[11px] leading-5 text-slate-600">Gateway only. Bank and ledger uploads stay separate and unchanged.</p>
+                        {server.detail?.demo_generation?.reason && <p className="mt-2 text-[11px] text-slate-600">{server.detail.demo_generation.reason}</p>}
+                        <button type="button" onClick={() => void generateDemoEvidence()} disabled={busy || !server.detail?.demo_generation?.eligible} className="mt-2.5 rounded-lg border border-slate-900 bg-slate-950 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white transition-colors hover:bg-slate-800 disabled:cursor-wait disabled:border-slate-300 disabled:bg-slate-300">
+                          {demoGenerating ? "Generating gateway evidence…" : "Generate synthetic gateway evidence"}
+                        </button>
+                        <p className="mt-2 font-mono text-[10px] text-slate-600">SYNTHETIC_DEMO · Not Razorpay-issued evidence</p>
                     </div>
                   </div>
                 )}
-
-                {syncError && (
-                  <div className="p-3 rounded-xl border border-rose-200 bg-rose-50 text-xs font-semibold text-rose-800">
-                    ⚠️ {syncError}
+                {demoView && (
+                  <div className="rounded-xl border border-slate-900 bg-slate-950 px-4 py-3 text-white">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-bold">{demoView.heading}</p>
+                      <span className="rounded-full border border-white/30 px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-wider">Not production eligible</span>
+                    </div>
+                    {demoView.activationState !== "ACTIVE" && <p className="mt-1.5 text-[11px] leading-5 text-slate-300">{demoView.message}</p>}
+                    <p className="mt-2 break-all font-mono text-[10px] text-slate-300">Provenance {demoView.provenance} · {demoView.activationState}</p>
+                    <p className="mt-1 text-[11px] text-slate-300">Bank and ledger readiness comes from your separate uploads.</p>
                   </div>
                 )}
-
-                {syncResult && (
-                  <div className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-between ${
-                    syncResult.data_source === "synthetic_fallback"
-                      ? "border-amber-200 bg-amber-50 text-amber-900"
-                      : "border-emerald-200 bg-emerald-50 text-emerald-900"
-                  }`}>
-                    <span>
-                      {syncResult.data_source === "synthetic_fallback" ? "Synthetic fallback loaded" : "Razorpay Test Mode synced"}: {syncResult.payments_count} payments, {syncResult.refunds_count} refunds, {syncResult.settlements_count} settlements.
-                      {syncResult.provider_warning ? ` ${syncResult.provider_warning}` : ""}
-                    </span>
-                    <span className="text-[11px] font-mono opacity-75">Reconciling…</span>
+                {gatewayView && <details className="border-t border-slate-100 pt-2">
+                  <summary className="cursor-pointer py-1 text-[11px] font-semibold text-slate-600">Import details & payment records</summary>
+                  <div className="mt-2 space-y-3 text-[11px] leading-5 text-slate-500">
+                    <p>{gatewayView.message}</p>
+                    <p>{gatewayView.restored ? "Credentials were never persisted" : "Credentials discarded after this request"}</p>
+                    <p className="font-semibold">Gateway intake dossier · all payment records</p>
+                    <div className="space-y-1.5">{gatewayView.dossier.slice(0, 4).map((payment) => (
+                      <div key={payment.payment_id} className="flex items-center justify-between gap-2 font-mono text-[11px]">
+                        <span className="truncate">{payment.payment_id}</span>
+                        <span className="ml-auto rounded border border-slate-200 px-1 text-[10px] uppercase">{payment.status || "unknown"}</span>
+                        <span className="shrink-0 text-slate-900">{formatINR(payment.amount_paise)}</span>
+                      </div>
+                    ))}</div>
+                    <p>{describeDossierPage(gatewayView, 4)}</p>
+                    {demoView && <div className="border-t border-slate-200 pt-2">{demoView.activationState === "ACTIVE" && <p>{demoView.message}</p>}<p className="mt-1 break-all font-mono">Evidence {demoView.evidenceId}{demoView.restored ? " · restored from backend" : ""}</p></div>}
                   </div>
-                )}
+                </details>}
+              </div>
+            </article>
 
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={handleRazorpaySync}
-                    disabled={syncing}
-                    className="w-full flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-xs font-bold text-white shadow-sm hover:bg-slate-800 transition-all disabled:opacity-80"
-                  >
-                    <IconRazorpay size={16} className={`text-white shrink-0 ${syncing ? "animate-pulse" : ""}`} />
-                    <span className="transition-all duration-300">
-                      {syncing ? (
-                        <DecryptedText
-                          text={SYNC_PROGRESS_MESSAGES[syncMsgIdx] ?? "Syncing live data..."}
-                          speed={35}
-                          maxIterations={12}
-                          sequential={true}
-                          revealDirection="start"
-                          animateOn="view"
-                          className="text-white font-mono"
-                          encryptedClassName="text-slate-400 font-mono"
-                        />
-                      ) : (
-                        "Sync & Reconcile Live Gateway Data"
-                      )}
-                    </span>
-                  </button>
-                </div>
+            {Boolean(sessionStatus?.merchant_upload_required?.length) && (
+              <div className="rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-700">
+                <p className="font-bold text-slate-950">Separate merchant uploads required</p>
+                <p>Legacy demo files do not count as merchant uploads. Replace {sessionStatus?.merchant_upload_required?.map((type) => LABELS[type]).join(" and ")} below; history is preserved.</p>
               </div>
             )}
 
-            {selectedSource === "csv" && (
-              activeSandboxFile ? (
-                <SandboxExtractionStudio
-                  filename={activeSandboxFile.filename}
-                  content={activeSandboxFile.content}
-                  contentBase64={activeSandboxFile.contentBase64}
-                  mimeType={activeSandboxFile.mimeType}
-                  sessionId={sessionId}
-                  onCommit={(res: ExtractedResult) => {
-                    setUploadedFiles((prev) => [
-                      ...prev.filter(
-                        (f) => f.filename !== res.filename && f.mapped_filename !== res.mapped_filename
-                      ),
-                      {
-                        filename: res.filename,
-                        mapped_filename: res.mapped_filename,
-                        file_type: res.file_type,
-                        rows_count: res.rows_count,
-                        checksum_sha256: res.checksum_sha256,
-                        status: res.status,
-                      },
-                    ]);
-                    setActiveSandboxFile(null);
-                  }}
-                  onCancel={() => setActiveSandboxFile(null)}
-                />
-              ) : (
-                <div className="space-y-4">
-                  {/* Drag-and-drop drop zone */}
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={(e) => void handleFilesSelected(e.target.files)}
-                    accept=".csv,.pdf,.png,.jpg,.jpeg,.webp"
-                    multiple
-                    className="hidden"
-                  />
-
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      void handleFilesSelected(e.dataTransfer.files);
-                    }}
-                    className="border-2 border-dashed border-slate-300 hover:border-slate-900 rounded-3xl p-6 text-center cursor-pointer transition-all bg-slate-50/50 hover:bg-slate-50 flex flex-col items-center justify-center gap-2"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white border border-slate-200 shadow-2xs text-slate-800">
-                      <IconUpload size={20} />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-900">
-                        Click or drag CSV, PDF statements, or screenshot images to launch Sandbox Studio
-                      </p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Supports CSV, PDF bank statements, and payment settlement screenshots (PNG/JPG/WEBP)
-                      </p>
+            {(["bank_entries", "ledger_entries"] as DocumentType[]).map((type, index) => {
+              const ready = type === "bank_entries" ? bankReady : ledgerReady;
+              const source = activeSources[type];
+              return <article key={type} className="rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex min-w-0 flex-1 gap-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 font-mono text-xs font-bold">0{index + 2}</span>
+                    <div className="min-w-0">
+                      <h3 className="text-[13px] font-bold text-slate-950">{LABELS[type]}</h3>
+                      <p className="mt-1 break-all text-[11px] text-slate-600">{source ? source.original_filename : "Upload a matching synthetic CSV"}</p>
+                      {source && <p className="mt-1 text-[11px] text-slate-500">{source.origin === "MANUAL_CSV" ? "Your upload · saved in this session" : source.origin === "SYNTHETIC_DEMO" ? "Legacy auto-generated file · upload required" : source.origin} · {source.accepted_count} valid rows{source.quarantined_count > 0 ? ` · ${source.quarantined_count} quarantined` : ""}</p>}
                     </div>
                   </div>
-
-                  {csvError && (
-                    <div className="p-3 rounded-xl border border-rose-200 bg-rose-50 text-xs font-semibold text-rose-800">
-                      ⚠️ {csvError}
-                    </div>
-                  )}
-
-                  {/* Uploaded files summary list */}
-                  {uploadedFiles.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                        Validated Ingestion Files ({uploadedFiles.length})
-                      </div>
-                      <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {uploadedFiles.map((file) => {
-                          const isPdf = file.filename.toLowerCase().endsWith(".pdf");
-                          const isCsv = file.filename.toLowerCase().endsWith(".csv");
-                          const extLabel = isPdf ? "PDF" : isCsv ? "CSV" : "IMG";
-                          const extColor = isPdf
-                            ? "bg-rose-50 text-rose-700 border-rose-200"
-                            : isCsv
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : "bg-blue-50 text-blue-700 border-blue-200";
-
-                          return (
-                            <div
-                              key={`${file.filename}-${file.mapped_filename}`}
-                              className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 bg-white text-xs shadow-2xs hover:border-slate-300 transition-all"
-                            >
-                              <div className="flex items-center gap-2 min-w-0 pr-2">
-                                <span
-                                  className={`rounded px-1.5 py-0.5 text-[9px] font-mono font-bold border shrink-0 ${extColor}`}
-                                >
-                                  {extLabel}
-                                </span>
-                                <div className="min-w-0">
-                                  <p className="font-semibold text-slate-900 truncate max-w-[200px] sm:max-w-[260px]">
-                                    {file.filename}
-                                  </p>
-                                  <p className="font-mono text-[10px] text-slate-500 flex items-center gap-1">
-                                    <span>↳ mapped as:</span>
-                                    <span className="font-bold text-slate-700">{file.mapped_filename}</span>
-                                    <span>•</span>
-                                    <span className="font-semibold text-slate-600">{file.rows_count} {file.rows_count === 1 ? "row" : "rows"}</span>
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold text-emerald-700 inline-flex items-center gap-1">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                  Validated
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveFile(file.filename)}
-                                  className="h-6 w-6 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                                  title="Remove file"
-                                >
-                                  <IconX size={12} />
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 3-Pillar Ingestion Triad Checklist */}
-                  {(() => {
-                    const hasRazorpay = uploadedFiles.some(
-                      (f) =>
-                        ["payments", "settlements"].includes(f.file_type.toLowerCase()) ||
-                        ["payments.csv", "settlements.csv"].includes(f.mapped_filename.toLowerCase())
-                    );
-                    const razorpayFile = uploadedFiles.find(
-                      (f) =>
-                        ["payments", "settlements"].includes(f.file_type.toLowerCase()) ||
-                        ["payments.csv", "settlements.csv"].includes(f.mapped_filename.toLowerCase())
-                    );
-
-                    const hasBank = uploadedFiles.some(
-                      (f) =>
-                        ["bank_entries", "bank", "bank_statements"].includes(f.file_type.toLowerCase()) ||
-                        f.mapped_filename.toLowerCase() === "bank_entries.csv"
-                    );
-                    const bankFile = uploadedFiles.find(
-                      (f) =>
-                        ["bank_entries", "bank", "bank_statements"].includes(f.file_type.toLowerCase()) ||
-                        f.mapped_filename.toLowerCase() === "bank_entries.csv"
-                    );
-
-                    const hasLedger = uploadedFiles.some(
-                      (f) =>
-                        ["ledger_entries", "ledger"].includes(f.file_type.toLowerCase()) ||
-                        f.mapped_filename.toLowerCase() === "ledger_entries.csv"
-                    );
-                    const ledgerFile = uploadedFiles.find(
-                      (f) =>
-                        ["ledger_entries", "ledger"].includes(f.file_type.toLowerCase()) ||
-                        f.mapped_filename.toLowerCase() === "ledger_entries.csv"
-                    );
-
-                    const allThreePresent = hasRazorpay && hasBank && hasLedger;
-                    const presentCount = (hasRazorpay ? 1 : 0) + (hasBank ? 1 : 0) + (hasLedger ? 1 : 0);
-
-                    return (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h4 className="text-[11px] font-bold text-slate-900 uppercase tracking-wider">
-                              Reconciliation Triad Checklist
-                            </h4>
-                            <p className="text-[10px] text-slate-500">
-                              3 pillars required for complete 100% automated invariant reconciliation
-                            </p>
-                          </div>
-                          <span
-                            className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
-                              allThreePresent
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                : "bg-amber-50 text-amber-700 border-amber-200"
-                            }`}
-                          >
-                            {presentCount}/3 Pillars Verified
-                          </span>
-                        </div>
-
-                        {/* 3 Pillars Grid */}
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                          {/* Pillar 1: Razorpay */}
-                          <div
-                            className={`p-3 rounded-2xl border transition-all ${
-                              hasRazorpay
-                                ? "border-emerald-300 bg-emerald-50/60 shadow-2xs"
-                                : "border-slate-200 bg-slate-50/50"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
-                                Pillar 1: Gateway
-                              </span>
-                              <span
-                                className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold ${
-                                  hasRazorpay
-                                    ? "bg-emerald-500 text-white"
-                                    : "border border-slate-300 text-slate-400 bg-white"
-                                }`}
-                              >
-                                {hasRazorpay ? "✓" : "1"}
-                              </span>
-                            </div>
-                            <p className="text-xs font-bold text-slate-900">
-                              Razorpay Payments / Payouts
-                            </p>
-                            <p className="text-[10px] font-mono text-slate-500 mt-0.5 truncate">
-                              {hasRazorpay
-                                ? `${razorpayFile?.filename} (${razorpayFile?.rows_count} rows)`
-                                : "Pending: Upload CSV/PDF"}
-                            </p>
-                          </div>
-
-                          {/* Pillar 2: Bank Statement */}
-                          <div
-                            className={`p-3 rounded-2xl border transition-all ${
-                              hasBank
-                                ? "border-emerald-300 bg-emerald-50/60 shadow-2xs"
-                                : "border-slate-200 bg-slate-50/50"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
-                                Pillar 2: Bank Feed
-                              </span>
-                              <span
-                                className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold ${
-                                  hasBank
-                                    ? "bg-emerald-500 text-white"
-                                    : "border border-slate-300 text-slate-400 bg-white"
-                                }`}
-                              >
-                                {hasBank ? "✓" : "2"}
-                              </span>
-                            </div>
-                            <p className="text-xs font-bold text-slate-900">
-                              Bank Statement / UTRs
-                            </p>
-                            <p className="text-[10px] font-mono text-slate-500 mt-0.5 truncate">
-                              {hasBank
-                                ? `${bankFile?.filename} (${bankFile?.rows_count} rows)`
-                                : "Pending: Upload HDFC/ICICI PDF"}
-                            </p>
-                          </div>
-
-                          {/* Pillar 3: Merchant Ledger */}
-                          <div
-                            className={`p-3 rounded-2xl border transition-all ${
-                              hasLedger
-                                ? "border-emerald-300 bg-emerald-50/60 shadow-2xs"
-                                : "border-slate-200 bg-slate-50/50"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
-                                Pillar 3: General Ledger
-                              </span>
-                              <span
-                                className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold ${
-                                  hasLedger
-                                    ? "bg-emerald-500 text-white"
-                                    : "border border-slate-300 text-slate-400 bg-white"
-                                }`}
-                              >
-                                {hasLedger ? "✓" : "3"}
-                              </span>
-                            </div>
-                            <p className="text-xs font-bold text-slate-900">
-                              ERP Merchant Ledger
-                            </p>
-                            <p className="text-[10px] font-mono text-slate-500 mt-0.5 truncate">
-                              {hasLedger
-                                ? `${ledgerFile?.filename} (${ledgerFile?.rows_count} rows)`
-                                : "Pending: Upload Tally/Zoho CSV"}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Triad Status Notification */}
-                        {uploadedFiles.length > 0 && (
-                          <div
-                            className={`p-3 rounded-2xl border text-xs ${
-                              allThreePresent
-                                ? "border-emerald-200 bg-emerald-50/80 text-emerald-900"
-                                : "border-amber-200 bg-amber-50/80 text-amber-900"
-                            }`}
-                          >
-                            {allThreePresent ? (
-                              <div className="flex items-center gap-2 font-semibold">
-                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white shrink-0 text-[10px]">
-                                  ✓
-                                </span>
-                                <span>
-                                  3-Way Triad Complete: Automated 100% invariant reconciliation is ready to run.
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="space-y-0.5">
-                                <div className="flex items-center gap-2 font-bold text-amber-950">
-                                  <span>⚠️ Partial Triad Mode ({presentCount} of 3 Pillars Attached)</span>
-                                </div>
-                                <p className="text-[11px] text-amber-800 leading-relaxed">
-                                  Missing sources will automatically be flagged as unlinked exceptions for manual audit review.
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Execution Mode Selector */}
-                        <div className="pt-2">
-                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 block">
-                            Reconciliation Engine Mode
-                          </label>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setReconcileMode("rules-only")}
-                              className={`p-2.5 rounded-2xl border text-left transition-all ${
-                                reconcileMode === "rules-only"
-                                  ? "border-slate-900 bg-slate-900 text-white shadow-xs"
-                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50/50"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold">⚡ Rules-Only Engine</span>
-                                {reconcileMode === "rules-only" && (
-                                  <span className="text-[9px] bg-white/20 px-1.5 py-0.5 rounded-full font-mono">
-                                    Active
-                                  </span>
-                                )}
-                              </div>
-                              <p
-                                className={`text-[10px] mt-0.5 leading-relaxed ${
-                                  reconcileMode === "rules-only" ? "text-slate-300" : "text-slate-500"
-                                }`}
-                              >
-                                100% Deterministic Integer Math (Instant verification)
-                              </p>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => setReconcileMode("ai-assisted")}
-                              className={`p-2.5 rounded-2xl border text-left transition-all ${
-                                reconcileMode === "ai-assisted"
-                                  ? "border-indigo-600 bg-indigo-600 text-white shadow-xs"
-                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50/50"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold">🤖 AI-Assisted Agent</span>
-                                {reconcileMode === "ai-assisted" && (
-                                  <span className="text-[9px] bg-white/20 px-1.5 py-0.5 rounded-full font-mono">
-                                    Groq / Gemini
-                                  </span>
-                                )}
-                              </div>
-                              <p
-                                className={`text-[10px] mt-0.5 leading-relaxed ${
-                                  reconcileMode === "ai-assisted" ? "text-indigo-200" : "text-slate-500"
-                                }`}
-                              >
-                                Rules Match + LLM Root Cause Investigation Dossier
-                              </p>
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="pt-1">
-                          <button
-                            type="button"
-                            onClick={handleReconcileUploadedSession}
-                            disabled={uploadedFiles.length === 0 || reconcilingSession}
-                            className="w-full flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-xs font-bold text-white shadow-sm hover:bg-slate-800 transition-all disabled:opacity-80"
-                          >
-                            <IconBolt
-                              size={14}
-                              className={`text-white shrink-0 ${reconcilingSession ? "animate-pulse" : ""}`}
-                            />
-                            <span className="transition-all duration-300">
-                              {reconcilingSession ? (
-                                <DecryptedText
-                                  text={UPLOAD_PROGRESS_MESSAGES[uploadMsgIdx] ?? "Reconciling uploaded files..."}
-                                  speed={35}
-                                  maxIterations={12}
-                                  sequential={true}
-                                  revealDirection="start"
-                                  animateOn="view"
-                                  className="text-white font-mono"
-                                  encryptedClassName="text-slate-400 font-mono"
-                                />
-                              ) : allThreePresent ? (
-                                "Run Full Automated 3-Way Reconciliation (All 3 Pillars Verified)"
-                              ) : (
-                                `Reconcile Dataset (${uploadedFiles.length} files attached · Missing will be flagged)`
-                              )}
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })()}
+                  <div className="flex items-center gap-2">
+                    <StatusMark ready={ready} label={ready ? "Uploaded" : "Required"} />
+                    <button type="button" onClick={() => chooseFile(type)} disabled={busy} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"><IconUpload size={14} />{ready ? "Replace CSV" : "Choose CSV"}</button>
+                  </div>
                 </div>
-              )
-            )}
+              </article>;
+            })}
+
+            {(analyzing || fileError) && <div>{analyzing ? <p className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600">Profiling columns and checking known aliases…</p> : fileError && <ApiError message={fileError} />}</div>}
+
+            {stagedSources.length > 0 && <details className="px-1 py-1">
+              <summary className="cursor-pointer text-[11px] font-semibold text-slate-600">Source revisions & validation · {stagedSources.length} active files</summary>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">{stagedSources.map((source) => <div key={source.source_type} className="rounded-lg border border-slate-200 bg-white p-3 text-[11px]"><p className="break-all font-semibold text-slate-900">{source.original_filename}</p><p className="mt-1 text-slate-500">{source.accepted_count}/{source.row_count} valid · {source.quarantined_count} quarantined</p><p className="mt-1 break-all text-slate-500">{LABELS[source.source_type]} · revision {source.revision_number} active · {source.origin} · SHA {source.canonical_sha256.slice(0, 10)}…</p></div>)}</div>
+            </details>}
           </div>
-        </motion.div>
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
+            <p className="text-[11px] text-slate-500">{readyCount === 3 ? "Evidence collected. Reconciliation checks for differences." : "Three independent sources. One verified comparison."}</p>
+            <button type="button" disabled={!fullReady || reconciling} onClick={() => void runReconciliation()} className="rounded-lg bg-slate-950 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{reconciling ? "Starting deterministic run…" : busy && readyCount === 3 ? "Checking sources…" : fullReady ? "Run full reconciliation" : `Waiting for ${3 - readyCount} source${3 - readyCount === 1 ? "" : "s"}`}</button>
+          </div>
+        </motion.section>
+
+        {pending && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-[2px]"><motion.section ref={mappingDialogRef} role="dialog" aria-modal="true" aria-label="Review CSV mapping" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{duration: reducedMotion ? 0 : 0.2}} className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 shadow-[0_28px_80px_rgba(15,23,42,0.24)] sm:p-6">
+          <div className="flex items-start justify-between gap-4"><div><p className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Schema review · {pending.analysis.mapping_provider.replace("_", " ")}</p><h3 className="mt-1 text-lg font-bold text-slate-950">Map {pending.filename}</h3><p className="mt-1 text-xs text-slate-500">Groq suggestions are proposals. Review every required field before deterministic validation.</p></div><button type="button" onClick={() => setPending(null)} className="rounded-full border border-slate-200 p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950"><IconX size={15} /></button></div>
+          <div className="mt-4 overflow-hidden rounded-xl border border-slate-200"><div className="grid grid-cols-[1fr_1fr_auto] gap-3 bg-slate-50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500"><span>ARGUS field</span><span>Uploaded column</span><span>Origin</span></div><div className="max-h-[48vh] divide-y divide-slate-100 overflow-y-auto">{TARGET_FIELDS[pending.fileType].map((target) => {
+            const decision = pending.analysis.mappings.find((item) => item.target_field === target);
+            const required = pending.analysis.required_fields.includes(target);
+            return <div key={target} className="grid grid-cols-[1fr_1fr_auto] items-center gap-3 px-3 py-2.5 text-xs"><div><span className="font-mono font-medium text-slate-700">{target}</span>{required && <span className="ml-1 text-slate-950">*</span>}</div><select value={mapping[target] ?? ""} onChange={(event) => setMapping((current) => ({ ...current, [target]: event.target.value }))} className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs text-slate-900 outline-none transition-colors focus:border-slate-900 focus:bg-white"><option value="">Not mapped</option>{pending.analysis.headers.map((header) => <option key={header} value={header}>{header}</option>)}</select><span className={`w-14 rounded border px-1.5 py-1 text-center font-mono text-[9px] ${decision ? "border-slate-300 bg-slate-100 text-slate-700" : "border-slate-200 bg-white text-slate-400"}`}>{decision?.origin ?? "MANUAL"}</span></div>;
+          })}</div></div>
+          {(pending.analysis.warnings.length > 0 || fileError) && <div className="mt-3 space-y-2">{pending.analysis.warnings.map((warning) => <p key={warning} className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-[11px] text-slate-700">{warning}</p>)}{fileError && <ApiError message={fileError} />}</div>}
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4"><p className="text-[11px] text-slate-500">{pending.analysis.row_count} source rows · SHA {pending.analysis.source_sha256.slice(0, 12)}… · Cell values will not be rewritten by AI. Confirmation preserves this revision and makes it active.</p><div className="flex gap-2"><button type="button" onClick={() => setPending(null)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-950">Cancel</button><button type="button" disabled={committing} onClick={() => void commitMapping()} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-950 px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-slate-800 disabled:bg-slate-300 disabled:text-slate-500"><IconCheck size={14} />{committing ? "Validating every row…" : "Activate revision & validate"}</button></div></div>
+        </motion.section></div>}
       </div>
     </AnimatePresence>
   );

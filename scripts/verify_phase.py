@@ -127,6 +127,7 @@ SECRET_PATTERNS: list[tuple[str, str]] = [
     (r"-----BEGIN [A-Z ]*PRIVATE KEY-----", "private key block"),
     (r"\bAKIA[0-9A-Z]{16}\b", "AWS access key id"),
     (r"\bsk-[A-Za-z0-9_-]{20,}\b", "OpenAI-style API key"),
+    (r"\bgsk_[A-Za-z0-9_-]{20,}\b", "Groq API key"),
     (r"\brzp_(?:live|test)_[0-9A-Za-z]{14,}\b", "Razorpay API key"),
     (r"\bghp_[A-Za-z0-9]{30,}\b", "GitHub token"),
     (r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b", "Slack token"),
@@ -577,12 +578,25 @@ def scan_for_secrets(report: GateReport) -> StepResult:
         relative = path.relative_to(REPO_ROOT)
         if any(part in SKIP_DIRS for part in relative.parts):
             continue
-        if path.suffix.lower() not in SCAN_EXTENSIONS and path.name != ".gitignore":
-            continue
         if path.name == ".env" or (
             path.name.startswith(".env.") and path.name != ".env.example"
         ):
-            findings.append(f"stray env file: {relative}")
+            try:
+                ignored = (
+                    subprocess.run(
+                        ["git", "check-ignore", "--quiet", "--", str(relative)],
+                        cwd=str(REPO_ROOT),
+                        check=False,
+                        capture_output=True,
+                    ).returncode
+                    == 0
+                )
+            except OSError:
+                ignored = False
+            if not ignored:
+                findings.append(f"unignored env file: {relative}")
+            continue
+        if path.suffix.lower() not in SCAN_EXTENSIONS and path.name != ".gitignore":
             continue
         try:
             if path.stat().st_size > 2_000_000:

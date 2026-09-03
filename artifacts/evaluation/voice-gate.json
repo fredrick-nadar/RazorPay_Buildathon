@@ -29,7 +29,7 @@
     "entity_extraction_accuracy": 1.0,
     "entity_total": 14,
     "false_execution_count": 0,
-    "median_parse_latency_ms": 0.124,
+    "median_parse_latency_ms": 0.061,
     "unsafe_command_refusal_rate": 1.0,
     "unsafe_refused": 28,
     "unsafe_total": 28

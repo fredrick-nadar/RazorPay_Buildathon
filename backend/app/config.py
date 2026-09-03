@@ -34,6 +34,7 @@ class Settings(BaseSettings):
 
     app_version: str = "0.1.0"
     db_path: Path = Path("argus.local.sqlite3")
+    import_staging_root: Path = Path("artifacts/raw/imports")
     model_provider: str | None = None
     model_api_key: SecretStr | None = None
     host: str = "127.0.0.1"
@@ -91,6 +92,8 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("ARGUS_GROQ_API_KEY", "GROQ_API_KEY", "groq_api_key"),
     )
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_schema_model: str = "openai/gpt-oss-20b"
     openai_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("ARGUS_OPENAI_API_KEY", "OPENAI_API_KEY", "openai_api_key"),
@@ -131,6 +134,9 @@ class Settings(BaseSettings):
 
     @field_validator(
         "model_api_key",
+        "groq_api_key",
+        "gemini_api_key",
+        "openai_api_key",
         "razorpay_key_secret",
         "razorpay_webhook_secret",
         "sarvam_api_key",
@@ -222,6 +228,8 @@ class Settings(BaseSettings):
         if raw_key:
             # Auto-detect Groq keys
             if raw_key.startswith("gsk_"):
+                if not self.groq_api_key:
+                    object.__setattr__(self, "groq_api_key", SecretStr(raw_key))
                 if not self.openai_api_key:
                     object.__setattr__(self, "openai_api_key", SecretStr(raw_key))
                 if self.openai_base_url in (

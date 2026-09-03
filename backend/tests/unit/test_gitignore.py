@@ -23,6 +23,18 @@ REQUIRED_PATTERNS = [
     "node_modules/",
     ".venv/",
     "__pycache__/",
+    "/.pytest_tmp_*/",
+    "/frontend/debug.log",
+    "*.log",
+    "*.db-wal",
+    "*.db-shm",
+    "*.sqlite-journal",
+    "*.sqlite-wal",
+    "*.sqlite-shm",
+    "*.sqlite3-journal",
+    "*.sqlite3-wal",
+    "*.sqlite3-shm",
+    "/cloud-reference.md",
 ]
 
 
@@ -65,7 +77,27 @@ def test_git_check_ignore_when_git_is_available() -> None:
             "git binary not found on PATH or at the standard install location; "
             "the pattern assertions above cover this case"
         )
-    probes = [".env", "local.db", "argus.local.sqlite3", "secrets.pem", "private.key"]
+    probes = [
+        ".env",
+        "local.db",
+        "argus.local.sqlite3",
+        "secrets.pem",
+        "private.key",
+        ".pytest_tmp_cleanup_probe/test-generated.txt",
+        "frontend/debug.log",
+        "backend/server.log",
+        "local.db-wal",
+        "local.db-shm",
+        "local.sqlite-journal",
+        "local.sqlite-wal",
+        "local.sqlite-shm",
+        "argus.local.sqlite3-journal",
+        "argus.local.sqlite3-wal",
+        "argus.local.sqlite3-shm",
+        "cloud-reference.md",
+        "tmp/local-fixture.json",
+        "artifacts/raw/imports/session/manifest.json",
+    ]
     for name in probes:
         result = subprocess.run(
             [git, "check-ignore", "-q", name],
@@ -74,3 +106,27 @@ def test_git_check_ignore_when_git_is_available() -> None:
             check=False,
         )
         assert result.returncode == 0, f"{name} is not ignored by git"
+
+
+def test_checkpoint_sources_and_fixtures_are_not_ignored() -> None:
+    git = _find_git()
+    if git is None:
+        pytest.skip("git is unavailable")
+    for name in (
+        ".env.example",
+        "backend/app/importers/demo_settlement.py",
+        "backend/app/persistence/gateway_imports.py",
+        "frontend/src/lib/import-session-state.ts",
+        "frontend/package-lock.json",
+        "backend/requirements.lock.txt",
+        "demo_scenarios/rzp_companions_v1/inputs/bank_entries.csv",
+        "demo_scenarios/rzp_companions_v1/labels/scenario.json",
+        "artifacts/evaluation/phase-07.json",
+    ):
+        result = subprocess.run(
+            [git, "check-ignore", "--no-index", "-q", name],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode == 1, f"Important checkpoint file is ignored: {name}"

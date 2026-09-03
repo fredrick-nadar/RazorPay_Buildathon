@@ -1,216 +1,324 @@
-"""Unit tests for Multi-Source CSV upload and validation endpoints."""
+"""CSV schema review, immutable staging, and reconciliation readiness tests."""
 
+from __future__ import annotations
+
+import json
 from pathlib import Path
+from typing import Any
 
 from fastapi.testclient import TestClient
 
-from app.api import routes_ingest
 from app.config import Settings
-from app.importers.document_extractor import convert_extracted_records_to_csv
+from app.importers.schema_mapping import analyze_csv
+from app.importers.session_staging import resolve_session_dir
 from app.main import create_app
 
+PAYMENT_CSV = (
+    "payment_id,order_id,status,currency,gross_amount,fee_amount,tax_amount,"
+    "captured_at_utc,settlement_id\n"
+    "pay_1,ord_1,CAPTURED,INR,100.00,2.00,0.36,2026-03-02T03:17:28Z,stl_1\n"
+)
 
-def test_csv_upload_and_reconciliation(tmp_path: Path) -> None:
-    settings = Settings(ARGUS_DB_PATH=str(tmp_path / "test_csv_ingest.db"))
-    app = create_app(settings)
 
-    with TestClient(app) as client:
-        # 1. Upload sample payments CSV matching format
-        sample_csv = (
-            "payment_id,order_id,status,currency,gross_amount,fee_amount,tax_amount,captured_at_utc,settlement_id\n"
-            "pay_test_001,ord_001,CAPTURED,INR,1000.00,20.00,3.60,2026-03-02T03:17:28Z,stl_xhb67rhUhk\n"
-            "pay_test_002,ord_002,CAPTURED,INR,2500.00,50.00,9.00,2026-03-02T03:50:39Z,stl_xhb67rhUhk\n"
+def _mapping_from_analysis(analysis: dict[str, Any]) -> list[dict[str, str]]:
+    return [
+        {"target_field": item["target_field"], "source_column": item["source_column"]}
+        for item in analysis["mappings"]
+    ]
+
+
+def _settings(tmp_path: Path, name: str) -> Settings:
+    return Settings(
+        db_path=tmp_path / f"{name}.sqlite3",
+        import_staging_root=tmp_path / "imports",
+        _env_file=None,
+    )
+
+
+def test_analyze_known_aliases_without_ai(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, "aliases")
+    content = (
+        "Transaction ID,Transaction Date,Value Date,Currency,Amount,Particulars,"
+        "UTR Number,Masked Account\n"
+        "bnk_1,2026-03-03T04:23:47Z,2026-03-03,INR,97.64,RAZORPAY,UTR_1,FP_1\n"
+    )
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/api/v1/ingest/analyze-csv",
+            json={"filename": "bank.csv", "content": content, "file_type": "bank_entries"},
         )
 
-        res = client.post(
-            "/api/v1/ingest/upload-csv",
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mapping_provider"] == "DETERMINISTIC"
+    assert payload["missing_required_fields"] == []
+    assert {item["target_field"] for item in payload["mappings"]} >= {
+        "bank_entry_id",
+        "posted_at_utc",
+        "signed_amount",
+        "account_fingerprint",
+    }
+
+
+def test_reviewed_commit_preserves_raw_file_and_is_idempotent(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, "commit")
+    with TestClient(create_app(settings)) as client:
+        analysis = client.post(
+            "/api/v1/ingest/analyze-csv",
+            json={"filename": "payments.csv", "content": PAYMENT_CSV, "file_type": "payments"},
+        ).json()
+        request = {
+            "filename": "payments.csv",
+            "content": PAYMENT_CSV,
+            "file_type": "payments",
+            "session_id": "reviewed_commit",
+            "mappings": _mapping_from_analysis(analysis),
+        }
+        first = client.post("/api/v1/ingest/commit-csv", json=request)
+        second = client.post("/api/v1/ingest/commit-csv", json=request)
+
+    assert first.status_code == 200
+    assert first.json()["accepted_count"] == 1
+    assert first.json()["quarantined_count"] == 0
+    assert first.json()["reused"] is False
+    assert second.json()["reused"] is True
+    session = resolve_session_dir(settings, "reviewed_commit", create=False)
+    assert (session / "payments.csv").read_text(encoding="utf-8").count("pay_1") == 1
+    source_files = list((session / ".source").iterdir())
+    assert len(source_files) == 1
+    assert source_files[0].read_text(encoding="utf-8") == PAYMENT_CSV
+
+
+def test_new_revision_replaces_active_source_without_overwriting_history(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, "revisions")
+    replacement = PAYMENT_CSV.replace("pay_1", "pay_2").replace("ord_1", "ord_2")
+    with TestClient(create_app(settings)) as client:
+        responses = []
+        for filename, content in (("first.csv", PAYMENT_CSV), ("second.csv", replacement)):
+            analysis = client.post(
+                "/api/v1/ingest/analyze-csv",
+                json={"filename": filename, "content": content, "file_type": "payments"},
+            ).json()
+            responses.append(
+                client.post(
+                    "/api/v1/ingest/commit-csv",
+                    json={
+                        "filename": filename,
+                        "content": content,
+                        "file_type": "payments",
+                        "session_id": "revision_session",
+                        "mappings": _mapping_from_analysis(analysis),
+                    },
+                ).json()
+            )
+        status = client.get("/api/v1/ingest/sessions/revision_session/status").json()
+
+    session = resolve_session_dir(settings, "revision_session", create=False)
+    assert responses[1]["revision_number"] == 2
+    assert responses[1]["replaced_revision_id"] == responses[0]["revision_id"]
+    assert status["revision_counts"]["payments"] == 2
+    assert status["active_sources"]["payments"]["revision_id"] == responses[1]["revision_id"]
+    assert "pay_2" in (session / "payments.csv").read_text(encoding="utf-8")
+    assert "pay_1" not in (session / "payments.csv").read_text(encoding="utf-8")
+    assert len(list((session / ".source").iterdir())) == 2
+    assert len(list((session / ".revisions" / "payments").iterdir())) == 2
+
+
+def test_session_status_survives_application_restart(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, "restart")
+    with TestClient(create_app(settings)) as client:
+        analysis = client.post(
+            "/api/v1/ingest/analyze-csv",
+            json={"filename": "payments.csv", "content": PAYMENT_CSV, "file_type": "payments"},
+        ).json()
+        client.post(
+            "/api/v1/ingest/commit-csv",
             json={
                 "filename": "payments.csv",
-                "content": sample_csv,
+                "content": PAYMENT_CSV,
                 "file_type": "payments",
-                "session_id": "test_session_1",
+                "session_id": "durable_session",
+                "mappings": _mapping_from_analysis(analysis),
             },
         )
-        assert res.status_code == 200
-        data = res.json()
-        assert data["file_type"] == "payments"
-        assert data["rows_count"] == 2
-        assert "checksum_sha256" in data
-        assert len(data["preview_rows"]) == 2
 
-        # 2. Reconcile uploaded session
-        rec_res = client.post(
-            "/api/v1/ingest/reconcile-session",
-            json={"session_id": "test_session_1", "fallback_profile": "dev", "mode": "rules-only"},
-        )
-        assert rec_res.status_code == 200
-        rec_data = rec_res.json()
-        assert "run_id" in rec_data
-        assert rec_data["status"] == "COMPLETED"
+    with TestClient(create_app(settings)) as restarted_client:
+        response = restarted_client.get("/api/v1/ingest/sessions/durable_session/status")
+
+    assert response.status_code == 200
+    assert response.json()["active_sources"]["payments"]["accepted_count"] == 1
+    assert response.json()["ready_source_groups"] == 0
 
 
-def test_empty_csv_upload_rejected(tmp_path: Path) -> None:
-    settings = Settings(ARGUS_DB_PATH=str(tmp_path / "test_empty_csv.db"))
-    app = create_app(settings)
+def test_corrupted_revision_manifest_is_reported_instead_of_ignored(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, "corrupt")
+    session = resolve_session_dir(settings, "corrupt_session", create=True)
+    (session / ".source-revisions.json").write_text("{not-json", encoding="utf-8")
 
-    with TestClient(app) as client:
-        res = client.post(
-            "/api/v1/ingest/upload-csv",
+    with TestClient(create_app(settings)) as client:
+        response = client.get("/api/v1/ingest/sessions/corrupt_session/status")
+
+    assert response.status_code == 409
+    assert "corrupted" in response.json()["detail"]
+
+
+def test_commit_never_invents_missing_required_values(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, "missing")
+    with TestClient(create_app(settings)) as client:
+        response = client.post(
+            "/api/v1/ingest/commit-csv",
             json={
-                "filename": "empty.csv",
-                "content": "   ",
+                "filename": "short.csv",
+                "content": "Payment ID,Amount\npay_1,100.00\n",
                 "file_type": "payments",
-                "session_id": "test_empty",
+                "session_id": "missing_fields",
+                "mappings": [
+                    {"target_field": "payment_id", "source_column": "Payment ID"},
+                    {"target_field": "gross_amount", "source_column": "Amount"},
+                ],
             },
         )
-        assert res.status_code == 400
+
+    assert response.status_code == 400
+    assert "Required fields are not mapped" in response.json()["detail"]
 
 
-def test_stacked_upload_preserves_duplicate_source_identifiers(tmp_path: Path) -> None:
-    settings = Settings(ARGUS_DB_PATH=str(tmp_path / "test_duplicate_source_id.db"))
-    app = create_app(settings)
-    sample_csv = (
-        "payment_id,order_id,status,currency,gross_amount,fee_amount,tax_amount,captured_at_utc,settlement_id\n"
-        "pay_same,ord_same,CAPTURED,INR,10.00,0.20,0.04,2026-03-02T03:17:28Z,stl_same\n"
-    )
+def test_incomplete_sources_do_not_start_reconciliation(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, "readiness")
+    with TestClient(create_app(settings)) as client:
+        analysis = client.post(
+            "/api/v1/ingest/analyze-csv",
+            json={"filename": "payments.csv", "content": PAYMENT_CSV, "file_type": "payments"},
+        ).json()
+        client.post(
+            "/api/v1/ingest/commit-csv",
+            json={
+                "filename": "payments.csv",
+                "content": PAYMENT_CSV,
+                "file_type": "payments",
+                "session_id": "not_ready",
+                "mappings": _mapping_from_analysis(analysis),
+            },
+        )
+        response = client.post(
+            "/api/v1/ingest/reconcile-session",
+            json={"session_id": "not_ready", "mode": "rules-only"},
+        )
 
-    with TestClient(app) as client:
-        for _ in range(2):
-            response = client.post(
-                "/api/v1/ingest/upload-csv",
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert "bank statement" in detail
+    assert "merchant ledger" in detail
+    assert "complete run" in detail
+
+
+def test_three_source_session_runs_only_after_all_evidence_is_ready(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, "complete")
+    sources = {
+        "payments": PAYMENT_CSV,
+        "settlements": (
+            "settlement_id,settled_at_utc,window_start_utc,window_end_utc,status,"
+            "currency,gross_credit,fee_amount,tax_amount,adjustment_amount,net_amount,utr\n"
+            "stl_1,2026-03-03T04:18:47Z,2026-03-02T00:00:00Z,"
+            "2026-03-03T00:00:00Z,PROCESSED,INR,100.00,2.00,0.36,0.00,97.64,UTR_1\n"
+        ),
+        "bank_entries": (
+            "bank_entry_id,posted_at_utc,value_date,currency,signed_amount,narration,utr,"
+            "account_fingerprint\n"
+            "bnk_1,2026-03-03T04:23:47Z,2026-03-03,INR,97.64,RAZORPAY,UTR_1,FP_1\n"
+        ),
+        "ledger_entries": (
+            "ledger_entry_id,account_code,accounting_date,currency,signed_amount,"
+            "source_reference,source_type,description,entry_origin\n"
+            "led_1,1100-BANK,2026-03-03,INR,97.64,pay_1,PAYMENT,Settlement,IMPORTED\n"
+        ),
+    }
+    with TestClient(create_app(settings)) as client:
+        for file_type, content in sources.items():
+            analysis = client.post(
+                "/api/v1/ingest/analyze-csv",
                 json={
-                    "filename": "payments.csv",
-                    "content": sample_csv,
-                    "file_type": "payments",
-                    "session_id": "duplicate_source_id",
+                    "filename": f"{file_type}.csv",
+                    "content": content,
+                    "file_type": file_type,
+                },
+            ).json()
+            committed = client.post(
+                "/api/v1/ingest/commit-csv",
+                json={
+                    "filename": f"{file_type}.csv",
+                    "content": content,
+                    "file_type": file_type,
+                    "session_id": "complete_session",
+                    "mappings": _mapping_from_analysis(analysis),
                 },
             )
-            assert response.status_code == 200
+            assert committed.status_code == 200
 
-    staged_path = routes_ingest.SESSION_DIRS["duplicate_source_id"] / "payments.csv"
-    staged_text = staged_path.read_text(encoding="utf-8")
-    assert staged_text.count("pay_same") == 2
-    assert "pay_same_imp2" not in staged_text
-
-
-def test_pdf_and_image_document_extraction(tmp_path: Path) -> None:
-    import base64
-
-    settings = Settings(ARGUS_DB_PATH=str(tmp_path / "test_doc_extract.db"))
-    app = create_app(settings)
-
-    with TestClient(app) as client:
-        # Simulate base64 image/PDF document
-        fake_content = "PDF-1.4 Bank Statement HDFC Bank UTR_992100 pay_9901 ₹12,500.00".encode()
-        b64_content = base64.b64encode(fake_content).decode("utf-8")
-
-        res = client.post(
-            "/api/v1/ingest/upload-document",
-            json={
-                "filename": "hdfc_bank_statement.pdf",
-                "content_base64": b64_content,
-                "mime_type": "application/pdf",
-                "session_id": "test_doc_session",
-            },
+        response = client.post(
+            "/api/v1/ingest/reconcile-session",
+            json={"session_id": "complete_session", "mode": "rules-only"},
         )
-        assert res.status_code == 200
-        data = res.json()
-        assert "rows_count" in data
-        assert data["rows_count"] > 0
-        assert "extractor" in data
-        assert data["status"] == "VALIDATED"
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "COMPLETED"
+    session = resolve_session_dir(settings, "complete_session", create=False)
+    assert (session / "refunds.csv").is_file()
 
 
-def test_non_financial_document_rejected(tmp_path: Path) -> None:
-    import base64
-
-    settings = Settings(ARGUS_DB_PATH=str(tmp_path / "test_non_fin.db"))
-    app = create_app(settings)
-
-    with TestClient(app) as client:
-        # Simulate unrelated non-financial document (e.g. recipe / poem)
-        fake_content = b"The quick brown fox jumps over the lazy dog in the meadow."
-        b64_content = base64.b64encode(fake_content).decode("utf-8")
-
-        res = client.post(
-            "/api/v1/ingest/upload-document",
-            json={
-                "filename": "poem.pdf",
-                "content_base64": b64_content,
-                "mime_type": "application/pdf",
-                "session_id": "test_non_fin_session",
-            },
-        )
-        assert res.status_code == 400
-        err = res.json()
-        assert "no recognizable financial" in err["detail"].lower()
+def test_ocr_and_direct_upload_paths_are_not_exposed(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, "disabled")
+    with TestClient(create_app(settings)) as client:
+        assert client.post("/api/v1/ingest/upload-document", json={}).status_code == 404
+        assert client.post("/api/v1/ingest/stream-extract", json={}).status_code == 404
+        legacy = client.post("/api/v1/ingest/upload-csv", json={})
+    assert legacy.status_code == 409
 
 
-def test_java_notes_and_pdf_binary_rejected(tmp_path: Path) -> None:
-    import base64
+def test_groq_proposal_is_strict_and_cannot_escape_allowed_fields() -> None:
+    calls: list[dict[str, Any]] = []
 
-    settings = Settings(ARGUS_DB_PATH=str(tmp_path / "test_java_notes.db"))
-    app = create_app(settings)
+    def transport(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+        request = json.loads(body)
+        calls.append(request)
+        content = {
+            "mappings": [
+                {
+                    "target_field": "payment_id",
+                    "source_column": "Gateway Ref",
+                    "confidence": "HIGH",
+                    "reason": "Gateway reference identifies the payment.",
+                },
+                {
+                    "target_field": "gross_amount",
+                    "source_column": "Money",
+                    "confidence": "HIGH",
+                    "reason": "Money is the payment amount.",
+                },
+                {
+                    "target_field": "invented_field",
+                    "source_column": "Money",
+                    "confidence": "HIGH",
+                    "reason": "Must be ignored.",
+                },
+            ],
+            "warnings": [],
+        }
+        return 200, json.dumps(
+            {"choices": [{"message": {"content": json.dumps(content)}}]}
+        ).encode()
 
-    with TestClient(app) as client:
-        # Simulate a programming book / notes PDF with xref binary offsets and words
-        fake_pdf = (
-            b"%PDF-1.4\n"
-            b"1 0 obj\n<< /Title (Java Professional Notes) /Author (Developer) >>\nendobj\n"
-            b"2 0 obj\n<< /Length 120 >>\nstream\n"
-            b"public class OrderProcessor {\n"
-            b"    public static void main(String[] args) {\n"
-            b'        System.out.println("Order in array");\n'
-            b"    }\n"
-            b"}\n"
-            b"endstream\nendobj\n"
-            b"xref\n0 3\n"
-            b"0000000000 65535 f\n"
-            b"0000014602 00000 n\n"
-            b"0000146026 00000 n\n"
-            b"trailer\n<< /Size 3 >>\nstartxref\n500\n%%EOF"
-        )
-        b64_content = base64.b64encode(fake_pdf).decode("utf-8")
-
-        res = client.post(
-            "/api/v1/ingest/upload-document",
-            json={
-                "filename": "java professional notes.pdf",
-                "content_base64": b64_content,
-                "mime_type": "application/pdf",
-                "session_id": "test_java_notes_session",
-            },
-        )
-        assert res.status_code == 400
-
-
-def test_refund_extraction_uses_refund_schema_and_exact_money() -> None:
-    csv_text = convert_extracted_records_to_csv(
-        [
-            {
-                "refund_id": "rfnd_exact_1",
-                "payment_id": "pay_exact_1",
-                "status": "processed",
-                "currency": "INR",
-                "refund_amount": "10.05",
-                "created_at_utc": "2026-03-02T10:00:00Z",
-                "settlement_id": "stl_exact_1",
-            }
-        ],
-        "refunds",
+    result = analyze_csv(
+        content="Gateway Ref,Money\npay_1,100.00\n",
+        document_type="payments",
+        groq_api_key="test-key",
+        transport=transport,
     )
-    lines = csv_text.splitlines()
-    assert lines[0] == (
-        "refund_id,payment_id,status,currency,refund_amount,created_at_utc,settlement_id"
-    )
-    assert "rfnd_exact_1,pay_exact_1,PROCESSED,INR,10.05" in lines[1]
 
-
-def test_document_converter_rejects_binary_float_money() -> None:
-    import pytest
-
-    with pytest.raises(ValueError, match="decimal string"):
-        convert_extracted_records_to_csv(
-            [{"payment_id": "pay_float", "gross_amount": 10.05}],
-            "payments",
-        )
+    assert calls[0]["temperature"] == 0
+    assert calls[0]["response_format"]["json_schema"]["strict"] is True
+    assert {item["target_field"] for item in result["mappings"]} == {
+        "payment_id",
+        "gross_amount",
+    }
+    assert any("disallowed target" in warning for warning in result["warnings"])

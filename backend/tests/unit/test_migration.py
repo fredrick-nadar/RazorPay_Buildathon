@@ -43,7 +43,14 @@ V4_TABLES = (
     "audit_log",
 )
 
-ALL_RUNTIME_TABLES = (*V2_TABLES, *V3_TABLES, *V4_TABLES)
+V5_TABLES = (
+    "gateway_imports",
+    "gateway_source_entities",
+)
+
+V6_TABLES = ("gateway_demo_evidence",)
+
+ALL_RUNTIME_TABLES = (*V2_TABLES, *V3_TABLES, *V4_TABLES, *V5_TABLES, *V6_TABLES)
 
 
 def _table_names(path: Path) -> set[str]:
@@ -67,10 +74,10 @@ def _create_v1_database(path: Path) -> None:
 
 
 class TestFreshDatabase:
-    def test_fresh_database_migrates_to_v4(self, tmp_path: Path) -> None:
+    def test_fresh_database_migrates_to_v7(self, tmp_path: Path) -> None:
         database = Database(tmp_path / "fresh.sqlite3")
         try:
-            assert database.schema_version == 4
+            assert database.schema_version == 7
             assert database.healthcheck() is True
             tables = _table_names(database.path)
             assert set(ALL_RUNTIME_TABLES) <= tables
@@ -93,9 +100,9 @@ class TestUpgradeFromV1:
         _create_v1_database(path)
         database = Database(path)
         try:
-            assert database.schema_version == 4
+            assert database.schema_version == 7
             assert database.get_meta("tenant_note") == "phase0-metadata"
-            assert database.get_meta("schema_version") == "4"
+            assert database.get_meta("schema_version") == "7"
             assert database.healthcheck() is True
             assert set(ALL_RUNTIME_TABLES) <= _table_names(path)
             # No run row exists; none is claimed.
@@ -110,12 +117,12 @@ class TestUpgradeFromV1:
         first.close()
         second = Database(path)
         try:
-            assert second.schema_version == 4
+            assert second.schema_version == 7
             assert second.get_meta("tenant_note") == "phase0-metadata"
         finally:
             second.close()
 
-    def test_v2_database_upgrades_to_v4_preserving_rows(self, tmp_path: Path) -> None:
+    def test_v2_database_upgrades_to_v7_preserving_rows(self, tmp_path: Path) -> None:
         path = tmp_path / "phase2.sqlite3"
         _create_v1_database(path)
         original_chain = migrations._MIGRATION_CHAIN
@@ -150,9 +157,11 @@ class TestUpgradeFromV1:
 
         upgraded = Database(path)
         try:
-            assert upgraded.schema_version == 4
+            assert upgraded.schema_version == 7
             assert set(V3_TABLES) <= _table_names(path)
             assert set(V4_TABLES) <= _table_names(path)
+            assert set(V5_TABLES) <= _table_names(path)
+            assert set(V6_TABLES) <= _table_names(path)
             rows = upgraded.query_all("SELECT run_id FROM runs")
             assert [row["run_id"] for row in rows] == ["run-existing"]
         finally:
@@ -211,7 +220,7 @@ class TestMigrationFailure:
 
         database = Database(path)
         try:
-            assert database.schema_version == 4
+            assert database.schema_version == 7
             assert database.get_meta("tenant_note") == "phase0-metadata"
         finally:
             database.close()
@@ -285,3 +294,75 @@ class TestMigrationFailure:
         finally:
             conn.close()
         assert version == "3"
+
+    def test_failed_v5_migration_rolls_back_to_v4(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        path = tmp_path / "phase4.sqlite3"
+        _create_v1_database(path)
+        original_chain = migrations._MIGRATION_CHAIN
+        try:
+            migrations._MIGRATION_CHAIN = original_chain[:3]
+            phase4 = Database(path)
+            phase4.close()
+        finally:
+            migrations._MIGRATION_CHAIN = original_chain
+
+        def broken_v5() -> tuple[str, ...]:
+            return (
+                "CREATE TABLE gateway_imports (import_id TEXT PRIMARY KEY)",
+                "CREATE TABLE broken_v5 (",
+            )
+
+        monkeypatch.setattr(migrations, "_migration_4_to_5_statements", broken_v5)
+        with pytest.raises(PersistenceMigrationError):
+            Database(path)
+
+        tables = _table_names(path)
+        assert "gateway_imports" not in tables
+        assert not (set(V5_TABLES) & tables)
+        conn = sqlite3.connect(str(path))
+        try:
+            version = conn.execute(
+                "SELECT value FROM app_meta WHERE key = 'schema_version'"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        assert version == "4"
+
+    def test_failed_v6_migration_rolls_back_to_v5(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        path = tmp_path / "phase5.sqlite3"
+        _create_v1_database(path)
+        original_chain = migrations._MIGRATION_CHAIN
+        try:
+            migrations._MIGRATION_CHAIN = original_chain[:4]
+            phase5 = Database(path)
+            phase5.close()
+        finally:
+            migrations._MIGRATION_CHAIN = original_chain
+
+        def broken_v6() -> tuple[str, ...]:
+            return (
+                "ALTER TABLE gateway_source_entities ADD COLUMN readiness_state TEXT",
+                "CREATE TABLE broken_v6 (",
+            )
+
+        monkeypatch.setattr(migrations, "_migration_5_to_6_statements", broken_v6)
+        with pytest.raises(PersistenceMigrationError):
+            Database(path)
+
+        conn = sqlite3.connect(str(path))
+        try:
+            version = conn.execute(
+                "SELECT value FROM app_meta WHERE key = 'schema_version'"
+            ).fetchone()[0]
+            columns = {
+                str(row[1]) for row in conn.execute("PRAGMA table_info(gateway_source_entities)")
+            }
+        finally:
+            conn.close()
+        assert version == "5"
+        assert "readiness_state" not in columns
+        assert "gateway_demo_evidence" not in _table_names(path)

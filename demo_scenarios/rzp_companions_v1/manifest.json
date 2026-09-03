@@ -1,0 +1,44 @@
+{
+  "version": "companion-scenario-v1",
+  "seed": 20260903,
+  "import_id": "gwi-38a22e8d7367bac0af9d",
+  "provenance": "SYNTHETIC_DEMO",
+  "production_eligible": false,
+  "files": {
+    "payments.csv": {
+      "sha256": "0a5243e31051bf82796d03bfd4e091b565d618edc3e3b9570a1488ee2b7d19a8",
+      "provenance": "SYNTHETIC_DEMO",
+      "revision_id": "src-8351986ba6ac1df64654163a"
+    },
+    "refunds.csv": {
+      "sha256": "b52238ebc50e4c83ca4699065acaa5c86ce2c7844988a8796ec5c9d77409da0c",
+      "provenance": "SYNTHETIC_DEMO",
+      "revision_id": "src-fb1d90724907164a08d224bd"
+    },
+    "settlements.csv": {
+      "sha256": "c415711a7ab05df302b9e853cac1fa4842335090d6ef6bf23e80a82d81705d34",
+      "provenance": "SYNTHETIC_DEMO",
+      "revision_id": "src-c0f30cdc410168f6434de0e3"
+    },
+    "bank_entries.csv": {
+      "sha256": "95cacf95d21e6ef56e57f68d2abc5badeebaf7e81a85b0e1cd9a2ab352be0ab7",
+      "rows": 4,
+      "provenance": "SYNTHETIC_DEMO"
+    },
+    "ledger_entries.csv": {
+      "sha256": "603b6bc001615baf1c2ec1e8f883caff2fb3540d3cf8daf3735899cc03711044",
+      "rows": 71,
+      "provenance": "SYNTHETIC_DEMO"
+    }
+  },
+  "assumptions": {
+    "amount_error_paise": 100,
+    "bank_service_charge_paise": 125,
+    "currency": "INR",
+    "money_unit": "integer paise internally, decimal rupees in CSV",
+    "omitted_refund_postings": 2,
+    "policy": "Fictional merchant policy and event failures, NOT Razorpay policy or measured incident frequencies.",
+    "scope": "Payment-clearing and bank reconciliation extract, NOT a complete double-entry general ledger.",
+    "settlement_booking_delay_days": 2
+  }
+}

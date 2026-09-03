@@ -3,3 +3,7 @@
 # and the Phase 1 gate byte-compares committed files against regeneration.
 datasets/** text eol=lf
 artifacts/evaluation/** text eol=lf
+# Companion manifests hash the exact exported input bytes. Do not let Windows
+# autocrlf rewrite those CSVs; normalize documentation and JSON independently.
+demo_scenarios/** text eol=lf
+demo_scenarios/**/inputs/*.csv -text

@@ -98,8 +98,8 @@
     },
     "throughput": {
       "eligible_records": 64,
-      "reconcile_seconds": 0.008302,
-      "records_per_second": 1715.91
+      "reconcile_seconds": 0.007364,
+      "records_per_second": 1576.44
     },
     "totals_comparison": {
       "equal": true,
@@ -176,9 +176,9 @@
         "dry_run_abs_variance_after_paise": 0,
         "dry_run_count": 0,
         "latency_ms": {
-          "max_case_ms": 0.04,
-          "median_case_ms": 0.02,
-          "verify_total_ms": 0.272
+          "max_case_ms": 0.055,
+          "median_case_ms": 0.032,
+          "verify_total_ms": 0.285
         },
         "passing_proof_completeness": {
           "denominator": 0,

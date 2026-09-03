@@ -324,12 +324,97 @@ def _migration_3_to_4_statements() -> tuple[str, ...]:
     )
 
 
+def _migration_4_to_5_statements() -> tuple[str, ...]:
+    """Immutable Razorpay gateway snapshots, separate from financial truth tables.
+
+    Orders are observable gateway entities but are not payments.  This staging
+    boundary preserves every fetched entity without widening the frozen
+    reconciliation source taxonomy or allowing unpaid orders to affect money.
+    """
+    return (
+        """
+        CREATE TABLE gateway_imports (
+            import_id TEXT PRIMARY KEY,
+            provider TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            credential_fingerprint TEXT NOT NULL,
+            snapshot_hash TEXT NOT NULL,
+            status TEXT NOT NULL,
+            source_records_count INTEGER NOT NULL,
+            reconciliation_eligible_count INTEGER NOT NULL,
+            counts_json TEXT NOT NULL,
+            imported_at_utc TEXT NOT NULL,
+            UNIQUE (provider, mode, credential_fingerprint, snapshot_hash)
+        )
+        """,
+        """
+        CREATE TABLE gateway_source_entities (
+            import_id TEXT NOT NULL REFERENCES gateway_imports(import_id),
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            raw_payload_json TEXT NOT NULL,
+            reconciliation_eligible INTEGER NOT NULL,
+            exclusion_reason TEXT,
+            PRIMARY KEY (import_id, entity_type, entity_id)
+        )
+        """,
+        "CREATE INDEX idx_gateway_entities_type ON gateway_source_entities(entity_type)",
+    )
+
+
+def _migration_5_to_6_statements() -> tuple[str, ...]:
+    """Gateway readiness and explicitly synthetic Test Mode evidence lineage."""
+    return (
+        "ALTER TABLE gateway_source_entities ADD COLUMN readiness_state TEXT NOT NULL "
+        "DEFAULT 'NOT_RECONCILIATION_ELIGIBLE'",
+        """
+        CREATE TABLE gateway_demo_evidence (
+            evidence_id TEXT PRIMARY KEY,
+            import_id TEXT NOT NULL REFERENCES gateway_imports(import_id),
+            session_id TEXT NOT NULL,
+            manifest_hash TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL,
+            UNIQUE (import_id, session_id)
+        )
+        """,
+        "CREATE INDEX idx_gateway_entities_readiness ON "
+        "gateway_source_entities(import_id, readiness_state)",
+    )
+
+
+def _migration_6_to_7_statements() -> tuple[str, ...]:
+    """Preserve full-demo history while allowing gateway-only evidence per session."""
+    return (
+        "ALTER TABLE gateway_demo_evidence RENAME TO gateway_demo_evidence_v6",
+        """
+        CREATE TABLE gateway_demo_evidence (
+            evidence_id TEXT PRIMARY KEY,
+            import_id TEXT NOT NULL REFERENCES gateway_imports(import_id),
+            session_id TEXT NOT NULL,
+            manifest_hash TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL,
+            scope TEXT NOT NULL CHECK (scope IN ('FULL_DEMO', 'GATEWAY_ONLY')),
+            UNIQUE (import_id, session_id, scope)
+        )
+        """,
+        "INSERT INTO gateway_demo_evidence "
+        "(evidence_id, import_id, session_id, manifest_hash, created_at_utc, scope) "
+        "SELECT evidence_id, import_id, session_id, manifest_hash, created_at_utc, 'FULL_DEMO' "
+        "FROM gateway_demo_evidence_v6",
+        "DROP TABLE gateway_demo_evidence_v6",
+    )
+
+
 # The chain stores statement-function NAMES resolved at call time so that
 # tests can monkeypatch a broken migration into any step.
 _MIGRATION_CHAIN: tuple[tuple[int, int, str], ...] = (
     (1, 2, "_migration_1_to_2_statements"),
     (2, 3, "_migration_2_to_3_statements"),
     (3, 4, "_migration_3_to_4_statements"),
+    (4, 5, "_migration_4_to_5_statements"),
+    (5, 6, "_migration_5_to_6_statements"),
+    (6, 7, "_migration_6_to_7_statements"),
 )
 
 

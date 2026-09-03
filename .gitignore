@@ -9,6 +9,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+/.pytest_tmp_*/
 .ruff_cache/
 .mypy_cache/
 .hypothesis/
@@ -25,12 +26,22 @@ coverage/
 playwright-report/
 test-results/
 *.tsbuildinfo
+/frontend/debug.log
+*.log
 
 # Local persistence and transient data
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 *.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
 tmp/
 .cache/
 
@@ -46,7 +57,7 @@ artifacts/traces/
 Thumbs.db
 
 # Local AI context
+/cloud-reference.md
 .ai/GEMINI_CONTEXT.md
 .ai/GEMINI.md
 rzp-test-key.csv
-

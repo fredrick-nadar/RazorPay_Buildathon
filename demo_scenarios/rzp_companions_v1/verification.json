@@ -1,0 +1,105 @@
+{
+  "cases_by_category": {
+    "AMBIGUOUS_EVIDENCE": 4,
+    "DUPLICATE_LEDGER_POSTING": 1,
+    "MISSING_REFUND_POSTING": 2,
+    "SETTLEMENT_TIMING_WINDOW_SHIFT": 3
+  },
+  "checks": [
+    {
+      "actual_delta_paise": 0,
+      "anchor": "demo_setl_d888961c211c22a3",
+      "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "delta_matches": true,
+      "detected": true,
+      "expected_delta_paise": 0
+    },
+    {
+      "actual_delta_paise": 0,
+      "anchor": "demo_setl_ae383dc1b241e899",
+      "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "delta_matches": true,
+      "detected": true,
+      "expected_delta_paise": 0
+    },
+    {
+      "actual_delta_paise": 0,
+      "anchor": "demo_setl_bb09b59790c97b96",
+      "category": "SETTLEMENT_TIMING_WINDOW_SHIFT",
+      "delta_matches": true,
+      "detected": true,
+      "expected_delta_paise": 0
+    },
+    {
+      "actual_delta_paise": -219300,
+      "anchor": "pay_TX2y3Hv4fN6Ttq",
+      "category": "DUPLICATE_LEDGER_POSTING",
+      "delta_matches": true,
+      "detected": true,
+      "expected_delta_paise": -219300
+    },
+    {
+      "actual_delta_paise": null,
+      "anchor": "syn_journal_e17698701618298b",
+      "category": "AMBIGUOUS_EVIDENCE",
+      "delta_matches": true,
+      "detected": true,
+      "expected_delta_paise": null
+    },
+    {
+      "actual_delta_paise": null,
+      "anchor": "syn_journal_6aa183deef34074c",
+      "category": "AMBIGUOUS_EVIDENCE",
+      "delta_matches": true,
+      "detected": true,
+      "expected_delta_paise": null
+    },
+    {
+      "actual_delta_paise": -3220,
+      "anchor": "rfnd_TX2yb8O9RSZEtZ",
+      "category": "MISSING_REFUND_POSTING",
+      "delta_matches": true,
+      "detected": true,
+      "expected_delta_paise": -3220
+    },
+    {
+      "actual_delta_paise": -75000,
+      "anchor": "rfnd_TX2ynsdDqyCFCW",
+      "category": "MISSING_REFUND_POSTING",
+      "delta_matches": true,
+      "detected": true,
+      "expected_delta_paise": -75000
+    },
+    {
+      "actual_delta_paise": null,
+      "anchor": "demo_setl_bb09b59790c97b96",
+      "category": "AMBIGUOUS_EVIDENCE",
+      "delta_matches": true,
+      "detected": true,
+      "expected_delta_paise": null
+    },
+    {
+      "actual_delta_paise": null,
+      "anchor": "syn_charge_36feef6dba67a0f3",
+      "category": "AMBIGUOUS_EVIDENCE",
+      "delta_matches": true,
+      "detected": true,
+      "expected_delta_paise": null
+    }
+  ],
+  "duplicate_deliveries": 1,
+  "economic_output_hash": "0051ffa02c1a490dbd598dccd9fea63ea63873bf0a0800f81480e8bfa2598e02",
+  "eligible_records": 144,
+  "matched_records": 140,
+  "pass": true,
+  "provider_id": "fake-deterministic-v1",
+  "quarantined_rows": 1,
+  "raw_rows": 146,
+  "runtime_match_rate": {
+    "denominator": 144,
+    "note": "runtime self-report; the evaluator reports frozen metrics",
+    "numerator": 140
+  },
+  "scope": "Known-fixture detection/delta checks, NOT held-out model accuracy",
+  "unexpected_cases": []
+}
