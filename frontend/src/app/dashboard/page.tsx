@@ -9,7 +9,7 @@
  * failure, and retry states are first-class (PRD §13.4).
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type {
   AuditLogItem,
@@ -17,7 +17,8 @@ import type {
   CaseSummary,
   RunListItem,
 } from "../../lib/types";
-import { formatCount, formatINR, formatRate, shortHash } from "../../lib/format";
+import { formatCount, formatINR, shortHash } from "../../lib/format";
+import { telemetryFromRun } from "../../lib/run-telemetry";
 import { CaseRail, StatusBadge } from "../../components/case-rail";
 import { CaseWorkspace } from "../../components/case-workspace";
 import { EvidenceChain } from "../../components/evidence-chain";
@@ -47,43 +48,6 @@ import {
 import { Metric, Toast, type ToastState } from "../../components/primitives";
 import { CaseStatus } from "../../domain/enums";
 
-/* ------------------------------------------------------------------ */
-/* Defensive readers for the open-ended run summary object             */
-/* ------------------------------------------------------------------ */
-
-type Summary = Record<string, unknown>;
-
-function num(obj: Summary | undefined, key: string): number | undefined {
-  const v = obj?.[key];
-  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
-}
-
-function str(obj: Summary | undefined, key: string): string | undefined {
-  const v = obj?.[key];
-  return typeof v === "string" && v.length > 0 ? v : undefined;
-}
-
-function childObj(obj: Summary | undefined, key: string): Summary | undefined {
-  const v = obj?.[key];
-  return v !== null && typeof v === "object" ? (v as Summary) : undefined;
-}
-
-interface RunTelemetry {
-  runId: string;
-  status: string;
-  mode: string;
-  eligible?: number;
-  matched?: number;
-  matchRate: string;
-  casesCount?: number;
-  quarantined?: number;
-  residualVariance?: number;
-  grossVolume?: number;
-  recordsPerSecond?: number;
-  totalSeconds?: number;
-  econHash?: string;
-}
-
 type Tab =
   | "home"
   | "matrix"
@@ -96,35 +60,12 @@ type Tab =
   | "audit"
   | "fee_audit";
 
-function telemetryFromRun(run: RunListItem): RunTelemetry {
-  const s = run.summary ?? {};
-  const rate = childObj(s, "runtime_match_rate");
-  const totals = childObj(s, "financial_control_totals");
-  const timing = childObj(s, "timing_metrics");
-  return {
-    runId: run.run_id,
-    status: run.status,
-    mode: str(s, "mode") ?? "rules-only",
-    eligible: num(s, "eligible_record_count"),
-    matched: num(s, "matched_record_count"),
-    matchRate: formatRate(num(rate, "numerator") ?? NaN, num(rate, "denominator") ?? NaN),
-    casesCount: num(s, "cases_count"),
-    quarantined: num(s, "quarantined_row_count"),
-    residualVariance: num(totals, "residual_abs_variance_paise"),
-    grossVolume: num(totals, "payment_gross_paise"),
-    recordsPerSecond: num(timing, "records_per_second"),
-    totalSeconds: num(timing, "total_seconds"),
-    econHash: str(s, "economic_output_hash"),
-  };
-}
-
 /* ------------------------------------------------------------------ */
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
 
 export default function ControlRoomPage() {
-  const [runs, setRuns] = useState<RunListItem[]>([]);
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [activeRun, setActiveRun] = useState<RunListItem | null>(null);
   const [cases, setCases] = useState<CaseSummary[]>([]);
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [caseDetail, setCaseDetail] = useState<CaseDetail | null>(null);
@@ -148,6 +89,11 @@ export default function ControlRoomPage() {
   const [connectDatasetOpen, setConnectDatasetOpen] = useState(false);
   const [dossierModalOpen, setDossierModalOpen] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const runRequestId = useRef(0);
+  const caseRequestId = useRef(0);
+  const selectedCaseIdRef = useRef<string | null>(null);
+
+  const activeRunId = activeRun?.run_id ?? null;
 
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("argus-dashboard-tab", { detail: { tab: activeTab } }));
@@ -156,61 +102,105 @@ export default function ControlRoomPage() {
   /* ----------------------------- fetching ------------------------- */
 
   const selectCase = useCallback(async (caseId: string) => {
+    const requestId = ++caseRequestId.current;
+    selectedCaseIdRef.current = caseId;
     setSelectedCaseId(caseId);
     try {
       const [detailRes, auditRes] = await Promise.all([
         fetch(`/api/v1/cases/${caseId}`),
         fetch(`/api/v1/cases/${caseId}/audit`),
       ]);
-      if (detailRes.ok) setCaseDetail((await detailRes.json()) as CaseDetail);
-      if (auditRes.ok) setAuditTrail((await auditRes.json()) as AuditLogItem[]);
+      const detail = detailRes.ok ? ((await detailRes.json()) as CaseDetail) : null;
+      const audit = auditRes.ok ? ((await auditRes.json()) as AuditLogItem[]) : null;
+      if (requestId !== caseRequestId.current) return;
+      if (detail) setCaseDetail(detail);
+      if (audit) setAuditTrail(audit);
     } catch {
       /* partial view stays usable; toast surfaces hard failures elsewhere */
     }
   }, []);
 
-  const loadCases = useCallback(
-    async (runId: string, preferredCaseId?: string) => {
-      try {
-        const res = await fetch(`/api/v1/runs/${runId}/cases`);
-        if (!res.ok) return;
-        const data = (await res.json()) as CaseSummary[];
-        setCases(data);
-        if (preferredCaseId && data.some((c) => c.case_id === preferredCaseId)) {
-          void selectCase(preferredCaseId);
-        } else if (selectedCaseId && data.some((c) => c.case_id === selectedCaseId)) {
-          void selectCase(selectedCaseId);
-        } else if (data.length > 0) {
-          void selectCase(data[0]?.case_id ?? "");
-        }
-      } catch {
-        /* keep previous case list */
-      }
-    },
-    [selectCase, selectedCaseId],
-  );
-
-  const loadRuns = useCallback(async (): Promise<boolean> => {
+  const loadActiveRun = useCallback(async (runId?: string, preferredCaseId?: string): Promise<boolean> => {
+    const requestId = ++runRequestId.current;
+    if (runId) {
+      caseRequestId.current += 1;
+      selectedCaseIdRef.current = null;
+      setActiveRun(null);
+      setCases([]);
+      setSelectedCaseId(null);
+      setCaseDetail(null);
+      setAuditTrail([]);
+    }
     try {
-      const res = await fetch("/api/v1/runs");
-      if (!res.ok) throw new Error(String(res.status));
-      const data = (await res.json()) as RunListItem[];
-      setRuns(data);
+      const runResponse = await fetch(
+        runId
+          ? `/api/v1/runs/${encodeURIComponent(runId)}/summary`
+          : "/api/v1/runs/active",
+      );
+      if (!runResponse.ok) throw new Error(String(runResponse.status));
+      const nextRun = (await runResponse.json()) as RunListItem | null;
+      const nextCases = nextRun
+        ? await fetch(`/api/v1/runs/${encodeURIComponent(nextRun.run_id)}/cases`).then(
+            async (response) => {
+              if (!response.ok) throw new Error(String(response.status));
+              return (await response.json()) as CaseSummary[];
+            },
+          )
+        : [];
+
+      if (requestId !== runRequestId.current) return false;
+      if (nextRun && nextCases.some((item) => item.run_id !== nextRun.run_id)) {
+        throw new Error("case list does not belong to the selected run");
+      }
+
+      setActiveRun(nextRun);
+      setCases(nextCases);
       setApiOk(true);
-      if (data.length > 0 && data[0]) {
-        setActiveRunId(data[0].run_id);
-        await loadCases(data[0].run_id);
+
+      const rememberedCaseId = selectedCaseIdRef.current;
+      const nextCaseId =
+        (preferredCaseId && nextCases.some((item) => item.case_id === preferredCaseId)
+          ? preferredCaseId
+          : undefined) ??
+        (rememberedCaseId && nextCases.some((item) => item.case_id === rememberedCaseId)
+          ? rememberedCaseId
+          : undefined) ??
+        nextCases[0]?.case_id;
+
+      if (nextCaseId) {
+        void selectCase(nextCaseId);
+      } else {
+        caseRequestId.current += 1;
+        selectedCaseIdRef.current = null;
+        setSelectedCaseId(null);
+        setCaseDetail(null);
+        setAuditTrail([]);
       }
       return true;
     } catch {
-      setApiOk(false);
+      if (requestId === runRequestId.current) {
+        caseRequestId.current += 1;
+        selectedCaseIdRef.current = null;
+        setActiveRun(null);
+        setCases([]);
+        setSelectedCaseId(null);
+        setCaseDetail(null);
+        setAuditTrail([]);
+        setApiOk(false);
+      }
       return false;
     }
-  }, [loadCases]);
+  }, [selectCase]);
 
   useEffect(() => {
-    void loadRuns().finally(() => setBooting(false));
-  }, [loadRuns]);
+    void loadActiveRun().finally(() => setBooting(false));
+  }, [loadActiveRun]);
+
+  async function retryDashboardLoad() {
+    setBooting(true);
+    await loadActiveRun();
+    setBooting(false);
+  }
 
   async function confirmAuthority(proofId: string, notes?: string) {
     if (!caseDetail) return;
@@ -238,23 +228,7 @@ export default function ControlRoomPage() {
       setModalOpen(false);
 
       if (activeRunId) {
-        const caseListRes = await fetch(`/api/v1/runs/${activeRunId}/cases`);
-        if (caseListRes.ok) {
-          const updatedCases = (await caseListRes.json()) as CaseSummary[];
-          setCases(updatedCases);
-
-          // If in approval queue, transition selection to next pending approval
-          if (activeTab === "approval_queue") {
-            const nextPending = updatedCases.find((c) => c.status === CaseStatus.APPROVAL_REQUIRED);
-            if (nextPending) {
-              void selectCase(nextPending.case_id);
-            } else {
-              void selectCase(currentCaseId);
-            }
-          } else {
-            void selectCase(currentCaseId);
-          }
-        }
+        await loadActiveRun(activeRunId, currentCaseId);
       }
     } catch (e) {
       setToast({
@@ -268,7 +242,6 @@ export default function ControlRoomPage() {
 
   /* ----------------------------- derived -------------------------- */
 
-  const activeRun = runs.find((r) => r.run_id === activeRunId) ?? runs[0];
   const telemetry = activeRun ? telemetryFromRun(activeRun) : undefined;
 
   return (
@@ -696,10 +669,10 @@ export default function ControlRoomPage() {
             <button
               onClick={() => setDossierModalOpen(true)}
               className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-2xs cursor-pointer"
-              title="Open Certified Executive Audit Dossier"
+              title="Open evidence dossier for the active run"
             >
               <IconShield size={13} className="text-slate-900" />
-              <span>Audit Dossier</span>
+              <span>Evidence Dossier</span>
             </button>
 
             <span
@@ -718,10 +691,34 @@ export default function ControlRoomPage() {
                       : "bg-slate-400"
                   }`}
               />
-              {apiOk === true ? "API connected" : apiOk === false ? "API offline" : "Checking API…"}
+              {apiOk === true ? "Backend reachable" : apiOk === false ? "Backend unavailable" : "Checking backend…"}
             </span>
           </div>
         </header>
+
+        {!booting && apiOk === false && (
+          <div role="alert" className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-300 bg-slate-100 px-4 py-3 sm:px-6">
+            <div>
+              <p className="text-xs font-bold text-slate-950">Dashboard data is temporarily unavailable</p>
+              <p className="mt-0.5 text-[11px] text-slate-600">The last visible view is not treated as current. Check the backend, then retry.</p>
+            </div>
+            <button type="button" onClick={() => void retryDashboardLoad()} className="rounded-lg border border-slate-900 bg-white px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-900 hover:bg-slate-50">
+              Retry dashboard
+            </button>
+          </div>
+        )}
+
+        {!booting && apiOk === true && !activeRun && (
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
+            <div>
+              <p className="text-xs font-bold text-slate-950">No reconciliation run yet</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">Import gateway, bank, and ledger evidence to create the first persisted run.</p>
+            </div>
+            <button type="button" onClick={() => setConnectDatasetOpen(true)} className="rounded-lg bg-slate-950 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white hover:bg-slate-800">
+              Import evidence
+            </button>
+          </div>
+        )}
 
         {/* ============================ Distinct Dedicated Views ============================ */}
         {activeTab === "home" && (
@@ -1007,14 +1004,14 @@ export default function ControlRoomPage() {
                 <Metric
                   label="Economic integrity"
                   value={
-                    telemetry.econHash ? (
-                      <span title={telemetry.econHash}>{shortHash(telemetry.econHash)}</span>
+                    telemetry.economicOutputHash ? (
+                      <span title={telemetry.economicOutputHash}>{shortHash(telemetry.economicOutputHash)}</span>
                     ) : (
                       "\u2014"
                     )
                   }
-                  tone={telemetry.econHash ? "positive" : "default"}
-                  sub={telemetry.econHash ? "SHA-256 · sealed" : "unsigned output"}
+                  tone={telemetry.economicOutputHash ? "positive" : "default"}
+                  sub={telemetry.economicOutputHash ? "SHA-256 · runtime output" : "digest unavailable"}
                 />
               </div>
             )}
@@ -1286,9 +1283,9 @@ export default function ControlRoomPage() {
                       <span className="text-sm font-bold text-slate-900">Case Audit Trail</span>
                       {caseDetail && <span className="font-mono text-xs text-slate-500 font-semibold">{caseDetail.case.case_id}</span>}
                     </div>
-                    {telemetry?.econHash && (
+                    {telemetry?.economicOutputHash && (
                       <span className="font-mono text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                        SHA-256: {shortHash(telemetry.econHash, 14)}
+                        SHA-256: {shortHash(telemetry.economicOutputHash, 14)}
                       </span>
                     )}
                   </div>
@@ -1313,11 +1310,9 @@ export default function ControlRoomPage() {
           open={connectDatasetOpen}
           onClose={() => setConnectDatasetOpen(false)}
           onSyncSuccess={(runId) => {
-            setActiveRunId(runId);
             setActiveTab("dossier");
             setStatusFilter("ALL");
-            void loadRuns();
-            void loadCases(runId);
+            void loadActiveRun(runId);
             setToast({
               message: `Synced and reconciled dataset (Run ${runId.slice(0, 10)})`,
               kind: "success",

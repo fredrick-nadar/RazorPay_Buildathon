@@ -1,0 +1,28 @@
+{
+  "benchmark_version": "argus-benchmark-agent-v1",
+  "case_classification": {
+    "denominator": 23,
+    "numerator": 23,
+    "rate": 1.0
+  },
+  "dataset": "datasets/holdout",
+  "duplicate_correction_count": 0,
+  "eligible_records": 1880,
+  "false_verifier_pass_count": 0,
+  "match_precision": {
+    "denominator": 1124,
+    "numerator": 1124,
+    "rate": 1.0
+  },
+  "mode": "agent",
+  "provider": "fake",
+  "record_match_rate": {
+    "denominator": 1880,
+    "numerator": 1864,
+    "rate": 0.991489
+  },
+  "schema_version": "argus-public-benchmark-v1",
+  "source_artifact": "artifacts/benchmark/final.json",
+  "source_digest_basis": "CANONICAL_JSON_V1",
+  "source_sha256": "f3ac4af187d83472e042672f86006c0595ee9caf6db5e4226ac9b6de96f194b3"
+}

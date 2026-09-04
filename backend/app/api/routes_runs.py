@@ -18,6 +18,22 @@ from app.runs import execute_run
 router = APIRouter(prefix="/api/v1/runs", tags=["runs"])
 
 
+def _run_view(row: Any) -> dict[str, Any]:
+    """Return the single runtime-run contract consumed by every dashboard view."""
+    return {
+        "run_id": str(row["run_id"]),
+        "tenant_id": str(row["tenant_id"]),
+        "inputs_path": str(row["inputs_path"]),
+        "status": str(row["status"]),
+        "started_at_utc": str(row["started_at_utc"]),
+        "finished_at_utc": str(row["finished_at_utc"]) if row["finished_at_utc"] else None,
+        "economic_output_hash": str(row["economic_output_hash"])
+        if row["economic_output_hash"]
+        else None,
+        "summary": json.loads(str(row["summary_json"])),
+    }
+
+
 def _resolve_agent_provider(
     settings: Settings, provider_id: str | None = None
 ) -> InvestigatorProvider:
@@ -88,24 +104,18 @@ def list_runs(request: Request) -> list[dict[str, Any]]:
     db: Database = request.app.state.db
     rows = db.query_all(
         "SELECT run_id, tenant_id, inputs_path, status, started_at_utc, "
-        "finished_at_utc, summary_json FROM runs ORDER BY rowid DESC LIMIT 50"
+        "finished_at_utc, economic_output_hash, summary_json "
+        "FROM runs ORDER BY rowid DESC LIMIT 50"
     )
+    return [_run_view(row) for row in rows]
 
-    result = []
-    for r in rows:
-        summary = json.loads(str(r["summary_json"]))
-        result.append(
-            {
-                "run_id": str(r["run_id"]),
-                "tenant_id": str(r["tenant_id"]),
-                "inputs_path": str(r["inputs_path"]),
-                "status": str(r["status"]),
-                "started_at_utc": str(r["started_at_utc"]),
-                "finished_at_utc": str(r["finished_at_utc"]) if r["finished_at_utc"] else None,
-                "summary": summary,
-            }
-        )
-    return result
+
+@router.get("/active")
+def get_active_run(request: Request) -> dict[str, Any] | None:
+    """Return the latest persisted run, or null before the first reconciliation."""
+    db: Database = request.app.state.db
+    row = db.query_one("SELECT * FROM runs ORDER BY rowid DESC LIMIT 1")
+    return _run_view(row) if row is not None else None
 
 
 @router.get("/{run_id}/summary")
@@ -114,15 +124,7 @@ def get_run_summary(run_id: str, request: Request) -> dict[str, Any]:
     row = db.query_one("SELECT * FROM runs WHERE run_id = ?", (run_id,))
     if row is None:
         raise HTTPException(status_code=404, detail=f"run {run_id!r} not found")
-    summary = json.loads(str(row["summary_json"]))
-    return {
-        "run_id": str(row["run_id"]),
-        "status": str(row["status"]),
-        "economic_output_hash": str(row["economic_output_hash"])
-        if row["economic_output_hash"]
-        else None,
-        "summary": summary,
-    }
+    return _run_view(row)
 
 
 @router.get("/{run_id}/cases")
@@ -217,17 +219,25 @@ def get_run_dossier(run_id: str, request: Request) -> dict[str, Any]:
     case_rows = db.query_all("SELECT * FROM cases WHERE run_id = ? ORDER BY rowid ASC", (run_id,))
     cases = []
     total_variance_paise = 0
+    case_status_counts: dict[str, int] = {}
+    verifier_status_counts = {"PASS": 0, "FAIL": 0, "INCONCLUSIVE": 0, "NOT_RUN": 0}
 
     for cr in case_rows:
         cid = str(cr["case_id"])
         var_p = int(cr["variance_paise"])
         total_variance_paise += abs(var_p)
+        case_status = str(cr["status"])
+        case_status_counts[case_status] = case_status_counts.get(case_status, 0) + 1
 
         proof_row = db.query_one(
             "SELECT * FROM proofs WHERE case_id = ? ORDER BY rowid DESC LIMIT 1", (cid,)
         )
         proof = None
         if proof_row:
+            verifier_status = str(proof_row["verifier_status"])
+            verifier_status_counts[verifier_status] = (
+                verifier_status_counts.get(verifier_status, 0) + 1
+            )
             proof = {
                 "proof_id": str(proof_row["proof_id"]),
                 "claim": str(proof_row["claim"]),
@@ -240,6 +250,8 @@ def get_run_dossier(run_id: str, request: Request) -> dict[str, Any]:
                 "authority_decision": str(proof_row["authority_decision"]),
                 "canonical_hash": str(proof_row["canonical_hash"]),
             }
+        else:
+            verifier_status_counts["NOT_RUN"] += 1
 
         evidence_rows = db.query_all(
             "SELECT record_type, record_id, note FROM case_evidence WHERE case_id = ?", (cid,)
@@ -257,7 +269,7 @@ def get_run_dossier(run_id: str, request: Request) -> dict[str, Any]:
             {
                 "case_id": cid,
                 "category": str(cr["category_candidate"]),
-                "status": str(cr["status"]),
+                "status": case_status,
                 "variance_paise": var_p,
                 "affected_amount_paise": int(cr["affected_amount_paise"]),
                 "proposed_delta_paise": int(cr["proposed_delta_paise"])
@@ -287,7 +299,8 @@ def get_run_dossier(run_id: str, request: Request) -> dict[str, Any]:
         for a in audit_rows
     ]
 
-    # Cryptographic integrity signature
+    # Export digest. This proves the returned dossier fields are internally
+    # bound together; it is not an external audit or regulatory certificate.
     econ_hash = str(run_row["economic_output_hash"] or "none")
     raw_sig = f"argus:dossier:v1:{run_id}:{econ_hash}:{len(cases)}:{total_variance_paise}"
     crypto_hash = hashlib.sha256(raw_sig.encode("utf-8")).hexdigest()
@@ -301,18 +314,40 @@ def get_run_dossier(run_id: str, request: Request) -> dict[str, Any]:
         "economic_output_hash": str(run_row["economic_output_hash"])
         if run_row["economic_output_hash"]
         else None,
-        "cryptographic_seal": crypto_hash,
+        "dossier_digest": crypto_hash,
+        "digest_algorithm": "SHA-256",
+        "digest_scope": [
+            "run_id",
+            "economic_output_hash",
+            "cases_count",
+            "total_abs_case_variance_paise",
+        ],
         "summary": summary,
         "cases_count": len(cases),
-        "total_variance_paise": total_variance_paise,
+        "total_abs_case_variance_paise": total_variance_paise,
+        "runtime_metrics": {
+            "eligible_record_count": summary.get("eligible_record_count"),
+            "matched_record_count": summary.get("matched_record_count"),
+            "runtime_match_rate": summary.get("runtime_match_rate"),
+            "case_status_counts": dict(sorted(case_status_counts.items())),
+            "verifier_status_counts": verifier_status_counts,
+            "proof_count": sum(1 for case in cases if case["proof"] is not None),
+            "audit_event_count": len(audit_events),
+        },
         "cases": cases,
         "audit_trail": audit_events,
-        "compliance": {
-            "regulator": "RBI / Merchant Settlement Standards",
-            "framework": "Deterministic Flight Recorder v1.0",
-            "integer_precision": "Signed Integer Paise (0 floats)",
-            "immutable_source_rows": True,
-            "signed_by": "Merchant Financial Controller (Automated Seal)",
+        "provenance": {
+            "scope": "ACTIVE_RUN_RUNTIME",
+            "data_classification": "SYNTHETIC_ONLY",
+            "evaluator_labels_used": False,
+            "external_audit_performed": False,
+            "regulatory_certification": False,
+            "money_representation": "SIGNED_INTEGER_PAISE",
+            "source_rows_immutable": True,
+            "notice": (
+                "This dossier reports reconciliation evidence and internal consistency only; "
+                "it is not an external audit or regulatory certification."
+            ),
         },
     }
 

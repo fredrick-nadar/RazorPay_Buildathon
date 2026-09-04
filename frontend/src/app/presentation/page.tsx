@@ -3,7 +3,7 @@
 /**
  * ARGUS presentation mode (PRD 13.5.1 OPEN_PRESENTATION_MODE).
  * Fixed in-app route for the five-minute demo: full-screen flight recorder
- * telemetry with live values from the runs API — no hard-coded numbers.
+ * telemetry from the latest persisted run — no hard-coded financial numbers.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -36,10 +36,9 @@ export default function PresentationPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/v1/runs");
+      const res = await fetch("/api/v1/runs/active");
       if (!res.ok) throw new Error(String(res.status));
-      const runs = (await res.json()) as RunListItem[];
-      setRun(runs[0] ?? null);
+      setRun((await res.json()) as RunListItem | null);
       setOnline(true);
     } catch {
       setOnline(false);
@@ -119,7 +118,7 @@ export default function PresentationPage() {
           <div className="flex items-center gap-3 text-[11px]">
             <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-black/40 px-3 py-1.5 text-zinc-400">
               <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${online ? "bg-emerald-400" : "bg-rose-400"}`} />
-              {online ? "Live telemetry" : "API offline"}
+              {online ? "Backend reachable" : "Backend unavailable"}
             </span>
             <span className="rounded-full border border-white/[0.08] bg-black/40 px-3 py-1.5 text-zinc-500">
               Synthetic data only
@@ -164,8 +163,8 @@ export default function PresentationPage() {
 
         <footer className="shrink-0 border-t border-white/[0.06] pt-4">
           <p className="text-[10px] leading-relaxed text-zinc-600">
-            Say &ldquo;open presentation mode&rdquo; from the voice copilot to return here · values are
-            measured from the runs API · voice can never approve or apply corrections.
+            Say &ldquo;open presentation mode&rdquo; from the voice copilot to return here · values come
+            from the latest persisted run · voice can never approve or apply corrections.
           </p>
         </footer>
       </div>

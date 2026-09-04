@@ -392,3 +392,156 @@ test("import dialog contains keyboard focus and restores its trigger", async ({ 
   await expect(page.getByRole("dialog", {name:"Import evidence", exact:true})).toHaveCount(0);
   await expect(page.getByRole("button", {name:"Import Data", exact:true})).toBeFocused();
 });
+
+test("saved workflow shows backend-owned stages and a bounded retry", async ({ page }) => {
+  const sessionId = "e2e_workflow_progress";
+  const source = (sourceType: string) => ({
+    revision_id: `rev-${sourceType}`,
+    revision_number: 1,
+    source_type: sourceType,
+    original_filename: `${sourceType}.csv`,
+    origin: "MANUAL_CSV",
+    external_import_id: null,
+    row_count: 2,
+    accepted_count: 2,
+    quarantined_count: 0,
+    canonical_sha256: "a".repeat(64),
+  });
+  await page.route(`**/api/v1/ingest/sessions/${sessionId}/status`, route => route.fulfill({
+    status: 200,
+    json: {
+      ready: true,
+      gateway_ready: true,
+      bank_ready: true,
+      ledger_ready: true,
+      ready_source_groups: 3,
+      settlement_reconciliation_required: false,
+      active_sources: {
+        payments: source("payments"),
+        settlements: source("settlements"),
+        bank_entries: source("bank_entries"),
+        ledger_entries: source("ledger_entries"),
+      },
+      revision_counts: {},
+      lifecycle_state: "READY",
+      gateway_import_id: null,
+      merchant_upload_required: [],
+    },
+  }));
+
+  const steps = [
+    ["INPUT_VALIDATION", "Validate evidence"],
+    ["DETERMINISTIC_RECONCILIATION", "Match financial records"],
+    ["DETERMINISTIC_VERIFICATION", "Verify exceptions"],
+    ["PROOF_AND_REPORT", "Seal proof and report"],
+  ];
+  const responseJob = (attempt: number, retryable: boolean) => ({
+    job_id: "job-e2e-progress",
+    session_id: sessionId,
+    status: "FAILED",
+    phase: "DETERMINISTIC_RECONCILIATION",
+    terminal: true,
+    execution_mode: "rules-only",
+    provider_id: "none",
+    simulated: false,
+    attempt_count: attempt,
+    max_attempts: 2,
+    run_id: null,
+    failure_code: "RUN_FAILED",
+    failure_detail: "RuntimeError: reconciliation did not complete",
+    summary: null,
+    progress: {
+      kind: "STEP_COMPLETION",
+      headline: "Workflow stopped safely",
+      detail: "No failed attempt is presented as a completed reconciliation.",
+      completed_steps: 1,
+      total_steps: 4,
+      steps: steps.map(([code, label], index) => ({
+        code,
+        label,
+        detail: label,
+        state: index === 0 ? "COMPLETE" : index === 1 ? "FAILED" : "PENDING",
+      })),
+    },
+    recovery: {
+      retryable,
+      remaining_attempts: retryable ? 1 : 0,
+      action: retryable ? "RETRY" : "REVIEW_INPUTS_OR_CONFIGURATION",
+    },
+  });
+  await page.route("**/api/v1/ingest/reconciliation-jobs", route => route.fulfill({
+    status: 202,
+    json: responseJob(1, true),
+  }));
+  await page.route("**/api/v1/ingest/reconciliation-jobs/job-e2e-progress/retry", route => route.fulfill({
+    status: 202,
+    json: responseJob(2, false),
+  }));
+  await page.route("**/api/v1/ingest/reconciliation-jobs/job-e2e-progress", route => route.fulfill({
+    status: 200,
+    json: responseJob(2, false),
+  }));
+
+  await openDialogFor(page, sessionId);
+  await page.getByRole("button", { name: "Run rules-only reconciliation" }).click();
+  await expect(page.getByText("Workflow stopped safely", { exact: true })).toBeVisible();
+  await expect(page.getByText("1/4 stages complete", { exact: true })).toBeVisible();
+  const retry = page.getByRole("button", { name: /Retry saved workflow · 1 left/i });
+  await expect(retry).toBeVisible();
+  await retry.click();
+  await expect(page.getByText("attempt 2/2", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Retry saved workflow/i })).toHaveCount(0);
+});
+
+test("polling failure preserves the saved job and exposes status recovery", async ({ page }) => {
+  const sessionId = "e2e_workflow_status_unavailable";
+  await page.route(`**/api/v1/ingest/sessions/${sessionId}/status`, route => route.fulfill({
+    status: 200,
+    json: {
+      ready: true,
+      gateway_ready: true,
+      bank_ready: true,
+      ledger_ready: true,
+      ready_source_groups: 3,
+      settlement_reconciliation_required: false,
+      active_sources: {},
+      revision_counts: {},
+      lifecycle_state: "READY",
+      gateway_import_id: null,
+      merchant_upload_required: [],
+    },
+  }));
+  const running = {
+    job_id: "job-e2e-unavailable",
+    session_id: sessionId,
+    status: "RUNNING",
+    phase: "INPUT_VALIDATION",
+    terminal: false,
+    execution_mode: "rules-only",
+    provider_id: "none",
+    simulated: false,
+    attempt_count: 1,
+    max_attempts: 2,
+    run_id: null,
+    failure_code: null,
+    failure_detail: null,
+    summary: null,
+    progress: {
+      kind: "STEP_COMPLETION",
+      headline: "Validate evidence",
+      detail: "Read every pinned source row.",
+      completed_steps: 0,
+      total_steps: 4,
+      steps: [],
+    },
+    recovery: { retryable: false, remaining_attempts: 1, action: "WAIT" },
+  };
+  await page.route("**/api/v1/ingest/reconciliation-jobs", route => route.fulfill({ status: 202, json: running }));
+  await page.route("**/api/v1/ingest/reconciliation-jobs/job-e2e-unavailable", route => route.abort("connectionreset"));
+
+  await openDialogFor(page, sessionId);
+  await page.getByRole("button", { name: "Run rules-only reconciliation" }).click();
+  await expect(page.getByText("Workflow status temporarily unavailable", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Saved job job-e2e-unavailable/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check saved workflow" })).toBeVisible();
+});

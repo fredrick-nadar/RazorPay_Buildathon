@@ -36,11 +36,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT / "backend") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "backend"))
 
-from app.evaluation.benchmark import evaluate_dataset  # noqa: E402
-from app.failure_lab.replay import ReplayDiagnostics  # noqa: E402
-from app.persistence.database import Database  # noqa: E402
-from app.investigator.provider import FakeProvider  # noqa: E402
-from app.runs import execute_run  # noqa: E402
+from app.evaluation.benchmark import evaluate_dataset
+from app.evaluation.public_summary import (
+    build_public_benchmark_summary,
+    canonical_benchmark_digest,
+)
+from app.failure_lab.replay import ReplayDiagnostics
+from app.investigator.provider import FakeProvider
+from app.persistence.database import Database
+from app.runs import execute_run
 
 
 def emit(message: str) -> None:
@@ -282,6 +286,16 @@ def main() -> int:
 
     # Generate companion Markdown summary for final submission
     if output_path.name == "final.json":
+        public_summary = build_public_benchmark_summary(
+            report,
+            source_sha256=canonical_benchmark_digest(report),
+        )
+        public_path = output_path.with_name("public-summary.json")
+        public_path.write_text(
+            json.dumps(public_summary, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        emit(f"[run_benchmark] public summary written to {public_path}")
         md_path = output_path.parent / "final_summary.md"
         _write_markdown_summary(report, md_path)
         emit(f"[run_benchmark] markdown summary written to {md_path}")

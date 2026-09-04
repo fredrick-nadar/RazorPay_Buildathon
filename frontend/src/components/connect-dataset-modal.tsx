@@ -17,6 +17,16 @@ import {
   INITIAL_IMPORT_SESSION_STATE,
 } from "../lib/import-session-state";
 import { describeRunInvestigation, type RunInvestigationReport } from "../lib/run-investigation";
+import {
+  canRetryWorkflow,
+  INITIAL_RECONCILIATION_WORKFLOW_STATE,
+  isWorkflowBusy,
+  reconciliationJobStorageKey,
+  reconciliationWorkflowReducer,
+  requireReconciliationJob,
+  type ReconciliationJob,
+  type ReconciliationWorkflowState,
+} from "../lib/reconciliation-workflow";
 import { createImportSessionId } from "../lib/session-id";
 import { IconCheck, IconRazorpay, IconUpload, IconX } from "./icons";
 
@@ -94,22 +104,6 @@ interface DemoEvidenceResult {
   message: string;
 }
 
-interface ReconciliationJob {
-  job_id: string;
-  status: "BLOCKED" | "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
-  phase: string;
-  terminal: boolean;
-  execution_mode: "rules-only" | "agent";
-  provider_id: string;
-  simulated: boolean;
-  attempt_count: number;
-  max_attempts: number;
-  run_id: string | null;
-  failure_code: string | null;
-  failure_detail: string | null;
-  summary: Record<string, unknown> | null;
-}
-
 type ReconciliationMode = "rules-only" | "agent" | "fake";
 
 interface AiStatus {
@@ -120,7 +114,6 @@ interface AiStatus {
 }
 
 const IMPORT_SESSION_KEY = "argus_import_session_v1";
-const RECONCILIATION_JOB_KEY_PREFIX = "argus_reconciliation_job_v1:";
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -165,6 +158,110 @@ function StatusMark({ ready, label }: { ready: boolean; label: string }) {
   );
 }
 
+function WorkflowProgress({
+  state,
+  onRetry,
+  onResume,
+}: {
+  state: ReconciliationWorkflowState;
+  onRetry: () => void;
+  onResume: () => void;
+}) {
+  if (state.clientStatus === "IDLE") return null;
+  const job = state.job;
+
+  if (state.clientStatus === "STARTING" && !job) {
+    return (
+      <section aria-live="polite" className="rounded-xl border border-slate-300 bg-white px-4 py-3">
+        <div className="flex items-center gap-3">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-slate-950" />
+          <div>
+            <p className="text-xs font-bold text-slate-950">Saving reconciliation workflow</p>
+            <p className="mt-0.5 text-[11px] text-slate-500">Pinning the current evidence before work begins.</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (state.clientStatus === "STATUS_UNAVAILABLE") {
+    return (
+      <section role="alert" className="rounded-xl border border-slate-400 bg-white px-4 py-3 text-slate-900">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="max-w-xl">
+            <p className="text-xs font-bold">Workflow status temporarily unavailable</p>
+            <p className="mt-1 text-[11px] leading-5 text-slate-600">{state.statusError}</p>
+            {job && <p className="mt-1 font-mono text-[9px] uppercase tracking-wider text-slate-500">Saved job {job.job_id} · the backend remains authoritative</p>}
+          </div>
+          <button type="button" onClick={onResume} className="rounded-lg border border-slate-900 bg-slate-950 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white hover:bg-slate-800">
+            {job ? "Check saved workflow" : "Try again"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (!job) return null;
+  const activeOrFailed = job.progress.steps.find(
+    (step) => step.state === "ACTIVE" || step.state === "FAILED",
+  );
+  const retryable = canRetryWorkflow(job);
+  const recoveryGuidance =
+    job.recovery.action === "COMPLETE_INPUTS"
+      ? "Complete or replace the required evidence above; the blocked job itself will not run."
+      : job.recovery.action === "START_NEW_REQUEST"
+        ? "The investigator configuration changed. Start a new workflow with the current policy."
+        : job.recovery.action === "REVIEW_INPUTS_OR_CONFIGURATION"
+          ? "The retry limit is closed. Change the relevant evidence or configuration before starting again."
+          : null;
+
+  return (
+    <section aria-live="polite" className="overflow-hidden rounded-xl border border-slate-300 bg-white text-slate-900">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-4 py-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs font-bold">{job.progress.headline}</p>
+            <span className="rounded-full border border-slate-300 bg-slate-50 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-slate-600">{job.status}</span>
+          </div>
+          <p className="mt-1 text-[11px] leading-5 text-slate-500">{job.progress.detail}</p>
+        </div>
+        <p className="font-mono text-[9px] uppercase tracking-wider text-slate-500">
+          {job.progress.completed_steps}/{job.progress.total_steps} stages complete
+        </p>
+      </div>
+      <ol aria-label="Reconciliation stages" className={`grid gap-px bg-slate-200 sm:grid-cols-2 ${job.progress.total_steps === 5 ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
+        {job.progress.steps.map((step, index) => (
+          <li key={step.code} className="flex min-w-0 gap-2 bg-white px-3 py-2.5">
+            <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border font-mono text-[9px] font-bold ${step.state === "COMPLETE" ? "border-slate-950 bg-slate-950 text-white" : step.state === "ACTIVE" ? "border-slate-950 bg-white text-slate-950" : step.state === "FAILED" ? "border-slate-950 bg-slate-200 text-slate-950" : "border-slate-200 bg-slate-50 text-slate-400"}`}>
+              {step.state === "COMPLETE" ? "✓" : index + 1}
+            </span>
+            <div className="min-w-0">
+              <p className={`text-[10px] font-semibold leading-4 ${step.state === "PENDING" ? "text-slate-400" : "text-slate-800"}`}>{step.label}</p>
+              <span className="sr-only">{step.state.toLowerCase()}</span>
+            </div>
+          </li>
+        ))}
+      </ol>
+      {(job.status === "FAILED" || job.status === "BLOCKED") && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3">
+          <div>
+            <p className="text-[11px] font-semibold text-slate-800">{job.failure_detail ?? "The workflow needs attention."}</p>
+            {recoveryGuidance && <p className="mt-1 text-[11px] leading-5 text-slate-600">{recoveryGuidance}</p>}
+            <p className="mt-0.5 font-mono text-[9px] uppercase tracking-wider text-slate-500">
+              {job.failure_code ?? "WORKFLOW_BLOCKED"}{activeOrFailed ? ` · ${activeOrFailed.label}` : ""} · attempt {job.attempt_count}/{job.max_attempts}
+            </p>
+          </div>
+          {retryable && (
+            <button type="button" onClick={onRetry} className="rounded-lg border border-slate-900 bg-white px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-900 hover:bg-slate-100">
+              Retry saved workflow · {job.recovery.remaining_attempts} left
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDatasetModalProps) {
   const [sessionId, setSessionId] = useState("");
   const [keyId, setKeyId] = useState("");
@@ -183,14 +280,16 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [analyzing, setAnalyzing] = useState(false);
   const [committing, setCommitting] = useState(false);
-  const [reconciling, setReconciling] = useState(false);
-  const [reconciliationJob, setReconciliationJob] = useState<ReconciliationJob | null>(null);
+  const [workflow, workflowDispatch] = useReducer(
+    reconciliationWorkflowReducer,
+    INITIAL_RECONCILIATION_WORKFLOW_STATE,
+  );
   // Held when a run completed safely but was NOT fully investigated.
   const [investigationReport, setInvestigationReport] = useState<RunInvestigationReport | null>(null);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   const [reconciliationMode, setReconciliationMode] = useState<ReconciliationMode>("rules-only");
   const [aiStatusLoading, setAiStatusLoading] = useState(false);
-  const jobPollEpochRef = useRef(0);
+  const workflowRequestRef = useRef(0);
   const [fileError, setFileError] = useState<string | null>(null);
   const [intendedType, setIntendedType] = useState<DocumentType>("payments");
   const fileInput = useRef<HTMLInputElement>(null);
@@ -272,6 +371,10 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
     dispatch({ type: "RESET", requestId: ++requestRef.current });
   }, []);
 
+  const invalidateWorkflowRequest = useCallback(() => {
+    workflowDispatch({ type: "RESET", requestId: ++workflowRequestRef.current });
+  }, []);
+
   useEffect(() => {
     if (open) void refreshSession();
     return invalidateRequest;
@@ -308,8 +411,7 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
 
   const finishSuccessfulJob = useCallback((job: ReconciliationJob) => {
     if (!job.run_id) throw new Error("The completed workflow did not link a reconciliation run.");
-    window.sessionStorage.removeItem(`${RECONCILIATION_JOB_KEY_PREFIX}${sessionId}`);
-    setReconciling(false);
+    window.sessionStorage.removeItem(reconciliationJobStorageKey(sessionId));
     const report = describeRunInvestigation(job.summary);
     onSyncSuccess(job.run_id, job.summary);
     if (report.warning) {
@@ -321,21 +423,28 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
     onClose();
   }, [onClose, onSyncSuccess, sessionId]);
 
-  const pollReconciliationJob = useCallback(async (jobId: string, epoch: number) => {
-    while (jobPollEpochRef.current === epoch) {
+  const pollReconciliationJob = useCallback(async (
+    jobId: string,
+    requestId: number,
+    workflowSessionId: string,
+  ) => {
+    while (workflowRequestRef.current === requestId) {
       const response = await fetch(`/api/v1/ingest/reconciliation-jobs/${encodeURIComponent(jobId)}`);
-      const body = await response.json();
+      const body = await response.json().catch(() => ({})) as Partial<ReconciliationJob> & { detail?: string };
       if (!response.ok) throw new Error(body.detail || "Reconciliation progress could not be loaded.");
-      if (jobPollEpochRef.current !== epoch) return;
-      const job = body as ReconciliationJob;
-      setReconciliationJob(job);
+      if (workflowRequestRef.current !== requestId) return;
+      const job = requireReconciliationJob(body, workflowSessionId, jobId);
+      workflowDispatch({
+        type: "JOB_RECEIVED",
+        requestId,
+        sessionId: workflowSessionId,
+        job,
+      });
       if (job.status === "SUCCEEDED") {
         finishSuccessfulJob(job);
         return;
       }
       if (job.status === "FAILED" || job.status === "BLOCKED") {
-        setFileError(job.failure_detail || "The reconciliation workflow needs attention.");
-        setReconciling(false);
         return;
       }
       await delay(700);
@@ -344,19 +453,29 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
 
   useEffect(() => {
     if (!open || !sessionId) return;
-    const jobId = window.sessionStorage.getItem(`${RECONCILIATION_JOB_KEY_PREFIX}${sessionId}`);
+    const jobId = window.sessionStorage.getItem(reconciliationJobStorageKey(sessionId));
     if (!jobId) return;
-    const epoch = ++jobPollEpochRef.current;
-    setReconciling(true);
-    void pollReconciliationJob(jobId, epoch).catch((error) => {
-      if (jobPollEpochRef.current !== epoch) return;
-      setReconciling(false);
-      setFileError(error instanceof Error ? `${error.message} The job remains saved; reopen to retry status.` : "Reconciliation status is temporarily unavailable.");
+    const requestId = ++workflowRequestRef.current;
+    workflowDispatch({ type: "STARTED", requestId, sessionId, preserveJob: true });
+    void pollReconciliationJob(jobId, requestId, sessionId).catch((error) => {
+      if (workflowRequestRef.current !== requestId) return;
+      workflowDispatch({
+        type: "STATUS_UNAVAILABLE",
+        requestId,
+        sessionId,
+        message: error instanceof Error
+          ? `${error.message} The job is still saved; checking again is safe.`
+          : "Reconciliation status is temporarily unavailable. The job is still saved.",
+      });
     });
-    return () => { jobPollEpochRef.current += 1; };
-  }, [open, sessionId, pollReconciliationJob]);
+    return invalidateWorkflowRequest;
+  }, [open, sessionId, pollReconciliationJob, invalidateWorkflowRequest]);
 
-  const busy = syncing || demoGenerating || analyzing || committing || reconciling || server.refreshing || aiStatusLoading;
+  const workflowBusy = isWorkflowBusy(workflow);
+  const workflowRequiresChange =
+    workflow.job?.status === "FAILED" &&
+    workflow.job.recovery.action === "REVIEW_INPUTS_OR_CONFIGURATION";
+  const busy = syncing || demoGenerating || analyzing || committing || workflowBusy || server.refreshing || aiStatusLoading;
   const activeSources = sessionStatus?.active_sources ?? {};
   const gatewayReady = sessionStatus?.gateway_ready ?? false;
   const bankReady = sessionStatus?.bank_ready ?? false;
@@ -386,6 +505,12 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
     [server.freshDemo, server.detail, currentImportId],
   );
   const capturedPayments = capturedPaymentCount(gatewayView?.paymentCounts);
+
+  const resetWorkflowForEvidenceChange = useCallback(() => {
+    if (sessionId) window.sessionStorage.removeItem(reconciliationJobStorageKey(sessionId));
+    invalidateWorkflowRequest();
+    setInvestigationReport(null);
+  }, [sessionId, invalidateWorkflowRequest]);
 
   function chooseFile(type: DocumentType) {
     if (busy) return;
@@ -426,6 +551,7 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
 
   async function commitMapping() {
     if (!pending || busy) return;
+    resetWorkflowForEvidenceChange();
     const requestId = ++requestRef.current;
     dispatch({ type: "MUTATION_STARTED", requestId });
     setCommitting(true);
@@ -452,6 +578,7 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
 
   async function importRazorpay() {
     if (busy) return;
+    resetWorkflowForEvidenceChange();
     const requestId = ++requestRef.current;
     setSyncing(true);
     setSyncError(null);
@@ -487,6 +614,7 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
   async function generateDemoEvidence() {
     const importId = currentImportId;
     if (!importId || !sessionId || busy || !server.detail?.demo_generation?.eligible) return;
+    resetWorkflowForEvidenceChange();
     const requestId = ++requestRef.current;
     dispatch({ type: "MUTATION_STARTED", requestId });
     setDemoGenerating(true);
@@ -528,53 +656,84 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
 
   async function runReconciliation() {
     if (!fullReady) return;
-    setReconciling(true);
     setFileError(null);
+    setInvestigationReport(null);
+    const requestId = ++workflowRequestRef.current;
+    workflowDispatch({ type: "STARTED", requestId, sessionId });
     try {
       const response = await fetch("/api/v1/ingest/reconciliation-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId, mode: reconciliationMode }),
       });
-      const result = await response.json();
+      const result = await response.json().catch(() => ({})) as Partial<ReconciliationJob> & { detail?: string };
       if (!response.ok) throw new Error(result.detail || "Full reconciliation could not start.");
-      const job = result as ReconciliationJob;
-      setReconciliationJob(job);
-      window.sessionStorage.setItem(`${RECONCILIATION_JOB_KEY_PREFIX}${sessionId}`, job.job_id);
+      if (workflowRequestRef.current !== requestId) return;
+      const job = requireReconciliationJob(result, sessionId);
+      workflowDispatch({ type: "JOB_RECEIVED", requestId, sessionId, job });
+      window.sessionStorage.setItem(reconciliationJobStorageKey(sessionId), job.job_id);
       if (job.status === "SUCCEEDED") {
         finishSuccessfulJob(job);
         return;
       }
-      if (job.status === "FAILED" || job.status === "BLOCKED") {
-        throw new Error(job.failure_detail || "The reconciliation workflow needs attention.");
-      }
-      const epoch = ++jobPollEpochRef.current;
-      await pollReconciliationJob(job.job_id, epoch);
+      if (job.terminal) return;
+      await pollReconciliationJob(job.job_id, requestId, sessionId);
     } catch (error) {
-      setFileError(error instanceof Error ? error.message : "Full reconciliation could not start.");
-      setReconciling(false);
+      if (workflowRequestRef.current !== requestId) return;
+      workflowDispatch({
+        type: "STATUS_UNAVAILABLE",
+        requestId,
+        sessionId,
+        message: error instanceof Error ? error.message : "Full reconciliation could not start.",
+      });
     }
   }
 
   async function retryReconciliation() {
-    if (!reconciliationJob || reconciliationJob.status !== "FAILED") return;
-    setReconciling(true);
+    const failedJob = workflow.job;
+    if (!canRetryWorkflow(failedJob)) return;
     setFileError(null);
+    const requestId = ++workflowRequestRef.current;
+    workflowDispatch({ type: "STARTED", requestId, sessionId, preserveJob: true });
     try {
       const response = await fetch(
-        `/api/v1/ingest/reconciliation-jobs/${encodeURIComponent(reconciliationJob.job_id)}/retry`,
+        `/api/v1/ingest/reconciliation-jobs/${encodeURIComponent(failedJob!.job_id)}/retry`,
         { method: "POST" },
       );
-      const body = await response.json();
+      const body = await response.json().catch(() => ({})) as Partial<ReconciliationJob> & { detail?: string };
       if (!response.ok) throw new Error(body.detail || "The reconciliation job could not be retried.");
-      const job = body as ReconciliationJob;
-      setReconciliationJob(job);
-      const epoch = ++jobPollEpochRef.current;
-      await pollReconciliationJob(job.job_id, epoch);
+      if (workflowRequestRef.current !== requestId) return;
+      const job = requireReconciliationJob(body, sessionId, failedJob!.job_id);
+      workflowDispatch({ type: "JOB_RECEIVED", requestId, sessionId, job });
+      await pollReconciliationJob(job.job_id, requestId, sessionId);
     } catch (error) {
-      setFileError(error instanceof Error ? error.message : "The reconciliation job could not be retried.");
-      setReconciling(false);
+      if (workflowRequestRef.current !== requestId) return;
+      workflowDispatch({
+        type: "STATUS_UNAVAILABLE",
+        requestId,
+        sessionId,
+        message: error instanceof Error ? error.message : "The reconciliation job could not be retried.",
+      });
     }
+  }
+
+  function resumeReconciliationStatus() {
+    const jobId = workflow.job?.job_id;
+    if (!jobId) {
+      void runReconciliation();
+      return;
+    }
+    const requestId = ++workflowRequestRef.current;
+    workflowDispatch({ type: "STARTED", requestId, sessionId, preserveJob: true });
+    void pollReconciliationJob(jobId, requestId, sessionId).catch((error) => {
+      if (workflowRequestRef.current !== requestId) return;
+      workflowDispatch({
+        type: "STATUS_UNAVAILABLE",
+        requestId,
+        sessionId,
+        message: error instanceof Error ? error.message : "Reconciliation status is temporarily unavailable.",
+      });
+    });
   }
 
   if (!open) return null;
@@ -766,7 +925,13 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
               </article>;
             })}
 
-            {(analyzing || fileError) && <div>{analyzing ? <p className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600">Profiling columns and checking known aliases…</p> : fileError && <div className="space-y-2"><ApiError message={fileError} />{reconciliationJob?.status === "FAILED" && reconciliationJob.attempt_count < reconciliationJob.max_attempts && <button type="button" onClick={() => void retryReconciliation()} disabled={reconciling} className="rounded-lg border border-slate-900 bg-white px-3 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50">Retry saved workflow</button>}</div>}</div>}
+            {(analyzing || fileError) && <div>{analyzing ? <p className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600">Profiling columns and checking known aliases…</p> : fileError && <ApiError message={fileError} />}</div>}
+
+            <WorkflowProgress
+              state={workflow}
+              onRetry={() => void retryReconciliation()}
+              onResume={resumeReconciliationStatus}
+            />
 
             {stagedSources.length > 0 && <details className="px-1 py-1">
               <summary className="cursor-pointer text-[11px] font-semibold text-slate-600">Source revisions & validation · {stagedSources.length} active files</summary>
@@ -774,15 +939,15 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
             </details>}
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
-            <p className="text-[11px] text-slate-500">{reconciling && reconciliationJob ? `${reconciliationJob.phase.replaceAll("_", " ").toLowerCase()} · ${reconciliationJob.provider_id}${reconciliationJob.simulated ? " · simulated" : ""}` : readyCount === 3 ? "Evidence collected. Reconciliation checks for differences." : "Three independent sources. One verified comparison."}</p>
+            <p className="text-[11px] text-slate-500">{workflowBusy && workflow.job ? `${workflow.job.progress.headline} · ${workflow.job.provider_id}${workflow.job.simulated ? " · simulated" : ""}` : readyCount === 3 ? "Evidence collected. Reconciliation checks for differences." : "Three independent sources. One verified comparison."}</p>
             <div className="flex items-center gap-2">
               <label className="sr-only" htmlFor="reconciliation-mode">Reconciliation execution mode</label>
-              <select id="reconciliation-mode" value={reconciliationMode} onChange={(event) => setReconciliationMode(event.target.value as ReconciliationMode)} disabled={reconciling || aiStatusLoading} className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-medium text-slate-600 outline-none focus:border-slate-900">
+              <select id="reconciliation-mode" value={reconciliationMode} onChange={(event) => setReconciliationMode(event.target.value as ReconciliationMode)} disabled={workflowBusy || aiStatusLoading} className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-medium text-slate-600 outline-none focus:border-slate-900">
                 {aiStatus?.live_available && <option value="agent">AI · {aiStatus.chain.join(" → ")}</option>}
                 {aiStatus?.fake_selected && <option value="fake">Synthetic fake investigator</option>}
                 <option value="rules-only">Rules only</option>
               </select>
-              <button type="button" disabled={!fullReady || reconciling} onClick={() => void runReconciliation()} className="rounded-lg bg-slate-950 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{reconciling ? reconciliationJob?.status === "RUNNING" ? "Reconciliation in progress…" : "Starting saved workflow…" : busy && readyCount === 3 ? "Checking sources…" : fullReady ? reconciliationMode === "agent" ? "Run with AI investigator" : reconciliationMode === "fake" ? "Run synthetic evaluation" : "Run rules-only reconciliation" : `Waiting for ${3 - readyCount} source${3 - readyCount === 1 ? "" : "s"}`}</button>
+              <button type="button" disabled={!fullReady || workflowBusy || canRetryWorkflow(workflow.job) || workflowRequiresChange} onClick={() => void runReconciliation()} className="rounded-lg bg-slate-950 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{workflowBusy ? workflow.job?.status === "RUNNING" ? "Reconciliation in progress…" : "Starting saved workflow…" : canRetryWorkflow(workflow.job) ? "Retry saved workflow above" : workflowRequiresChange ? "Update evidence or configuration" : busy && readyCount === 3 ? "Checking sources…" : fullReady ? reconciliationMode === "agent" ? "Run with AI investigator" : reconciliationMode === "fake" ? "Run synthetic evaluation" : "Run rules-only reconciliation" : `Waiting for ${3 - readyCount} source${3 - readyCount === 1 ? "" : "s"}`}</button>
             </div>
             {investigationReport && (
               <div role="alert" className="mt-3 rounded-xl border border-slate-400 bg-white px-3 py-3 text-xs text-slate-900 shadow-2xs">

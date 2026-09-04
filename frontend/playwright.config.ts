@@ -1,12 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
-import { E2E_DB, E2E_STAGING, ensureFixture } from "./tests/e2e/fixture";
+import { ensureFixture } from "./tests/e2e/fixture";
 
-const REPO_ROOT = resolve(__dirname, "..");
-
-// Must run before the backend web server below, which opens this database at
-// startup. globalSetup would run too late.
+// Must run before global setup opens this database.
 ensureFixture();
 
 /**
@@ -37,12 +34,9 @@ if (apiRewrite?.destination !== `${BACKEND_ORIGIN}/api/:path*`) {
   throw new Error(`E2E requires a build targeting the isolated ${BACKEND_ORIGIN} API.`);
 }
 
-const venvPython = existsSync(join(REPO_ROOT, ".venv", "Scripts", "python.exe"))
-  ? join(REPO_ROOT, ".venv", "Scripts", "python.exe")
-  : join(REPO_ROOT, ".venv", "bin", "python");
-
 export default defineConfig({
   testDir: "tests/e2e",
+  globalSetup: "./tests/e2e/global-setup.ts",
   timeout: 60_000,
   fullyParallel: false,
   retries: 0,
@@ -56,40 +50,6 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-    },
-  ],
-  webServer: [
-    {
-      // Isolated database and staging tree. reuseExistingServer stays false so
-      // a development API on this port fails the run instead of being used.
-      command: [
-        `"${venvPython}"`,
-        "-m uvicorn app.main:app --app-dir backend",
-        `--host 127.0.0.1 --port ${BACKEND_PORT}`,
-      ].join(" "),
-      cwd: REPO_ROOT,
-      url: `${BACKEND_ORIGIN}/api/v1/health`,
-      reuseExistingServer: false,
-      timeout: 120_000,
-      env: {
-        ARGUS_DB_PATH: E2E_DB,
-        ARGUS_IMPORT_STAGING_ROOT: E2E_STAGING,
-        ARGUS_AI_PROVIDER: "none",
-        ARGUS_GROQ_API_KEY: "",
-        GROQ_API_KEY: "",
-        LLM_API_KEY: "",
-        ARGUS_MODEL_API_KEY: "",
-        ARGUS_OPENAI_API_KEY: "",
-        OPENAI_API_KEY: "",
-        ARGUS_GEMINI_API_KEY: "",
-        ARGUS_SARVAM_API_KEY: "",
-      },
-    },
-    {
-      command: `npm run start -- --port ${FRONTEND_PORT} --hostname 127.0.0.1`,
-      url: `http://127.0.0.1:${FRONTEND_PORT}`,
-      reuseExistingServer: false,
-      timeout: 120_000,
     },
   ],
 });

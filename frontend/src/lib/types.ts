@@ -125,6 +125,7 @@ export interface RunListItem {
   status: string;
   started_at_utc: string;
   finished_at_utc: string | null;
+  economic_output_hash: string | null;
   summary: Record<string, unknown>;
 }
 

@@ -25,6 +25,37 @@ from app.runs import RunResult, execute_run
 
 RunExecutor = Callable[..., RunResult]
 TERMINAL_STATUSES = frozenset({"BLOCKED", "SUCCEEDED", "FAILED"})
+RETRYABLE_FAILURE_CODES = frozenset({"INTERRUPTED", "PROVIDER_FAILURE", "RUN_FAILED"})
+
+_PHASE_SEQUENCE = (
+    "INPUT_VALIDATION",
+    "DETERMINISTIC_RECONCILIATION",
+    "DETERMINISTIC_VERIFICATION",
+    "AI_INVESTIGATION",
+    "PROOF_AND_REPORT",
+)
+_PHASE_COPY = {
+    "INPUT_VALIDATION": (
+        "Validate evidence",
+        "Read every pinned source row and quarantine malformed input.",
+    ),
+    "DETERMINISTIC_RECONCILIATION": (
+        "Match financial records",
+        "Apply versioned reconciliation rules across gateway, bank, and ledger evidence.",
+    ),
+    "DETERMINISTIC_VERIFICATION": (
+        "Verify exceptions",
+        "Test every residual case with deterministic controls.",
+    ),
+    "AI_INVESTIGATION": (
+        "Investigate residual cases",
+        "Use the selected bounded investigator; deterministic verification remains authoritative.",
+    ),
+    "PROOF_AND_REPORT": (
+        "Seal proof and report",
+        "Persist cases, proof packages, totals, and the economic output hash.",
+    ),
+}
 
 
 def _now() -> str:
@@ -73,6 +104,114 @@ def _safe_failure(exc: Exception) -> tuple[str, str]:
     if name in {"LLMError", "AIChainError", "TimeoutError"}:
         return "PROVIDER_FAILURE", f"{name}: live investigator did not complete"
     return "RUN_FAILED", f"{name}: reconciliation did not complete"[:500]
+
+
+def _progress_view(
+    *,
+    status: str,
+    phase: str,
+    execution_mode: str,
+    events: list[Any],
+) -> dict[str, Any]:
+    """Build a deterministic workflow view from persisted events.
+
+    This reports completed stages, not estimated elapsed time. It therefore
+    remains truthful for a fast rules-only run and for a slow live-provider
+    investigation alike.
+    """
+    phase_codes = [
+        code for code in _PHASE_SEQUENCE if code != "AI_INVESTIGATION" or execution_mode == "agent"
+    ]
+    observed: list[str] = []
+    for event in events:
+        if str(event["event_type"]) != "PROGRESS":
+            continue
+        try:
+            event_detail = json.loads(str(event["detail_json"]))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        event_phase = event_detail.get("phase")
+        if isinstance(event_phase, str) and event_phase in phase_codes:
+            observed.append(event_phase)
+
+    current_code = phase if phase in phase_codes else (observed[-1] if observed else None)
+    current_index = phase_codes.index(current_code) if current_code in phase_codes else None
+    steps: list[dict[str, str]] = []
+    for index, code in enumerate(phase_codes):
+        if status == "SUCCEEDED":
+            step_state = "COMPLETE"
+        elif status == "RUNNING" and current_index is not None:
+            step_state = (
+                "COMPLETE"
+                if index < current_index
+                else "ACTIVE"
+                if index == current_index
+                else "PENDING"
+            )
+        elif status == "FAILED" and current_index is not None:
+            step_state = (
+                "COMPLETE"
+                if index < current_index
+                else "FAILED"
+                if index == current_index
+                else "PENDING"
+            )
+        else:
+            step_state = "PENDING"
+        label, detail = _PHASE_COPY[code]
+        steps.append({"code": code, "label": label, "detail": detail, "state": step_state})
+
+    completed_steps = sum(step["state"] == "COMPLETE" for step in steps)
+    if status == "BLOCKED":
+        headline = "Waiting for complete evidence"
+        detail = "The job did not start because all required source groups were not ready."
+    elif status == "QUEUED":
+        headline = "Workflow queued"
+        detail = "The immutable evidence snapshot is saved and waiting for the worker."
+    elif status == "SUCCEEDED":
+        headline = "Reconciliation completed"
+        detail = "The run and its economic output hash were persisted."
+    elif status == "FAILED":
+        headline = "Workflow stopped safely"
+        detail = "No failed attempt is presented as a completed reconciliation."
+    elif current_code:
+        headline, detail = _PHASE_COPY[current_code]
+    else:
+        headline = "Starting reconciliation"
+        detail = "The worker is opening the pinned evidence snapshot."
+
+    return {
+        "kind": "STEP_COMPLETION",
+        "headline": headline,
+        "detail": detail,
+        "completed_steps": completed_steps,
+        "total_steps": len(steps),
+        "steps": steps,
+    }
+
+
+def _recovery_view(
+    *, status: str, failure_code: str | None, attempt_count: int, max_attempts: int
+) -> dict[str, Any]:
+    remaining = max(max_attempts - attempt_count, 0)
+    retryable = status == "FAILED" and failure_code in RETRYABLE_FAILURE_CODES and remaining > 0
+    if status == "BLOCKED":
+        action = "COMPLETE_INPUTS"
+    elif retryable:
+        action = "RETRY"
+    elif status == "FAILED" and failure_code == "PROVIDER_UNAVAILABLE":
+        action = "START_NEW_REQUEST"
+    elif status == "FAILED":
+        action = "REVIEW_INPUTS_OR_CONFIGURATION"
+    elif status == "SUCCEEDED":
+        action = "OPEN_RUN"
+    else:
+        action = "WAIT"
+    return {
+        "retryable": retryable,
+        "remaining_attempts": remaining,
+        "action": action,
+    }
 
 
 class ReconciliationController:
@@ -283,13 +422,16 @@ class ReconciliationController:
 
     def retry(self, job_id: str) -> dict[str, Any]:
         row = self.database.query_one(
-            "SELECT status, attempt_count, max_attempts FROM reconciliation_jobs WHERE job_id = ?",
+            "SELECT status, attempt_count, max_attempts, failure_code "
+            "FROM reconciliation_jobs WHERE job_id = ?",
             (job_id,),
         )
         if row is None:
             raise KeyError(job_id)
         if str(row["status"]) != "FAILED":
             raise ValueError("only failed reconciliation jobs can be retried")
+        if str(row["failure_code"]) not in RETRYABLE_FAILURE_CODES:
+            raise ValueError("reconciliation job failure is not retryable")
         if int(row["attempt_count"]) >= int(row["max_attempts"]):
             raise ValueError("reconciliation job retry limit reached")
         self._transition(
@@ -323,27 +465,45 @@ class ReconciliationController:
             )
             if run is not None:
                 summary = json.loads(str(run["summary_json"]))
+        status = str(row["status"])
+        execution_mode = str(row["execution_mode"])
+        phase = self._phase_for(status, events)
+        failure_code = str(row["failure_code"]) if row["failure_code"] else None
+        attempt_count = int(row["attempt_count"])
+        max_attempts = int(row["max_attempts"])
         return {
             "job_id": str(row["job_id"]),
             "session_id": str(row["session_id"]),
-            "status": str(row["status"]),
-            "phase": self._phase_for(str(row["status"]), events),
-            "terminal": str(row["status"]) in TERMINAL_STATUSES,
+            "status": status,
+            "phase": phase,
+            "terminal": status in TERMINAL_STATUSES,
             "requested_mode": str(row["requested_mode"]),
-            "execution_mode": str(row["execution_mode"]),
+            "execution_mode": execution_mode,
             "provider_id": str(row["provider_id"]),
             "policy_fingerprint": str(row["policy_fingerprint"]),
             "simulated": bool(row["simulated"]),
-            "attempt_count": int(row["attempt_count"]),
-            "max_attempts": int(row["max_attempts"]),
+            "attempt_count": attempt_count,
+            "max_attempts": max_attempts,
             "run_id": str(row["run_id"]) if row["run_id"] else None,
-            "failure_code": str(row["failure_code"]) if row["failure_code"] else None,
+            "failure_code": failure_code,
             "failure_detail": str(row["failure_detail"]) if row["failure_detail"] else None,
             "created_at_utc": str(row["created_at_utc"]),
             "updated_at_utc": str(row["updated_at_utc"]),
             "started_at_utc": str(row["started_at_utc"]) if row["started_at_utc"] else None,
             "finished_at_utc": str(row["finished_at_utc"]) if row["finished_at_utc"] else None,
             "summary": summary,
+            "progress": _progress_view(
+                status=status,
+                phase=phase,
+                execution_mode=execution_mode,
+                events=events,
+            ),
+            "recovery": _recovery_view(
+                status=status,
+                failure_code=failure_code,
+                attempt_count=attempt_count,
+                max_attempts=max_attempts,
+            ),
             "events": [
                 {
                     "sequence": int(event["sequence"]),
@@ -519,6 +679,7 @@ class ReconciliationController:
 
 
 __all__ = [
+    "RETRYABLE_FAILURE_CODES",
     "ReconciliationController",
     "TERMINAL_STATUSES",
     "request_key_for",

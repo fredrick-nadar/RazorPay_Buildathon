@@ -5,6 +5,8 @@ import "./landing-sections.css";
 import { LandingNav } from "../components/landing-nav";
 import { LandingVideo } from "../components/landing-video";
 import { LandingArrow } from "../components/landing-arrow";
+import publicBenchmark from "../../../artifacts/benchmark/public-summary.json";
+import { benchmarkStats, parsePublicBenchmark } from "../lib/benchmark-view";
 
 const CAPABILITIES = [
   {
@@ -56,28 +58,8 @@ const TRUST_ITEMS = [
   },
 ] as const;
 
-const BENCHMARK_STATS = [
-  {
-    value: "100.0%",
-    label: "Match precision",
-    denom: "1,124 / 1,124 deterministic matches · frozen holdout",
-  },
-  {
-    value: "1,880",
-    label: "Records reconciled",
-    denom: "one deterministic batch · ≥ 500 track target",
-  },
-  {
-    value: "0",
-    label: "False verifier passes",
-    denom: "0 / 23 labelled exception cases",
-  },
-  {
-    value: "0",
-    label: "Duplicate adjustments",
-    denom: "measured across independent replay databases",
-  },
-] as const;
+const BENCHMARK = parsePublicBenchmark(publicBenchmark);
+const BENCHMARK_STATS = benchmarkStats(BENCHMARK);
 
 export default function LandingPage() {
   return (
@@ -416,15 +398,15 @@ export default function LandingPage() {
               <div className="bench" key={stat.label}>
                 <dd>{stat.value}</dd>
                 <dt>{stat.label}</dt>
-                <span>{stat.denom}</span>
+                <span>{stat.denominator}</span>
               </div>
             ))}
           </dl>
 
           <p className="bench__note">
-            Produced by <code>scripts/run_benchmark.py</code> on the frozen synthetic holdout —
-            artifact <code>artifacts/benchmark/final.json</code>. Prototype · synthetic data only ·
-            no real money moves.
+            Generated from <code>{BENCHMARK.source_artifact}</code> ({BENCHMARK.mode} mode,
+            deterministic {BENCHMARK.provider} investigator). Historical frozen-holdout result,
+            not active-run telemetry · synthetic data only · no real money moves.
           </p>
 
           <div className="cta">

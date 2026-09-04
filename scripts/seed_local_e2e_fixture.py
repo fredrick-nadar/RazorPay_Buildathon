@@ -41,6 +41,7 @@ from app.persistence.gateway_imports import (  # noqa: E402
     persist_gateway_snapshot,
     record_demo_evidence,
 )
+from app.runs import execute_run  # noqa: E402
 
 _SETTLEMENT_HEADER = (
     "settlement_id,settled_at_utc,window_start_utc,window_end_utc,status,currency,"
@@ -304,6 +305,16 @@ def main() -> int:
             "session_id": "e2e_missing_fields",
             "import_id": invalid_import,
         }
+
+        # Dashboard smoke tests require one persisted runtime run. Execute it
+        # before Uvicorn starts so browser tests never need to trigger work in
+        # the server process they later ask Playwright to tear down.
+        execute_run(
+            inputs_dir=REPO_ROOT / "datasets" / "dev" / "inputs",
+            database=db,
+            mode="rules-only",
+            force=True,
+        )
     finally:
         db.close()
 
