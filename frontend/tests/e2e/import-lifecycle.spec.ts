@@ -11,6 +11,7 @@ import { linked, scenario, withImport } from "./fixture";
  */
 
 const IMPORT_SESSION_KEY = "argus_import_session_v1";
+const BACKEND_ORIGIN = process.env.ARGUS_E2E_BACKEND_ORIGIN ?? "http://127.0.0.1:8000";
 
 // Every browser API request stays local. Unknown external requests cannot use
 // any credentials from the host. Lifecycle fault injection is explicit below.
@@ -155,7 +156,7 @@ test.describe("demo generation from a cold-reopened session", () => {
       await expect(card.getByText(upload.name, { exact: true })).toBeVisible();
       await expect(card.getByText(/Your upload · saved in this session/)).toBeVisible();
     }
-    await expect(page.getByRole("button", { name: "Run full reconciliation" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Run rules-only reconciliation" })).toBeEnabled();
     const merchantBefore = await (await page.request.get(`/api/v1/ingest/sessions/${entry.session_id}/status`)).json();
     const repeated = await page.request.post(`/api/v1/razorpay/imports/${entry.import_id}/generate-gateway-evidence`, { data: {session_id: entry.session_id} });
     expect(repeated.ok()).toBeTruthy();
@@ -173,7 +174,7 @@ test.describe("demo generation from a cold-reopened session", () => {
     await page.getByRole("button", { name: /import data/i }).click();
     await expect(page.getByText("Synthetic gateway evidence active")).toBeVisible();
     await expect(page.getByText("3/3 sources ready", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Run full reconciliation" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Run rules-only reconciliation" })).toBeEnabled();
   });
 });
 
@@ -316,11 +317,11 @@ test("successful A to B import never retains A demo", async ({ page }) => {
   let switched=false;
   await page.route(`**/ingest/sessions/${a.session_id}/status`,async route=>{
     if(!switched) return route.fallback();
-    const response=await route.fetch({url:`http://127.0.0.1:8000/api/v1/ingest/sessions/${b.session_id}/status`});
+    const response=await route.fetch({url:`${BACKEND_ORIGIN}/api/v1/ingest/sessions/${b.session_id}/status`});
     await route.fulfill({response});
   });
   await page.route("**/api/v1/razorpay/sync",async route=>{
-    const response=await route.fetch({url:`http://127.0.0.1:8000/api/v1/razorpay/imports/${b.import_id}`,method:"GET",postData:undefined});
+    const response=await route.fetch({url:`${BACKEND_ORIGIN}/api/v1/razorpay/imports/${b.import_id}`,method:"GET",postData:undefined});
     const d=await response.json();
     switched=true;
     await route.fulfill({status:200,json:{...d,
@@ -384,7 +385,7 @@ test("import dialog contains keyboard focus and restores its trigger", async ({ 
   const close = page.getByRole("button", {name:"Close", exact:true});
   await expect(close).toBeFocused();
   await page.keyboard.press("Shift+Tab");
-  await expect(page.getByRole("button", {name:"Choose CSV"}).last()).toBeFocused();
+  await expect(page.getByRole("combobox", {name:"Reconciliation execution mode"})).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(close).toBeFocused();
   await page.keyboard.press("Escape");

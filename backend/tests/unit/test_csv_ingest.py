@@ -284,7 +284,13 @@ def test_ocr_and_direct_upload_paths_are_not_exposed(tmp_path: Path) -> None:
 def test_groq_proposal_is_strict_and_cannot_escape_allowed_fields() -> None:
     calls: list[dict[str, Any]] = []
 
-    def transport(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+    def transport(
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes,
+        timeout_s: float = 11.0,
+    ) -> tuple[int, bytes]:
         request = json.loads(body)
         calls.append(request)
         content = {

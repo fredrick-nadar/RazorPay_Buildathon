@@ -9,10 +9,9 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from app.ai.chain import build_chain
+from app.ai.selection import InvestigatorUnavailableError, resolve_investigator
 from app.config import Settings
-from app.investigator.llm_provider import LLMInvestigatorProvider
-from app.investigator.provider import FakeProvider, InvestigatorProvider
+from app.investigator.provider import InvestigatorProvider
 from app.persistence.database import Database
 from app.runs import execute_run
 
@@ -22,20 +21,11 @@ router = APIRouter(prefix="/api/v1/runs", tags=["runs"])
 def _resolve_agent_provider(
     settings: Settings, provider_id: str | None = None
 ) -> InvestigatorProvider:
-    """Agent mode: live LLM chain when configured & requested, deterministic fake otherwise.
-
-    The provider id is persisted in the run summary either way, so the UI and
-    the benchmark artifacts always show WHICH investigator ran.
-    """
-    if not provider_id or "fake" in provider_id.lower():
-        return FakeProvider()
-    try:
-        chain = build_chain(settings)
-        if chain.member_ids:
-            return LLMInvestigatorProvider(chain)
-    except Exception:
-        pass
-    return FakeProvider()
+    """Compatibility wrapper around the central, non-silent selection policy."""
+    selection = resolve_investigator(settings, provider_id or "agent")
+    if selection.provider is None:
+        raise InvestigatorUnavailableError("agent mode requires an investigator provider")
+    return selection.provider
 
 
 class ReconcileRequest(BaseModel):
@@ -64,9 +54,14 @@ def reconcile_dataset(payload: ReconcileRequest, request: Request) -> dict[str, 
             detail=f"dataset inputs directory not found at {inputs_path}",
         )
 
-    provider = (
-        _resolve_agent_provider(settings, payload.provider_id) if payload.mode == "agent" else None
-    )
+    try:
+        provider = (
+            _resolve_agent_provider(settings, payload.provider_id)
+            if payload.mode == "agent"
+            else None
+        )
+    except InvestigatorUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     try:
         res = execute_run(

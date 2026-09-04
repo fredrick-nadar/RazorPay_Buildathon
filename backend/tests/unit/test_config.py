@@ -32,6 +32,13 @@ def test_configured_model_disables_rules_only_mode() -> None:
     assert settings.rules_only is False
 
 
+def test_direct_groq_configuration_disables_rules_only_mode() -> None:
+    settings = Settings(groq_api_key="gsk_test_only", _env_file=None)
+    assert settings.rules_only is False
+    assert settings.safe_summary()["model_key_configured"] is True
+    assert "gsk_test_only" not in str(settings.safe_summary())
+
+
 def test_invalid_port_fails_with_useful_message() -> None:
     with pytest.raises(ValidationError) as excinfo:
         Settings(port=99999, _env_file=None)

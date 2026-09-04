@@ -1,7 +1,7 @@
 """Home Chat API routes for ARGUS CONTROL.
 
-Provides rich, markdown-formatted conversational chat grounded in live SQLite facts
-using Groq (openai/gpt-oss-120b) with zero financial hallucinations.
+Provides markdown-formatted conversational help grounded in live SQLite facts.
+Provider selection is shared with the investigator and is reported truthfully.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
+from app.ai.chain import AIChainError, build_chain
 from app.config import Settings
 from app.voice.conversational_agent import _gather_live_financial_context
 
@@ -105,51 +106,26 @@ def handle_chat_message(payload: ChatRequest, request: Request) -> ChatResponse:
         if h.role in ("user", "assistant"):
             formatted_messages.append({"role": h.role, "content": h.content})
 
-    groq_key: str | None = None
-    if settings.model_api_key:
-        groq_key = settings.model_api_key.get_secret_value().strip()
-    if not groq_key and settings.openai_api_key:
-        groq_key = settings.openai_api_key.get_secret_value().strip()
-
     reply: str | None = None
-    provider_used = "groq"
+    provider_used = "unavailable"
 
-    if groq_key:
-        endpoint = f"{settings.openai_base_url.rstrip('/')}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {groq_key}",
-            "Content-Type": "application/json",
-        }
-        api_messages = [
-            {"role": "system", "content": system_prompt},
-            *formatted_messages,
-            {"role": "user", "content": payload.message},
+    chain = build_chain(settings)
+    if chain.member_ids:
+        conversation = [
+            *(f"{message['role']}: {message['content']}" for message in formatted_messages),
+            f"user: {payload.message}",
         ]
-        body = {
-            "model": settings.openai_model,
-            "messages": api_messages,
-            "max_tokens": 700,
-            "temperature": 0.3,
-        }
         try:
-            import httpx
-
-            with httpx.Client(timeout=12.0) as client:
-                resp = client.post(endpoint, headers=headers, json=body)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    choices = data.get("choices", [])
-                    if choices:
-                        raw_content = str(choices[0].get("message", {}).get("content", "")).strip()
-                        if "</think>" in raw_content:
-                            raw_content = raw_content.split("</think>", 1)[-1].strip()
-                        elif raw_content.startswith("<think>"):
-                            raw_content = raw_content.replace("<think>", "").strip()
-                        reply = raw_content
-                else:
-                    logger.warning("Chat Groq API HTTP %s: %s", resp.status_code, resp.text[:200])
-        except Exception as exc:
-            logger.warning("Chat Groq call failed: %s", exc)
+            response = chain.chat(system_prompt, "\n".join(conversation))
+            raw_content = response.text.strip()
+            if "</think>" in raw_content:
+                raw_content = raw_content.split("</think>", 1)[-1].strip()
+            elif raw_content.startswith("<think>"):
+                raw_content = raw_content.replace("<think>", "", 1).strip()
+            reply = raw_content or None
+            provider_used = response.provider_id
+        except AIChainError:
+            logger.warning("Chat provider chain did not complete")
 
     if not reply:
         provider_used = "deterministic-synthesizer"
@@ -158,6 +134,7 @@ def handle_chat_message(payload: ChatRequest, request: Request) -> ChatResponse:
         total_var = summary.get("total_variance_inr", "not available")
         unresolved = summary.get("unresolved_cases", 0)
         total_cases = summary.get("total_cases", 0)
+        pending_approval = summary.get("pending_approval", "not available")
         q = payload.message.lower()
 
         if any(w in q for w in ("match rate", "deterministic", "accuracy", "rate")):
@@ -174,7 +151,7 @@ def handle_chat_message(payload: ChatRequest, request: Request) -> ChatResponse:
                 f"### Active Financial Variance Summary\n\n"
                 f"- **Total Tracked Variance**: **{total_var}**\n"
                 f"- **Unresolved Cases**: **{unresolved}** cases\n"
-                f"- **Pending Approval**: **{summary.get('pending_approval', 6)}** cases\n\n"
+                f"- **Pending Approval**: **{pending_approval}** cases\n\n"
                 f"You can review dry-run proposals in the **Approval Queue**."
             )
         else:

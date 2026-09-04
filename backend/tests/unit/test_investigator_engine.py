@@ -240,13 +240,15 @@ class TimeoutFakeProvider(InvestigatorProvider):
         budget: InvestigationBudget,
         context: dict[str, Any],
     ) -> ProviderResult:
-        time.sleep(budget.timeout_s + 0.1)
+        # Deliberately ignores the deadline it was given, which is the only
+        # situation the last-resort worker watchdog exists for.
+        time.sleep(budget.timeout_s + budget.watchdog_grace_s + 0.15)
         return FakeProvider().investigate(case, tools, budget, context)
 
 
 def test_investigation_failed_on_timeout() -> None:
     records, cases = _make_duplicate_ledger_fixtures()
-    budget = InvestigationBudget(timeout_s=0.1)
+    budget = InvestigationBudget(timeout_s=0.1, watchdog_grace_s=0.05)
     outcome = investigate_cases(records, cases, TimeoutFakeProvider(), budget_config=budget)
 
     assert len(outcome.investigations) == 1
@@ -281,7 +283,8 @@ def test_investigation_failed_on_provider_error() -> None:
     assert inv.status == "FAILED"
     assert inv.case.status == CaseStatus.INVESTIGATION_FAILED
     assert inv.failure_reason is not None
-    assert "Simulated provider crash" in inv.failure_reason
+    assert "RuntimeError" in inv.failure_reason
+    assert "Simulated provider crash" not in inv.failure_reason
 
 
 def test_skips_non_investigable_cases() -> None:
@@ -364,13 +367,16 @@ def test_agent_run_reused_false_after_rules_run(tmp_path: Path) -> None:
         assert res2.reused is True
 
         # Run 3: agent mode on db2 -> fresh run, reused is False
-        res3 = execute_run(dev_inputs, db2, mode="agent")
+        # Agent mode requires an explicit provider; the fake is selected here
+        # deliberately, which is the only way to get a synthetic investigator.
+        res3 = execute_run(dev_inputs, db2, mode="agent", provider=FakeProvider())
         assert res3.reused is False
         assert res3.summary["mode"] == "agent"
         assert "investigation" in res3.summary
 
-        # Run 4: agent mode repeat on db2 -> reused is True
-        res4 = execute_run(dev_inputs, db2, mode="agent")
+        # Run 4: same explicit selection on db2 -> reused is True. Identity
+        # covers the provider AND its execution-policy fingerprint.
+        res4 = execute_run(dev_inputs, db2, mode="agent", provider=FakeProvider())
         assert res4.reused is True
 
         # Assert distinct idempotency keys and run IDs

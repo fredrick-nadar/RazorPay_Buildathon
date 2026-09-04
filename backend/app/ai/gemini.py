@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.ai.base import LLMError, LLMResponse, Transport, post_json, urllib_transport
+from app.ai.base import (
+    DEFAULT_ATTEMPT_TIMEOUT_S,
+    LLMError,
+    LLMResponse,
+    Transport,
+    post_json,
+    urllib_transport,
+)
 
 DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 DEFAULT_MODEL = "gemini-2.0-flash"
@@ -21,15 +28,22 @@ class GeminiBackend:
         model: str = DEFAULT_MODEL,
         base_url: str = DEFAULT_BASE_URL,
         transport: Transport | None = None,
-        timeout_s: float = 45.0,
+        timeout_s: float = DEFAULT_ATTEMPT_TIMEOUT_S,
     ) -> None:
         self.api_key = api_key
         self.model = model
         self.base_url = base_url.rstrip("/")
+        # The transport is timeout-agnostic; each attempt supplies its own.
         self.transport = transport or urllib_transport
         self.timeout_s = timeout_s
 
-    def chat(self, system: str, user: str, json_mode: bool = False) -> LLMResponse:
+    def chat(
+        self,
+        system: str,
+        user: str,
+        json_mode: bool = False,
+        timeout_s: float | None = None,
+    ) -> LLMResponse:
         url = f"{self.base_url}/models/{self.model}:generateContent"
         payload: dict[str, Any] = {
             "systemInstruction": {"parts": [{"text": system}]},
@@ -44,6 +58,7 @@ class GeminiBackend:
             url,
             {"x-goog-api-key": self.api_key},
             payload,
+            self.timeout_s if timeout_s is None else timeout_s,
         )
         try:
             text = str(parsed["candidates"][0]["content"]["parts"][0]["text"])

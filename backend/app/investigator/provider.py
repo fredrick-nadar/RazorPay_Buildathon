@@ -63,6 +63,15 @@ class FakeProvider(InvestigatorProvider):
     def provider_id(self) -> str:
         return "fake-deterministic-v1"
 
+    @property
+    def policy_fingerprint(self) -> str:
+        """Fixed identity: the fake is deterministic and has no live policy.
+
+        Distinct from any live policy fingerprint, so an explicit fake run and
+        a live run can never share an idempotency key.
+        """
+        return "fake-deterministic-v1-policy"
+
     def investigate(
         self,
         case: CaseRecord,

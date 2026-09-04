@@ -39,6 +39,7 @@ if str(REPO_ROOT / "backend") not in sys.path:
 from app.evaluation.benchmark import evaluate_dataset  # noqa: E402
 from app.failure_lab.replay import ReplayDiagnostics  # noqa: E402
 from app.persistence.database import Database  # noqa: E402
+from app.investigator.provider import FakeProvider  # noqa: E402
 from app.runs import execute_run  # noqa: E402
 
 
@@ -55,8 +56,12 @@ def run_runtime_phase(
     database_path = scratch_dir / f"benchmark-{label}.sqlite3"
     database = Database(database_path)
     run_mode = "rules-only" if mode == "failure-lab" else mode
+    # Agent mode requires an explicit provider. The benchmark runner uses the
+    # deterministic fake so results are reproducible; a fake-agent benchmark is
+    # NOT evidence of live-model performance and must be labelled as such.
+    provider = FakeProvider() if run_mode == "agent" else None
     try:
-        result = execute_run(inputs_dir, database, mode=run_mode)
+        result = execute_run(inputs_dir, database, mode=run_mode, provider=provider)
         if result.reused:
             raise RuntimeError(
                 f"Benchmark run '{label}' unexpectedly reused an existing run (reused=True). "

@@ -11,17 +11,17 @@ ensureFixture();
 
 /**
  * End-to-end runs use an ISOLATED database and staging tree, served by a
- * backend this config starts itself on the default API port.
+ * backend this config starts itself on a build-matched isolated API port.
  *
- * The port is the default one because Next resolves rewrites at BUILD time from
- * the routes manifest, so a different origin cannot be selected at start time
- * without rebuilding. Instead, `reuseExistingServer: false` means a backend
- * already listening here fails the run loudly rather than being written to: an
- * existing development API must be stopped before running this suite.
+ * Next resolves rewrites at BUILD time from the routes manifest, so a different
+ * origin cannot be selected at start time without rebuilding. The configurable
+ * port supports an isolated build when the development API is already running.
+ * `reuseExistingServer: false` still prevents writing to an existing process.
  */
-const BACKEND_PORT = 8000;
-const FRONTEND_PORT = 3211;
+const BACKEND_PORT = Number(process.env.ARGUS_E2E_BACKEND_PORT ?? "8000");
+const FRONTEND_PORT = Number(process.env.ARGUS_E2E_FRONTEND_PORT ?? "3211");
 const BACKEND_ORIGIN = `http://127.0.0.1:${BACKEND_PORT}`;
+process.env.ARGUS_E2E_BACKEND_ORIGIN = BACKEND_ORIGIN;
 
 // next start uses baked rewrites. Refuse a build that could route fixture
 // actions to a different (possibly development/remote) API.
@@ -34,7 +34,7 @@ const rewrites = Array.isArray(routes.rewrites) ? routes.rewrites : [
 ];
 const apiRewrite = rewrites.find((rule: {source: string}) => rule.source === "/api/:path*");
 if (apiRewrite?.destination !== `${BACKEND_ORIGIN}/api/:path*`) {
-  throw new Error("E2E requires a build targeting the isolated localhost:8000 API.");
+  throw new Error(`E2E requires a build targeting the isolated ${BACKEND_ORIGIN} API.`);
 }
 
 const venvPython = existsSync(join(REPO_ROOT, ".venv", "Scripts", "python.exe"))
@@ -74,6 +74,15 @@ export default defineConfig({
       env: {
         ARGUS_DB_PATH: E2E_DB,
         ARGUS_IMPORT_STAGING_ROOT: E2E_STAGING,
+        ARGUS_AI_PROVIDER: "none",
+        ARGUS_GROQ_API_KEY: "",
+        GROQ_API_KEY: "",
+        LLM_API_KEY: "",
+        ARGUS_MODEL_API_KEY: "",
+        ARGUS_OPENAI_API_KEY: "",
+        OPENAI_API_KEY: "",
+        ARGUS_GEMINI_API_KEY: "",
+        ARGUS_SARVAM_API_KEY: "",
       },
     },
     {

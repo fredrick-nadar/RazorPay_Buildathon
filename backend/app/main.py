@@ -21,6 +21,7 @@ from app.config import APP_NAME, Settings, get_settings
 from app.importers.session_staging import SourceRecoveryError, SourceRevisionError
 from app.persistence.database import open_database
 from app.voice.api import router as voice_router
+from app.workflow.controller import ReconciliationController
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -30,8 +31,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = resolved
         app.state.db = open_database(resolved)
-        yield
-        app.state.db.close()
+        app.state.reconciliation_controller = ReconciliationController(app.state.db, resolved)
+        app.state.reconciliation_controller.start()
+        try:
+            yield
+        finally:
+            app.state.reconciliation_controller.close()
+            app.state.db.close()
 
     app = FastAPI(title=APP_NAME, version=__version__, lifespan=lifespan)
 

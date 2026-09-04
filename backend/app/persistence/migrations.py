@@ -406,6 +406,66 @@ def _migration_6_to_7_statements() -> tuple[str, ...]:
     )
 
 
+def _migration_7_to_8_statements() -> tuple[str, ...]:
+    """Durable reconciliation controller state, separate from financial runs."""
+    return (
+        """
+        CREATE TABLE reconciliation_jobs (
+            job_id TEXT PRIMARY KEY,
+            request_key TEXT NOT NULL UNIQUE,
+            session_id TEXT NOT NULL,
+            snapshot_path TEXT,
+            snapshot_manifest_json TEXT NOT NULL,
+            requested_mode TEXT NOT NULL,
+            execution_mode TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            simulated INTEGER NOT NULL CHECK (simulated IN (0, 1)),
+            status TEXT NOT NULL CHECK (
+                status IN ('BLOCKED', 'QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED')
+            ),
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            max_attempts INTEGER NOT NULL,
+            run_id TEXT REFERENCES runs(run_id),
+            failure_code TEXT,
+            failure_detail TEXT,
+            created_at_utc TEXT NOT NULL,
+            updated_at_utc TEXT NOT NULL,
+            started_at_utc TEXT,
+            finished_at_utc TEXT
+        )
+        """,
+        """
+        CREATE TABLE reconciliation_job_events (
+            event_id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL REFERENCES reconciliation_jobs(job_id),
+            sequence INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            detail_json TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL,
+            UNIQUE (job_id, sequence)
+        )
+        """,
+        "CREATE INDEX idx_reconciliation_jobs_status ON "
+        "reconciliation_jobs(status, created_at_utc)",
+        "CREATE INDEX idx_reconciliation_job_events_job ON "
+        "reconciliation_job_events(job_id, sequence)",
+    )
+
+
+def _migration_8_to_9_statements() -> tuple[str, ...]:
+    """Persist the investigator execution-policy fingerprint on each job.
+
+    Without it, a corrected deadline/model policy would reuse a job created
+    under the old timed-out policy. Existing rows keep a sentinel so they are
+    never mistaken for the corrected policy.
+    """
+    return (
+        "ALTER TABLE reconciliation_jobs ADD COLUMN policy_fingerprint TEXT "
+        "NOT NULL DEFAULT 'policy-pre-v9'",
+    )
+
+
 # The chain stores statement-function NAMES resolved at call time so that
 # tests can monkeypatch a broken migration into any step.
 _MIGRATION_CHAIN: tuple[tuple[int, int, str], ...] = (
@@ -415,6 +475,8 @@ _MIGRATION_CHAIN: tuple[tuple[int, int, str], ...] = (
     (4, 5, "_migration_4_to_5_statements"),
     (5, 6, "_migration_5_to_6_statements"),
     (6, 7, "_migration_6_to_7_statements"),
+    (7, 8, "_migration_7_to_8_statements"),
+    (8, 9, "_migration_8_to_9_statements"),
 )
 
 

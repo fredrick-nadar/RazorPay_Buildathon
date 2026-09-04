@@ -16,6 +16,7 @@ import {
   importSessionReducer,
   INITIAL_IMPORT_SESSION_STATE,
 } from "../lib/import-session-state";
+import { describeRunInvestigation, type RunInvestigationReport } from "../lib/run-investigation";
 import { createImportSessionId } from "../lib/session-id";
 import { IconCheck, IconRazorpay, IconUpload, IconX } from "./icons";
 
@@ -93,7 +94,37 @@ interface DemoEvidenceResult {
   message: string;
 }
 
+interface ReconciliationJob {
+  job_id: string;
+  status: "BLOCKED" | "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
+  phase: string;
+  terminal: boolean;
+  execution_mode: "rules-only" | "agent";
+  provider_id: string;
+  simulated: boolean;
+  attempt_count: number;
+  max_attempts: number;
+  run_id: string | null;
+  failure_code: string | null;
+  failure_detail: string | null;
+  summary: Record<string, unknown> | null;
+}
+
+type ReconciliationMode = "rules-only" | "agent" | "fake";
+
+interface AiStatus {
+  chain: string[];
+  investigator: "live" | "fake-deterministic-v1" | "unavailable";
+  live_available: boolean;
+  fake_selected: boolean;
+}
+
 const IMPORT_SESSION_KEY = "argus_import_session_v1";
+const RECONCILIATION_JOB_KEY_PREFIX = "argus_reconciliation_job_v1:";
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
 
 function utcDateOffset(days: number): string {
   const value = new Date();
@@ -153,6 +184,13 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
   const [analyzing, setAnalyzing] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [reconciling, setReconciling] = useState(false);
+  const [reconciliationJob, setReconciliationJob] = useState<ReconciliationJob | null>(null);
+  // Held when a run completed safely but was NOT fully investigated.
+  const [investigationReport, setInvestigationReport] = useState<RunInvestigationReport | null>(null);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
+  const [reconciliationMode, setReconciliationMode] = useState<ReconciliationMode>("rules-only");
+  const [aiStatusLoading, setAiStatusLoading] = useState(false);
+  const jobPollEpochRef = useRef(0);
   const [fileError, setFileError] = useState<string | null>(null);
   const [intendedType, setIntendedType] = useState<DocumentType>("payments");
   const fileInput = useRef<HTMLInputElement>(null);
@@ -239,7 +277,86 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
     return invalidateRequest;
   }, [open, refreshSession, invalidateRequest]);
 
-  const busy = syncing || demoGenerating || analyzing || committing || reconciling || server.refreshing;
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setAiStatusLoading(true);
+    void fetch("/api/v1/ai/status")
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error("AI status unavailable");
+        return body as AiStatus;
+      })
+      .then((status) => {
+        if (cancelled) return;
+        setAiStatus(status);
+        setReconciliationMode(
+          status.live_available ? "agent" : status.fake_selected ? "fake" : "rules-only",
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAiStatus(null);
+          setReconciliationMode("rules-only");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setAiStatusLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [open]);
+
+  const finishSuccessfulJob = useCallback((job: ReconciliationJob) => {
+    if (!job.run_id) throw new Error("The completed workflow did not link a reconciliation run.");
+    window.sessionStorage.removeItem(`${RECONCILIATION_JOB_KEY_PREFIX}${sessionId}`);
+    setReconciling(false);
+    const report = describeRunInvestigation(job.summary);
+    onSyncSuccess(job.run_id, job.summary);
+    if (report.warning) {
+      // The financial run is safe and linked, but it is NOT fully
+      // investigated. Hold the dialog open so that is read, not skipped past.
+      setInvestigationReport(report);
+      return;
+    }
+    onClose();
+  }, [onClose, onSyncSuccess, sessionId]);
+
+  const pollReconciliationJob = useCallback(async (jobId: string, epoch: number) => {
+    while (jobPollEpochRef.current === epoch) {
+      const response = await fetch(`/api/v1/ingest/reconciliation-jobs/${encodeURIComponent(jobId)}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "Reconciliation progress could not be loaded.");
+      if (jobPollEpochRef.current !== epoch) return;
+      const job = body as ReconciliationJob;
+      setReconciliationJob(job);
+      if (job.status === "SUCCEEDED") {
+        finishSuccessfulJob(job);
+        return;
+      }
+      if (job.status === "FAILED" || job.status === "BLOCKED") {
+        setFileError(job.failure_detail || "The reconciliation workflow needs attention.");
+        setReconciling(false);
+        return;
+      }
+      await delay(700);
+    }
+  }, [finishSuccessfulJob]);
+
+  useEffect(() => {
+    if (!open || !sessionId) return;
+    const jobId = window.sessionStorage.getItem(`${RECONCILIATION_JOB_KEY_PREFIX}${sessionId}`);
+    if (!jobId) return;
+    const epoch = ++jobPollEpochRef.current;
+    setReconciling(true);
+    void pollReconciliationJob(jobId, epoch).catch((error) => {
+      if (jobPollEpochRef.current !== epoch) return;
+      setReconciling(false);
+      setFileError(error instanceof Error ? `${error.message} The job remains saved; reopen to retry status.` : "Reconciliation status is temporarily unavailable.");
+    });
+    return () => { jobPollEpochRef.current += 1; };
+  }, [open, sessionId, pollReconciliationJob]);
+
+  const busy = syncing || demoGenerating || analyzing || committing || reconciling || server.refreshing || aiStatusLoading;
   const activeSources = sessionStatus?.active_sources ?? {};
   const gatewayReady = sessionStatus?.gateway_ready ?? false;
   const bankReady = sessionStatus?.bank_ready ?? false;
@@ -414,18 +531,48 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
     setReconciling(true);
     setFileError(null);
     try {
-      const response = await fetch("/api/v1/ingest/reconcile-session", {
+      const response = await fetch("/api/v1/ingest/reconciliation-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, mode: "agent" }),
+        body: JSON.stringify({ session_id: sessionId, mode: reconciliationMode }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || "Full reconciliation could not start.");
-      onSyncSuccess(result.run_id, result.summary ?? null);
-      onClose();
+      const job = result as ReconciliationJob;
+      setReconciliationJob(job);
+      window.sessionStorage.setItem(`${RECONCILIATION_JOB_KEY_PREFIX}${sessionId}`, job.job_id);
+      if (job.status === "SUCCEEDED") {
+        finishSuccessfulJob(job);
+        return;
+      }
+      if (job.status === "FAILED" || job.status === "BLOCKED") {
+        throw new Error(job.failure_detail || "The reconciliation workflow needs attention.");
+      }
+      const epoch = ++jobPollEpochRef.current;
+      await pollReconciliationJob(job.job_id, epoch);
     } catch (error) {
       setFileError(error instanceof Error ? error.message : "Full reconciliation could not start.");
-    } finally {
+      setReconciling(false);
+    }
+  }
+
+  async function retryReconciliation() {
+    if (!reconciliationJob || reconciliationJob.status !== "FAILED") return;
+    setReconciling(true);
+    setFileError(null);
+    try {
+      const response = await fetch(
+        `/api/v1/ingest/reconciliation-jobs/${encodeURIComponent(reconciliationJob.job_id)}/retry`,
+        { method: "POST" },
+      );
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || "The reconciliation job could not be retried.");
+      const job = body as ReconciliationJob;
+      setReconciliationJob(job);
+      const epoch = ++jobPollEpochRef.current;
+      await pollReconciliationJob(job.job_id, epoch);
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : "The reconciliation job could not be retried.");
       setReconciling(false);
     }
   }
@@ -619,7 +766,7 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
               </article>;
             })}
 
-            {(analyzing || fileError) && <div>{analyzing ? <p className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600">Profiling columns and checking known aliases…</p> : fileError && <ApiError message={fileError} />}</div>}
+            {(analyzing || fileError) && <div>{analyzing ? <p className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600">Profiling columns and checking known aliases…</p> : fileError && <div className="space-y-2"><ApiError message={fileError} />{reconciliationJob?.status === "FAILED" && reconciliationJob.attempt_count < reconciliationJob.max_attempts && <button type="button" onClick={() => void retryReconciliation()} disabled={reconciling} className="rounded-lg border border-slate-900 bg-white px-3 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50">Retry saved workflow</button>}</div>}</div>}
 
             {stagedSources.length > 0 && <details className="px-1 py-1">
               <summary className="cursor-pointer text-[11px] font-semibold text-slate-600">Source revisions & validation · {stagedSources.length} active files</summary>
@@ -627,8 +774,31 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
             </details>}
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3 sm:px-5">
-            <p className="text-[11px] text-slate-500">{readyCount === 3 ? "Evidence collected. Reconciliation checks for differences." : "Three independent sources. One verified comparison."}</p>
-            <button type="button" disabled={!fullReady || reconciling} onClick={() => void runReconciliation()} className="rounded-lg bg-slate-950 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{reconciling ? "Starting deterministic run…" : busy && readyCount === 3 ? "Checking sources…" : fullReady ? "Run full reconciliation" : `Waiting for ${3 - readyCount} source${3 - readyCount === 1 ? "" : "s"}`}</button>
+            <p className="text-[11px] text-slate-500">{reconciling && reconciliationJob ? `${reconciliationJob.phase.replaceAll("_", " ").toLowerCase()} · ${reconciliationJob.provider_id}${reconciliationJob.simulated ? " · simulated" : ""}` : readyCount === 3 ? "Evidence collected. Reconciliation checks for differences." : "Three independent sources. One verified comparison."}</p>
+            <div className="flex items-center gap-2">
+              <label className="sr-only" htmlFor="reconciliation-mode">Reconciliation execution mode</label>
+              <select id="reconciliation-mode" value={reconciliationMode} onChange={(event) => setReconciliationMode(event.target.value as ReconciliationMode)} disabled={reconciling || aiStatusLoading} className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-medium text-slate-600 outline-none focus:border-slate-900">
+                {aiStatus?.live_available && <option value="agent">AI · {aiStatus.chain.join(" → ")}</option>}
+                {aiStatus?.fake_selected && <option value="fake">Synthetic fake investigator</option>}
+                <option value="rules-only">Rules only</option>
+              </select>
+              <button type="button" disabled={!fullReady || reconciling} onClick={() => void runReconciliation()} className="rounded-lg bg-slate-950 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{reconciling ? reconciliationJob?.status === "RUNNING" ? "Reconciliation in progress…" : "Starting saved workflow…" : busy && readyCount === 3 ? "Checking sources…" : fullReady ? reconciliationMode === "agent" ? "Run with AI investigator" : reconciliationMode === "fake" ? "Run synthetic evaluation" : "Run rules-only reconciliation" : `Waiting for ${3 - readyCount} source${3 - readyCount === 1 ? "" : "s"}`}</button>
+            </div>
+            {investigationReport && (
+              <div role="alert" className="mt-3 rounded-xl border border-slate-400 bg-white px-3 py-3 text-xs text-slate-900 shadow-2xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-bold">{investigationReport.label}</p>
+                  <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-1 font-mono text-[9px] font-bold uppercase tracking-wider text-slate-700">Not fully investigated</span>
+                </div>
+                <p className="mt-1.5 text-[11px] leading-5 text-slate-600">{investigationReport.detail}</p>
+                <p className="mt-2 font-mono text-[9px] uppercase tracking-wider text-slate-500">
+                  attempted {investigationReport.attemptedProviders.length ? investigationReport.attemptedProviders.join(" + ") : "none"} · answered {investigationReport.actualProviders.length ? investigationReport.actualProviders.join(" + ") : "none"}
+                </p>
+                <button type="button" onClick={() => { setInvestigationReport(null); onClose(); }} className="mt-2.5 rounded-lg border border-slate-900 bg-slate-950 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white transition-colors hover:bg-slate-800">
+                  Open the run anyway
+                </button>
+              </div>
+            )}
           </div>
         </motion.section>
 

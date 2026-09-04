@@ -281,8 +281,14 @@ def run_voice_gate(db: Database | None = None) -> dict[str, object]:
     }
 
 
-def write_voice_gate_artifact(report: dict[str, object]) -> Path:
-    artifact_dir = REPO_ROOT / "artifacts" / "evaluation"
+def write_voice_gate_artifact(report: dict[str, object], artifact_dir: Path | None = None) -> Path:
+    """Write the measured gate artifact.
+
+    ``artifact_dir`` lets a test exercise the writer against a temporary
+    directory. Overwriting the committed measured artifact is a deliberate
+    regeneration, never a side effect of running the test suite.
+    """
+    artifact_dir = artifact_dir or (REPO_ROOT / "artifacts" / "evaluation")
     artifact_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = artifact_dir / "voice-gate.json"
     artifact_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")

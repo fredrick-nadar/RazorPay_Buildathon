@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from app.persistence.database import Database
+from app.investigator.provider import FakeProvider
 from app.runs import execute_run
 
 
@@ -33,7 +34,15 @@ def verify(root: Path) -> dict:
     # Runtime sees ONLY inputs; no labels or expected deltas are passed to it.
     db = Database(":memory:")
     try:
-        run = execute_run(inputs_dir=root / "inputs", database=db, mode="agent")
+        # Deterministic offline check: the fake investigator is selected
+        # EXPLICITLY. Agent mode never silently substitutes it, so a scenario
+        # verification can never be mistaken for live-model evidence.
+        run = execute_run(
+            inputs_dir=root / "inputs",
+            database=db,
+            mode="agent",
+            provider=FakeProvider(),
+        )
     finally:
         db.close()
     summary = run.summary

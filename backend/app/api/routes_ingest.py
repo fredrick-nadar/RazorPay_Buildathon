@@ -11,7 +11,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.api.routes_runs import _resolve_agent_provider
+from app.ai.selection import InvestigatorUnavailableError, resolve_investigator
 from app.config import Settings
 from app.importers.adapters import (
     BANK_SPEC,
@@ -45,6 +45,7 @@ from app.importers.session_staging import (
 )
 from app.persistence.database import Database
 from app.runs import execute_run
+from app.workflow.controller import ReconciliationController
 
 router = APIRouter(prefix="/api/v1/ingest", tags=["ingest"])
 
@@ -319,6 +320,108 @@ class ReconcileSessionPayload(BaseModel):
     )
 
 
+class StartReconciliationJobPayload(BaseModel):
+    session_id: str = Field(default="default_session", pattern=SESSION_ID_PATTERN)
+    mode: Literal["rules-only", "agent", "fake"] = "agent"
+
+
+def _not_ready_detail(readiness: dict[str, Any]) -> str:
+    details: list[str] = []
+    if readiness["missing_sources"]:
+        details.append("missing: " + ", ".join(readiness["missing_sources"]))
+    if readiness["empty_sources"]:
+        details.append("no eligible rows: " + ", ".join(readiness["empty_sources"]))
+    if readiness["merchant_upload_required"]:
+        details.append(
+            "separate merchant upload required: "
+            + ", ".join(
+                _REQUIRED_SOURCE_LABELS[source] for source in readiness["merchant_upload_required"]
+            )
+        )
+    return (
+        "Full reconciliation is not ready (" + "; ".join(details) + "). "
+        "Imported sources remain available, but ARGUS will not create a complete run "
+        "until Razorpay, bank, and ledger evidence are present."
+    )
+
+
+@router.post("/reconciliation-jobs", status_code=202)
+def start_reconciliation_job(
+    payload: StartReconciliationJobPayload,
+    request: Request,
+) -> dict[str, Any]:
+    """Pin the active evidence and return a durable, pollable workflow job."""
+    settings: Settings = request.app.state.settings
+    controller: ReconciliationController = request.app.state.reconciliation_controller
+    session_dir = resolve_session_dir(settings, payload.session_id, create=False)
+    if not session_dir.is_dir():
+        raise HTTPException(status_code=404, detail="No import session exists for this identifier.")
+
+    selection_request = "none" if payload.mode == "rules-only" else payload.mode
+    try:
+        selection = resolve_investigator(settings, selection_request)
+    except InvestigatorUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    try:
+        with session_lock(session_dir):
+            recover_session_activation(request.app.state.db, session_dir)
+            readiness = _session_readiness(session_dir)
+            manifest = {
+                "lifecycle_state": readiness["lifecycle_state"],
+                "active_sources": readiness["active_sources"],
+            }
+            if not readiness["ready"]:
+                job, reused = controller.create_blocked_job(
+                    session_id=payload.session_id,
+                    snapshot_manifest=manifest,
+                    requested_mode=selection_request,
+                    provider_id=selection.provider_id,
+                    reason=_not_ready_detail(readiness),
+                    policy_fingerprint=selection.policy_fingerprint,
+                )
+                return {**job, "reused": reused}
+            refunds_buffer = io.StringIO(newline="")
+            csv.writer(refunds_buffer).writerow(REFUND_SPEC.columns)
+            snapshot = snapshot_active_sources(session_dir, empty_refunds=refunds_buffer.getvalue())
+    except SourceRevisionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    job, reused = controller.create_job(
+        session_id=payload.session_id,
+        snapshot_path=snapshot,
+        snapshot_manifest=manifest,
+        requested_mode=selection_request,
+        execution_mode=selection.execution_mode,
+        provider_id=selection.provider_id,
+        simulated=selection.simulated,
+        policy_fingerprint=selection.policy_fingerprint,
+    )
+    if job["status"] == "QUEUED":
+        controller.enqueue(job["job_id"])
+    return {**job, "reused": reused}
+
+
+@router.get("/reconciliation-jobs/{job_id}")
+def get_reconciliation_job(job_id: str, request: Request) -> dict[str, Any]:
+    controller: ReconciliationController = request.app.state.reconciliation_controller
+    job = controller.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Reconciliation job was not found.")
+    return job
+
+
+@router.post("/reconciliation-jobs/{job_id}/retry", status_code=202)
+def retry_reconciliation_job(job_id: str, request: Request) -> dict[str, Any]:
+    controller: ReconciliationController = request.app.state.reconciliation_controller
+    try:
+        return controller.retry(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Reconciliation job was not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/reconcile-session")
 def reconcile_uploaded_session(
     payload: ReconcileSessionPayload,
@@ -352,32 +455,19 @@ def reconcile_uploaded_session(
     except SourceRevisionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not readiness["ready"]:
-        details: list[str] = []
-        if readiness["missing_sources"]:
-            details.append("missing: " + ", ".join(readiness["missing_sources"]))
-        if readiness["empty_sources"]:
-            details.append("no eligible rows: " + ", ".join(readiness["empty_sources"]))
-        if readiness["merchant_upload_required"]:
-            details.append(
-                "separate merchant upload required: "
-                + ", ".join(
-                    _REQUIRED_SOURCE_LABELS[source]
-                    for source in readiness["merchant_upload_required"]
-                )
-            )
         raise HTTPException(
             status_code=409,
-            detail=(
-                "Full reconciliation is not ready (" + "; ".join(details) + "). "
-                "Imported sources remain available, but ARGUS will not create a complete run "
-                "until Razorpay, bank, and ledger evidence are present."
-            ),
+            detail=_not_ready_detail(readiness),
         )
 
     exec_mode: Literal["rules-only", "agent"] = (
         "agent" if payload.mode.lower() in ("agent", "ai-assisted") else "rules-only"
     )
-    provider = _resolve_agent_provider(settings) if exec_mode == "agent" else None
+    try:
+        selection = resolve_investigator(settings, "agent" if exec_mode == "agent" else "none")
+    except InvestigatorUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    provider = selection.provider
 
     try:
         assert inputs_snapshot is not None
@@ -397,4 +487,9 @@ def reconcile_uploaded_session(
             "session_id": payload.session_id,
         }
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        # This compatibility endpoint must not reflect provider responses,
+        # record prose, local paths, or secret-bearing exception text.
+        raise HTTPException(
+            status_code=500,
+            detail="Reconciliation did not complete. Use the durable workflow endpoint for status.",
+        ) from exc

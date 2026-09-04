@@ -17,8 +17,8 @@ def ai_status(request: Request) -> dict[str, Any]:
     """Which AI backends are configured, in fallback order.
 
     No keys are ever returned - only ids and model names. With nothing
-    configured the investigator runs on the deterministic fake provider
-    (rules-only invariant).
+    configured, live investigation is unavailable and rules-only remains
+    usable. Fake investigation is reported only when explicitly selected.
     """
     settings: Settings = request.app.state.settings
     chain = build_chain(settings)
@@ -26,12 +26,19 @@ def ai_status(request: Request) -> dict[str, Any]:
         {"provider": member.provider_id, "model": getattr(member, "model", "")}
         for member in chain.members
     ]
-    investigator = "llm" if chain.member_ids else "fake-deterministic-v1"
+    if chain.member_ids:
+        investigator = "live"
+    elif settings.ai_provider == "fake":
+        investigator = "fake-deterministic-v1"
+    else:
+        investigator = "unavailable"
     return {
         "provider_setting": settings.ai_provider,
         "chain": chain.member_ids,
         "models": models,
         "investigator": investigator,
+        "live_available": bool(chain.member_ids),
+        "fake_selected": settings.ai_provider == "fake",
         "safety": (
             "The model investigates and proposes only. A deterministic verifier "
             "decides; approval is human-only; the model has no write tools."

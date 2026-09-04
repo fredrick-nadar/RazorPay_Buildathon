@@ -12,7 +12,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.ai.base import LLMError, LLMResponse, Transport, post_json, urllib_transport
+from app.ai.base import (
+    DEFAULT_ATTEMPT_TIMEOUT_S,
+    LLMError,
+    LLMResponse,
+    Transport,
+    post_json,
+    urllib_transport,
+)
 
 
 class OpenAICompatBackend:
@@ -25,16 +32,23 @@ class OpenAICompatBackend:
         model: str,
         base_url: str,
         transport: Transport | None = None,
-        timeout_s: float = 45.0,
+        timeout_s: float = DEFAULT_ATTEMPT_TIMEOUT_S,
     ) -> None:
         self.provider_id = provider_id
         self.api_key = api_key
         self.model = model
         self.base_url = base_url.rstrip("/")
+        # The transport is timeout-agnostic; each attempt supplies its own.
         self.transport = transport or urllib_transport
         self.timeout_s = timeout_s
 
-    def chat(self, system: str, user: str, json_mode: bool = False) -> LLMResponse:
+    def chat(
+        self,
+        system: str,
+        user: str,
+        json_mode: bool = False,
+        timeout_s: float | None = None,
+    ) -> LLMResponse:
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": [
@@ -47,14 +61,16 @@ class OpenAICompatBackend:
             payload["response_format"] = {"type": "json_object"}
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "api-subscription-key": self.api_key,
         }
+        if self.provider_id == "sarvam":
+            headers["api-subscription-key"] = self.api_key
         parsed = post_json(
             self.transport,
             self.provider_id,
             f"{self.base_url}/chat/completions",
             headers,
             payload,
+            self.timeout_s if timeout_s is None else timeout_s,
         )
         try:
             text = str(parsed["choices"][0]["message"]["content"])

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -40,7 +41,6 @@ from app.domain.enums import BatchStatus
 from app.graph.evidence import build_evidence_graph
 from app.importers.ingest import IngestResult, ingest_inputs
 from app.investigator.engine import investigate_cases
-from app.investigator.provider import FakeProvider
 from app.persistence.database import Database
 from app.reconciliation.detectors import ReconciliationResult, reconcile
 from app.reconciliation.rules import rule_manifest
@@ -51,6 +51,15 @@ from app.verifier.proof import verifier_manifest_fingerprint
 NORMALIZER_VERSION = "normalizer-v1"
 RUN_KEY_VERSION = "run-v2"
 DEFAULT_TENANT = "argus-demo"
+ProgressCallback = Callable[[str], None]
+
+
+class AgentProviderRequiredError(ValueError):
+    """Agent mode was requested without an explicit investigator provider.
+
+    Raised instead of silently constructing the deterministic fake, so a run
+    can never be presented as AI-investigated when no model was involved.
+    """
 
 
 @dataclass(frozen=True)
@@ -67,11 +76,14 @@ def compute_idempotency_key(
     inputs_fingerprint: str,
     mode: str = "rules-only",
     provider_id: str = "none",
+    policy_fingerprint: str = "none",
 ) -> str:
     if mode == "agent":
         material = "|".join(
             (
-                "run-v3-agent",
+                # Bumped with the investigator execution policy so a corrected
+                # deadline policy cannot reuse a timed-out agent result.
+                "run-v4-agent",
                 DEFAULT_TENANT,
                 inputs_fingerprint,
                 NORMALIZER_VERSION,
@@ -79,6 +91,7 @@ def compute_idempotency_key(
                 verifier_manifest_fingerprint(),
                 mode,
                 provider_id,
+                policy_fingerprint,
             )
         )
     else:
@@ -634,6 +647,26 @@ def _runtime_output(
     }
     if investigation_summary is not None:
         output["investigation"] = investigation_summary
+        # The financial run can complete safely while investigations failed.
+        # Say so explicitly rather than letting a completed run imply that
+        # every exception was investigated.
+        failures = int(investigation_summary.get("investigation_failure_count", 0))
+        investigated = int(investigation_summary.get("investigated_case_count", 0))
+        if failures:
+            output["investigation_status"] = "COMPLETED_WITH_INVESTIGATION_FAILURES"
+            output["investigation_status_detail"] = (
+                f"{failures} of {investigated} investigated case"
+                f"{'' if investigated == 1 else 's'} did not complete; "
+                "those cases remain unresolved with no proof or correction"
+            )
+        elif investigated:
+            output["investigation_status"] = "FULLY_INVESTIGATED"
+        else:
+            output["investigation_status"] = "NO_CASES_REQUIRED_INVESTIGATION"
+        output["investigation_failure_count"] = failures
+    else:
+        output["investigation_status"] = "NOT_INVESTIGATED"
+        output["investigation_failure_count"] = 0
     return output
 
 
@@ -641,6 +674,7 @@ def _compute_run_outputs(
     ingest: IngestResult,
     mode: str = "rules-only",
     provider: Any = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> tuple[
     ReconciliationResult,
     dict[str, Any],
@@ -650,16 +684,28 @@ def _compute_run_outputs(
     dict[str, Any] | None,
 ]:
     """Pure computation shared by the normal and forced-replacement paths."""
+    if progress_callback:
+        progress_callback("DETERMINISTIC_RECONCILIATION")
     result = reconcile(ingest.records)
+    if progress_callback:
+        progress_callback("DETERMINISTIC_VERIFICATION")
     verification = verify_cases(ingest.records, list(result.cases))
     investigation_summary: dict[str, Any] | None = None
 
     if mode == "agent":
         if provider is None:
-            provider = FakeProvider()
+            # Never silently substitute the deterministic fake for a requested
+            # AI investigation: that is what made a fake run look live. Fake
+            # remains available only through explicit selection.
+            raise AgentProviderRequiredError(
+                "agent mode requires an explicit investigator provider; "
+                "select rules-only, or explicitly select the deterministic fake"
+            )
         intermediate_graph = build_evidence_graph(
             ingest.records, list(result.matches), list(verification.cases)
         )
+        if progress_callback:
+            progress_callback("AI_INVESTIGATION")
         inv_outcome = investigate_cases(
             records=ingest.records,
             cases=list(verification.cases),
@@ -702,6 +748,8 @@ def _compute_run_outputs(
             latency_ms=verification.latency_ms,
         )
 
+    if progress_callback:
+        progress_callback("PROOF_AND_REPORT")
     verified = ReconciliationResult(
         matches=result.matches,
         cases=verification.cases,
@@ -837,6 +885,7 @@ def execute_run(
     force: bool = False,
     mode: Literal["rules-only", "agent"] = "rules-only",
     provider: Any = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> RunResult:
     """Execute one reconciliation run end to end (rules-only or agent).
 
@@ -859,14 +908,29 @@ def execute_run(
     ingest = ingest_inputs(inputs_dir)
     ingest_elapsed = time.perf_counter() - ingest_started
 
-    provider_obj = (
-        provider if provider is not None else (FakeProvider() if mode == "agent" else None)
-    )
+    if mode == "agent" and provider is None:
+        raise AgentProviderRequiredError(
+            "agent mode requires an explicit investigator provider; "
+            "select rules-only, or explicitly select the deterministic fake"
+        )
+    provider_obj = provider
     provider_id = (
         getattr(provider_obj, "provider_id", "none") if provider_obj is not None else "none"
     )
+    # The execution policy is part of run identity: a corrected timeout or model
+    # policy must not reuse an older, timed-out economic result.
+    policy_fingerprint = (
+        str(getattr(provider_obj, "policy_fingerprint", "policy-unversioned"))
+        if provider_obj is not None
+        else "none"
+    )
 
-    key = compute_idempotency_key(ingest.inputs_fingerprint, mode=mode, provider_id=provider_id)
+    key = compute_idempotency_key(
+        ingest.inputs_fingerprint,
+        mode=mode,
+        provider_id=provider_id,
+        policy_fingerprint=policy_fingerprint,
+    )
     run_id = f"run-{key[:16]}"
     existing = find_run(database, run_id)
     if existing is not None and existing["status"] == BatchStatus.COMPLETED.value:
@@ -885,7 +949,10 @@ def execute_run(
         # swap atomically: delete + full insert inside ONE transaction, so
         # an in-transaction failure rolls back to the previous result.
         result, totals, graph_json, econ_hash, verification, inv_summary = _compute_run_outputs(
-            ingest, mode=mode, provider=provider_obj
+            ingest,
+            mode=mode,
+            provider=provider_obj,
+            progress_callback=progress_callback,
         )
         total_elapsed = time.perf_counter() - started_clock
         elapsed_s = max(total_elapsed, 0.000001)
@@ -961,6 +1028,8 @@ def execute_run(
     )
 
     try:
+        if progress_callback:
+            progress_callback("INPUT_VALIDATION")
         _update_status(database, run_id, BatchStatus.VALIDATING)
         with database.transaction():
             _persist_ingest(database, run_id, ingest)
@@ -968,7 +1037,10 @@ def execute_run(
         _update_status(database, run_id, BatchStatus.RECONCILING)
         reconcile_started = time.perf_counter()
         result, totals, graph_json, econ_hash, verification, inv_summary = _compute_run_outputs(
-            ingest, mode=mode, provider=provider_obj
+            ingest,
+            mode=mode,
+            provider=provider_obj,
+            progress_callback=progress_callback,
         )
         created_at = _iso(_utc_now())
         with database.transaction():
@@ -1010,6 +1082,8 @@ def execute_run(
                 run_id,
             ),
         )
+        if progress_callback:
+            progress_callback("COMPLETED")
         return RunResult(
             run_id=run_id,
             status=BatchStatus.COMPLETED,

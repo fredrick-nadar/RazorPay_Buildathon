@@ -20,6 +20,9 @@ import time
 from dataclasses import dataclass, replace
 from typing import Any
 
+from app.ai.deadline import Deadline
+from app.ai.policy import DEFAULT_MIN_ATTEMPT_S
+from app.ai.policy import DEFAULT_SAFETY_RESERVE_S as DEFAULT_RESERVE_S
 from app.corrections.authority import classify_authority
 from app.corrections.dry_run import DryRunResult, preview_correction
 from app.domain.enums import (
@@ -29,6 +32,7 @@ from app.domain.enums import (
 )
 from app.domain.records import AcceptedRecords
 from app.investigator.budgets import InvestigationBudget
+from app.investigator.failures import InvestigatorExecutionError
 from app.investigator.prompt import build_investigation_context
 from app.investigator.schemas import (
     ProviderResult,
@@ -48,6 +52,12 @@ from app.verifier.snapshot import EvidenceSnapshot, build_evidence_snapshot
 _INVESTIGABLE_STATUSES = frozenset({CaseStatus.UNRESOLVED, CaseStatus.VERIFICATION_FAILED})
 
 
+def _remember(bucket: list[str], provider: str) -> None:
+    """Append a provider once, preserving first-seen execution order."""
+    if provider and provider not in bucket:
+        bucket.append(provider)
+
+
 @dataclass(frozen=True)
 class CaseInvestigation:
     """One case's investigation result."""
@@ -61,6 +71,15 @@ class CaseInvestigation:
     status: str  # outcome: "RESOLVED", "FAILED", "UNRESOLVED", "SKIPPED"
     failure_reason: str | None
     duration_ms: float
+    # Safe provider-attempt metadata, present even when no provider answered.
+    attempts: tuple[dict[str, Any], ...] = ()
+    # Partial work preserved across a controlled failure (REVIEW-007). On the
+    # success path these are read from the provider result instead.
+    trace: tuple[dict[str, Any], ...] = ()
+    retries_used: int = 0
+    tool_calls_used: int = 0
+    evidence_tool_calls: int = 0
+    failure_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -84,16 +103,32 @@ class InvestigationResult:
         status_counts: dict[str, int] = {}
         total_tool_calls = 0
         total_retries = 0
+        total_evidence_calls = 0
+        # Ordered, de-duplicated lists: execution order is what a reviewer
+        # needs, so these are never sorted (REVIEW-011).
+        actual_providers: list[str] = []
+        attempted_providers: list[str] = []
+        considered_providers: list[str] = []
+        investigation_failures = 0
         per_case: list[dict[str, Any]] = []
         for item in self.investigations:
             status_counts[item.status] = status_counts.get(item.status, 0) + 1
-            tool_calls = 0
-            retries = 0
+            if item.status == "FAILED":
+                investigation_failures += 1
+            # Counters come from the provider result on success and from the
+            # preserved failure telemetry otherwise, so partial work is never
+            # reported as zero (REVIEW-007).
             if item.provider_result is not None:
                 tool_calls = item.provider_result.tool_calls_used
                 retries = item.provider_result.retries_used
+                evidence_calls = item.provider_result.evidence_tool_calls
+            else:
+                tool_calls = item.tool_calls_used
+                retries = item.retries_used
+                evidence_calls = item.evidence_tool_calls
             total_tool_calls += tool_calls
             total_retries += retries
+            total_evidence_calls += evidence_calls
             entry: dict[str, Any] = {
                 "case_id": item.case.case_id,
                 "category": item.case.category.value,
@@ -110,15 +145,65 @@ class InvestigationResult:
                 entry["verifier_status"] = item.verifier_result.status.value
             if item.proof:
                 entry["proof_id"] = item.proof.proof_id
-            if item.provider_result is not None and item.provider_result.trace:
-                entry["trace"] = list(item.provider_result.trace)[:40]
+            if item.failure_code:
+                entry["failure_code"] = item.failure_code
+            entry["evidence_tool_calls"] = evidence_calls
+            case_trace = (
+                list(item.provider_result.trace)
+                if item.provider_result is not None and item.provider_result.trace
+                else list(item.trace)
+            )
+            if case_trace:
+                entry["trace"] = case_trace[:40]
+            # Attempts are recorded even when no provider answered, so a
+            # timed-out backend is still reported honestly.
+            case_attempts = list(item.attempts)
+            if item.provider_result is not None and item.provider_result.attempts:
+                case_attempts = list(item.provider_result.attempts)
+            if case_attempts:
+                entry["provider_attempts"] = case_attempts[:40]
+                for attempt in case_attempts:
+                    provider = str(attempt.get("provider_id") or "")
+                    _remember(considered_providers, provider)
+                    # A refusal decided before dialling is NOT a contact.
+                    if bool(attempt.get("contacted", True)):
+                        _remember(attempted_providers, provider)
+                    # A provider that RETURNED a completed response.
+                    if attempt.get("outcome") == "SUCCESS":
+                        _remember(actual_providers, provider)
+            # Model turns corroborate the same fact for providers whose
+            # attempts predate attempt recording.
+            for step in case_trace:
+                if step.get("type") == "model" and step.get("provider"):
+                    provider = str(step["provider"])
+                    _remember(actual_providers, provider)
+                    _remember(attempted_providers, provider)
+                    _remember(considered_providers, provider)
             per_case.append(entry)
 
+        investigated = sum(1 for item in self.investigations if item.status != "SKIPPED")
         return {
             "provider_id": self.provider_id,
+            # A provider that RETURNED a completed model turn. The strong claim.
+            "actual_providers": actual_providers,
+            # Providers whose transport was actually INVOKED, including ones
+            # that timed out. An empty actual set with a non-empty attempted
+            # set means the model never answered.
+            "attempted_providers": attempted_providers,
+            # Everything the chain reached, and those it skipped without
+            # dialling because no safe time remained (REVIEW-011).
+            "considered_providers": considered_providers,
+            "skipped_providers": [
+                provider for provider in considered_providers if provider not in attempted_providers
+            ],
             "status_counts": dict(sorted(status_counts.items())),
             "total_tool_calls": total_tool_calls,
             "total_retries": total_retries,
+            # Tool calls bound to a specific case, excluding static metadata.
+            "total_case_evidence_calls": total_evidence_calls,
+            "investigated_case_count": investigated,
+            "investigation_failure_count": investigation_failures,
+            "fully_investigated": investigation_failures == 0,
             "total_duration_ms": round(self.total_duration_ms, 3),
             "cases": per_case,
         }
@@ -149,6 +234,23 @@ def _investigate_one_case(
 ) -> CaseInvestigation:
     """Investigate one case: provider → validate → verify → dry-run."""
     started = time.perf_counter()
+    policy = getattr(provider, "policy", None)
+    # One absolute deadline per case. The provider receives it and must honour
+    # it across every turn, retry, provider attempt and fallback.
+    # Every value comes from the ONE effective policy. Omitting min_attempt_s
+    # here silently used the module default and could refuse every attempt
+    # under a small configured minimum (REVIEW-012).
+    case_deadline = budget.deadline or Deadline.after(
+        budget.timeout_s,
+        safety_reserve_s=(policy.safety_reserve_s if policy is not None else DEFAULT_RESERVE_S),
+        min_attempt_s=(policy.min_attempt_s if policy is not None else DEFAULT_MIN_ATTEMPT_S),
+    )
+    budget = budget.with_deadline(case_deadline)
+    watchdog_timeout_s = (
+        policy.watchdog_timeout_s
+        if policy is not None
+        else budget.timeout_s + budget.watchdog_grace_s
+    )
 
     # Build context
     evidence_records = _collect_evidence_records(case, snapshot)
@@ -163,18 +265,21 @@ def _investigate_one_case(
     provider_result: ProviderResult | None = None
     failure_reason: str | None = None
 
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(
+        provider.investigate,
+        case,
+        tools,
+        budget,
+        context,
+    )
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(
-                provider.investigate,
-                case,
-                tools,
-                budget,
-                context,
-            )
-            provider_result = future.result(timeout=budget.timeout_s)
+        # The worker watchdog is a LAST-RESORT guard for a broken provider that
+        # ignores its deadline. Normal provider failures return through bounded
+        # transport well before this fires, which is why the grace is small.
+        provider_result = future.result(timeout=watchdog_timeout_s)
     except concurrent.futures.TimeoutError:
-        failure_reason = "provider timeout exceeded"
+        failure_reason = "provider timeout: exceeded the case deadline watchdog"
         duration_ms = (time.perf_counter() - started) * 1000.0
         return CaseInvestigation(
             case=replace(case, status=CaseStatus.INVESTIGATION_FAILED),
@@ -186,9 +291,35 @@ def _investigate_one_case(
             status="FAILED",
             failure_reason=failure_reason,
             duration_ms=duration_ms,
+            attempts=(),
+        )
+    except InvestigatorExecutionError as exc:
+        # A controlled failure that happened AFTER real work. Preserve the safe
+        # partial telemetry - completed responses, retries, tool calls - so the
+        # run does not claim that nothing was attempted (REVIEW-007).
+        duration_ms = (time.perf_counter() - started) * 1000.0
+        return CaseInvestigation(
+            case=replace(case, status=CaseStatus.INVESTIGATION_FAILED),
+            hypothesis=None,
+            verifier_result=None,
+            proof=None,
+            dry_run=None,
+            provider_result=None,
+            status="FAILED",
+            failure_reason=f"investigation failed: {exc.code}",
+            duration_ms=duration_ms,
+            attempts=exc.attempts,
+            trace=exc.trace,
+            retries_used=exc.retries_used,
+            tool_calls_used=exc.tool_calls_used,
+            evidence_tool_calls=exc.evidence_tool_calls,
+            failure_code=exc.code,
         )
     except Exception as exc:  # noqa: BLE001
-        failure_reason = f"provider error: {type(exc).__name__}: {exc}"
+        # An UNEXPECTED provider error. Model text is untrusted and may echo
+        # record data or credentials, so only the typed class is persisted.
+        failure_reason = f"provider error: {type(exc).__name__}: investigation did not complete"
+        attempts = tuple(item.to_json() for item in getattr(exc, "attempts", ()) or ())
         duration_ms = (time.perf_counter() - started) * 1000.0
         return CaseInvestigation(
             case=replace(case, status=CaseStatus.INVESTIGATION_FAILED),
@@ -200,7 +331,15 @@ def _investigate_one_case(
             status="FAILED",
             failure_reason=failure_reason,
             duration_ms=duration_ms,
+            attempts=attempts,
+            failure_code="PROVIDER_ERROR",
         )
+    finally:
+        # ``with ThreadPoolExecutor`` waits for the worker on exit and would
+        # turn a nominal timeout into a blocking request. Provider tools are
+        # read-only, so the timed-out call can finish harmlessly in the
+        # background while the case is durably marked failed.
+        executor.shutdown(wait=False, cancel_futures=True)
 
     # Provider returned unresolved — case stays/becomes UNRESOLVED
     if provider_result.unresolved is not None:
@@ -320,7 +459,7 @@ def investigate_cases(
     Already-verified PASS cases are skipped.
     """
     if budget_config is None:
-        budget_config = InvestigationBudget()
+        budget_config = getattr(provider, "budget_config", None) or InvestigationBudget()
 
     snapshot = build_evidence_snapshot(records)
 

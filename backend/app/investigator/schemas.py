@@ -174,6 +174,12 @@ class ProviderResult:
     tool_calls_used: int
     retries_used: int
     trace: tuple[dict[str, Any], ...] = ()
+    # Safe structured provider-attempt metadata: provider, model, attempt,
+    # typed outcome and duration. Never prompts, bodies or exception strings.
+    attempts: tuple[dict[str, Any], ...] = ()
+    # Successful tool calls bound to THIS case, as opposed to any allowlisted
+    # call. Static rule-manifest reads are excluded.
+    evidence_tool_calls: int = 0
 
     def __post_init__(self) -> None:
         has_hyp = self.hypothesis is not None

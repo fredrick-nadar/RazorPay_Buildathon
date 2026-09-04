@@ -171,7 +171,13 @@ def _seed_v6(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[str, str, dict[str, Any]]:
     with monkeypatch.context() as patch:
-        patch.setattr(migrations, "_MIGRATION_CHAIN", migrations._MIGRATION_CHAIN[:-1])
+        # Version-anchored, not length-relative: adding a later migration must
+        # not silently change which schema this fixture seeds.
+        patch.setattr(
+            migrations,
+            "_MIGRATION_CHAIN",
+            tuple(link for link in migrations._MIGRATION_CHAIN if link[1] <= 6),
+        )
         db = Database(settings.db_path)
         try:
             assert db.schema_version == 6
@@ -283,7 +289,7 @@ def test_failed_scope_migration_preserves_v6_history_and_is_retryable(
         )
     db = Database(settings.db_path)
     try:
-        assert db.schema_version == 7
+        assert db.schema_version == 9
         row = db.query_one("SELECT * FROM gateway_demo_evidence")
         assert row is not None and row["scope"] == "FULL_DEMO"
         new_id, reused = record_demo_evidence(

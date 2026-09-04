@@ -42,7 +42,35 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR)$")
     investigator_tool_budget: int = Field(default=12, ge=1, le=100)
     investigator_max_retries: int = Field(default=2, ge=1, le=10)
-    investigator_timeout_s: float = Field(default=30.0, gt=0)
+    # Total wall time for ONE investigated case, covering every model turn,
+    # retry, provider attempt and fallback. Raised from 30s, which was shorter
+    # than a single HTTP attempt and therefore preempted every provider.
+    investigator_timeout_s: float = Field(default=75.0, gt=0)
+    # One model turn inside the case deadline. Groq then fallback providers are
+    # walked within this window.
+    investigator_turn_timeout_s: float = Field(default=25.0, gt=0)
+    # Withheld from every attempt so a failure can be classified and returned
+    # before the outer watchdog fires.
+    investigator_safety_reserve_s: float = Field(default=0.75, ge=0)
+    # Last-resort worker grace over the case deadline, for a broken provider
+    # that ignores the deadline entirely.
+    investigator_watchdog_grace_s: float = Field(default=5.0, ge=0)
+    # Shortest attempt worth starting. Below this the remaining time is spent
+    # failing cleanly instead of on a request that cannot complete.
+    investigator_min_attempt_s: float = Field(default=1.5, gt=0)
+    # Wall time held back inside a turn for the providers AFTER the current
+    # one, so a first provider cannot starve its fallback. Defaults to one full
+    # attempt cap; clamped so it always leaves a viable first attempt.
+    investigator_fallback_reserve_s: float | None = Field(default=None, ge=0)
+    # A live model must make at least one allowlisted read-only evidence tool
+    # call before its final answer is accepted.
+    investigator_require_tool_call: bool = True
+    # ONE attempt per provider by default. Two 11-second attempts inside a
+    # 25-second turn left a fallback provider ~2 seconds, so the fallback could
+    # not realistically answer (REVIEW-006). Raising this stays safe because
+    # the fallback reserve above protects the next provider.
+    ai_provider_max_attempts: int = Field(default=1, ge=1, le=3)
+    workflow_max_attempts: int = Field(default=2, ge=1, le=5)
     razorpay_key_id: str | None = Field(
         default=None,
         validation_alias=AliasChoices(
@@ -78,12 +106,12 @@ class Settings(BaseSettings):
     voice_tts_sample_rate: int = 22050
 
     # AI investigator providers (PRD 10). Chain order for "auto":
-    # gemini -> openai -> sarvam -> ollama (local Llama). With no keys and no
-    # Ollama, the investigator falls back to the deterministic fake provider -
-    # rules-only mode always works (Phase 0 invariant).
+    # groq -> gemini -> openai -> sarvam -> ollama (local Llama). With no live
+    # provider, rules-only mode remains available; the deterministic fake is
+    # selected only when explicitly configured/requested.
     ai_provider: str = Field(
         default="auto",
-        pattern="^(auto|gemini|openai|sarvam|ollama|fake|none)$",
+        pattern="^(auto|groq|gemini|openai|sarvam|ollama|fake|none)$",
     )
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-2.5-flash"
@@ -94,6 +122,15 @@ class Settings(BaseSettings):
     )
     groq_base_url: str = "https://api.groq.com/openai/v1"
     groq_schema_model: str = "openai/gpt-oss-20b"
+    groq_investigator_model: str = Field(
+        default="openai/gpt-oss-20b",
+        validation_alias=AliasChoices(
+            "ARGUS_GROQ_INVESTIGATOR_MODEL",
+            "ARGUS_GROQ_MODEL",
+            "GROQ_MODEL",
+            "groq_investigator_model",
+        ),
+    )
     openai_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("ARGUS_OPENAI_API_KEY", "OPENAI_API_KEY", "openai_api_key"),
@@ -120,7 +157,9 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.1:8b"
     ollama_api_key: str = "ollama"
     ollama_enabled: bool = False  # local Llama joins the auto chain only when enabled
-    ai_timeout_s: float = Field(default=45.0, gt=0)
+    # Cap for ONE HTTP attempt. Must stay below the turn window; the effective
+    # value per attempt is min(this cap, time left before the case deadline).
+    ai_timeout_s: float = Field(default=11.0, gt=0)
     sarvam_api_key: SecretStr | None = None
     elevenlabs_api_key: SecretStr | None = None
     elevenlabs_voice_id: str | None = None
@@ -230,21 +269,8 @@ class Settings(BaseSettings):
             if raw_key.startswith("gsk_"):
                 if not self.groq_api_key:
                     object.__setattr__(self, "groq_api_key", SecretStr(raw_key))
-                if not self.openai_api_key:
-                    object.__setattr__(self, "openai_api_key", SecretStr(raw_key))
-                if self.openai_base_url in (
-                    "https://api.openai.com/v1",
-                    "https://api.groq.com/openai/v1",
-                ):
-                    object.__setattr__(self, "openai_base_url", "https://api.groq.com/openai/v1")
-                if self.openai_model in (
-                    "gpt-4o-mini",
-                    "llama-3.3-70b-versatile",
-                    "qwen/qwen3.6-27b",
-                ):
-                    object.__setattr__(self, "openai_model", "openai/gpt-oss-120b")
                 if not self.model_provider:
-                    object.__setattr__(self, "model_provider", "openai")
+                    object.__setattr__(self, "model_provider", "groq")
 
             # Auto-detect Gemini keys
             elif raw_key.startswith("AIza") or raw_key.startswith("AQ."):
@@ -269,19 +295,32 @@ class Settings(BaseSettings):
     @property
     def rules_only(self) -> bool:
         """True when no usable model is configured; rules-only mode must always start."""
-        if not self.model_provider or not self.model_api_key:
-            return True
-        return not bool(
-            self.model_provider.strip() and self.model_api_key.get_secret_value().strip()
+        live_configured = bool(
+            self.groq_api_key
+            or self.gemini_api_key
+            or self.openai_api_key
+            or self.sarvam_api_key
+            or self.ollama_enabled
+            or (self.model_provider and self.model_api_key)
         )
+        return not live_configured
 
     def safe_summary(self) -> dict[str, object]:
         """Loggable configuration snapshot. Never includes the API key value."""
         return {
             "app_version": self.app_version,
             "db_path": str(self.db_path),
-            "model_provider": self.model_provider,
-            "model_key_configured": self.model_api_key is not None,
+            "model_provider": self.ai_provider,
+            "model_key_configured": any(
+                key is not None
+                for key in (
+                    self.groq_api_key,
+                    self.gemini_api_key,
+                    self.openai_api_key,
+                    self.sarvam_api_key,
+                    self.model_api_key,
+                )
+            ),
             "rules_only": self.rules_only,
             "host": self.host,
             "port": self.port,
