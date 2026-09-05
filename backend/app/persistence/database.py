@@ -39,6 +39,7 @@ __all__ = [
     "Database",
     "PersistenceMigrationError",
     "Repository",
+    "ensure_persistent_parents",
     "open_database",
 ]
 
@@ -146,6 +147,20 @@ class Repository(Protocol):
     """
 
 
+def ensure_persistent_parents(settings: Settings) -> None:
+    """Create ONLY the parent directories the persistence boundary needs.
+
+    The database parent and the import staging root are the two directories a
+    deployment must be able to write. Nothing else is created, and an existing
+    tree is left untouched, so a mounted volume is never reshaped by a boot.
+    """
+    db_parent = settings.db_path.expanduser().parent
+    if str(db_parent):
+        db_parent.mkdir(parents=True, exist_ok=True)
+    settings.import_staging_root.expanduser().mkdir(parents=True, exist_ok=True)
+
+
 def open_database(settings: Settings) -> Database:
     """Open (create, migrate) the configured SQLite database."""
+    ensure_persistent_parents(settings)
     return Database(settings.db_path)

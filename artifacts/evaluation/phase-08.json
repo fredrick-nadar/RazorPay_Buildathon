@@ -1,0 +1,305 @@
+{
+  "phase": 8,
+  "phase_name": "Submission Release",
+  "status": "FAIL",
+  "started_at_utc": "2026-09-05T11:55:41+00:00",
+  "finished_at_utc": "2026-09-05T11:58:39+00:00",
+  "environment": {
+    "python": "Python 3.12.9",
+    "node": "v22.13.1",
+    "npm": "11.1.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "git": "git version 2.55.0.windows.5; HEAD 9bde88c886254de419a3a989278eb81be30aa95f",
+    "release_tree": {
+      "available": true,
+      "commit": "9bde88c886254de419a3a989278eb81be30aa95f",
+      "branch": "main",
+      "clean": false,
+      "modified_tracked": [
+        "M .env.example",
+        "M BUILD_STATUS.md",
+        "M artifacts/evaluation/phase-00.json",
+        "M backend/app/config.py",
+        "M backend/app/main.py",
+        "M backend/app/persistence/database.py",
+        "M backend/tests/unit/test_verify_phase_safety.py",
+        "M scripts/verify_phase.py"
+      ],
+      "untracked": [
+        "README.md",
+        "backend/app/cors.py",
+        "backend/tests/integration/test_persistent_state_restart.py",
+        "backend/tests/integration/test_release_rules_only.py",
+        "backend/tests/unit/release_fixtures.py",
+        "backend/tests/unit/test_cors_policy.py",
+        "backend/tests/unit/test_release_assets.py",
+        "backend/tests/unit/test_release_evidence.py",
+        "backend/tests/unit/test_verify_phase8_release.py",
+        "docs/architecture.md",
+        "docs/data-flow.md",
+        "docs/security-and-deployment.md",
+        "scripts/release_assets.py",
+        "scripts/release_evidence.py"
+      ],
+      "ignored_self_artifact": "artifacts/evaluation/phase-08.json"
+    }
+  },
+  "commands": [
+    {
+      "name": "preflight-backend-imports",
+      "command": "<repo>\\.venv\\Scripts\\python.exe -c import fastapi, uvicorn, pydantic_settings, pytest, ruff, mypy, httpx",
+      "status": "PASS",
+      "duration_s": 0.56,
+      "summary": "exit code 0",
+      "gate_blocking": true
+    },
+    {
+      "name": "preflight-frontend-node-modules",
+      "command": "frontend/node_modules + package-lock.json",
+      "status": "PASS",
+      "duration_s": 0.0,
+      "summary": "installed",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-ruff-check",
+      "command": "<repo>\\.venv\\Scripts\\python.exe -m ruff check backend",
+      "status": "PASS",
+      "duration_s": 0.1,
+      "summary": "All checks passed!",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-ruff-format",
+      "command": "<repo>\\.venv\\Scripts\\python.exe -m ruff format --check backend",
+      "status": "PASS",
+      "duration_s": 0.09,
+      "summary": "189 files already formatted",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-mypy",
+      "command": "<repo>\\.venv\\Scripts\\python.exe -m mypy",
+      "status": "PASS",
+      "duration_s": 0.3,
+      "summary": "Success: no issues found in 110 source files",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-pytest",
+      "command": "<repo>\\.venv\\Scripts\\python.exe -m pytest backend/tests/unit -q --basetemp <repo>\\tmp\\pytest-phase-08-zov63wdt -p no:cacheprovider",
+      "status": "PASS",
+      "duration_s": 47.25,
+      "summary": "973 passed, 1 warning in 46.77s",
+      "gate_blocking": true
+    },
+    {
+      "name": "frontend-lint",
+      "command": "cmd /c npm --prefix frontend run lint",
+      "status": "PASS",
+      "duration_s": 3.88,
+      "summary": "> eslint .",
+      "gate_blocking": true
+    },
+    {
+      "name": "frontend-typecheck",
+      "command": "cmd /c npm --prefix frontend run typecheck",
+      "status": "PASS",
+      "duration_s": 2.27,
+      "summary": "> tsc --noEmit",
+      "gate_blocking": true
+    },
+    {
+      "name": "frontend-test",
+      "command": "cmd /c npm --prefix frontend run test",
+      "status": "PASS",
+      "duration_s": 1.56,
+      "summary": "\u001b[2m   Duration \u001b[22m 677ms\u001b[2m (transform 531ms, setup 0ms, collect 1.08s, tests 83ms, environment 2ms, prepare 2.40s)\u001b[22m",
+      "gate_blocking": true
+    },
+    {
+      "name": "frontend-build",
+      "command": "cmd /c npm --prefix frontend run build",
+      "status": "PASS",
+      "duration_s": 15.77,
+      "summary": "○  (Static)  prerendered as static content",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-boot-health",
+      "command": "uvicorn boot + GET /api/v1/health,/version",
+      "status": "PASS",
+      "duration_s": 1.15,
+      "summary": "health ok, persistence sqlite ok, api v1",
+      "gate_blocking": true
+    },
+    {
+      "name": "frontend-boot-home",
+      "command": "next start boot + GET /",
+      "status": "PASS",
+      "duration_s": 1.09,
+      "summary": "home page served with ARGUS CONTROL heading",
+      "gate_blocking": true
+    },
+    {
+      "name": "secret-scan",
+      "command": "repository secret scan",
+      "status": "PASS",
+      "duration_s": 0.0,
+      "summary": "no secret-like content found",
+      "gate_blocking": true
+    },
+    {
+      "name": "gitignore-coverage",
+      "command": "check .gitignore patterns",
+      "status": "PASS",
+      "duration_s": 0.0,
+      "summary": "required ignore patterns present",
+      "gate_blocking": true
+    },
+    {
+      "name": "optional-e2e-playwright",
+      "command": "cmd /c npm --prefix frontend run test:e2e",
+      "status": "PASS",
+      "duration_s": 36.12,
+      "summary": "  52 passed (34.2s)",
+      "gate_blocking": false
+    },
+    {
+      "name": "release-input-tree-certification",
+      "command": "certify the committed input tree",
+      "status": "FAIL",
+      "duration_s": 0.0,
+      "summary": "input tree differs from the commit being certified; 8 modified tracked: M .env.example, M BUILD_STATUS.md, M artifacts/evaluation/phase-00.json, M backend/app/config.py, M backend/app/main.py, M backend/app/persistence/database.py, M backend/tests/unit/test_verify_phase_safety.py, M scripts/verify_phase.py; 14 untracked: README.md, backend/app/cors.py, backend/tests/integration/test_persistent_state_restart.py, backend/tests/integration/test_release_rules_only.py, backend/tests/unit/release_fixtures.py, backend/tests/unit/test_cors_policy.py, backend/tests/unit/test_release_assets.py, backend/tests/unit/test_release_evidence.py, backend/tests/unit/test_verify_phase8_release.py, docs/architecture.md, docs/data-flow.md, docs/security-and-deployment.md, (+2 more)",
+      "gate_blocking": true
+    },
+    {
+      "name": "backend-pytest-full",
+      "command": "<repo>\\.venv\\Scripts\\python.exe -m pytest backend/tests -q --basetemp <repo>\\tmp\\pytest-phase-08-r1l_j6xq -p no:cacheprovider",
+      "status": "PASS",
+      "duration_s": 54.72,
+      "summary": "1062 passed, 1 warning in 54.17s",
+      "gate_blocking": true
+    },
+    {
+      "name": "release-dataset-generate-smoke",
+      "command": "<repo>\\.venv\\Scripts\\python.exe scripts/generate_dataset.py --profile dev --seed 4104 --output-root <repo>\\tmp\\verify-phase-08-release-rd94dfo8",
+      "status": "PASS",
+      "duration_s": 0.12,
+      "summary": "generated in 16 ms",
+      "gate_blocking": true
+    },
+    {
+      "name": "release-dataset-reproducibility-smoke",
+      "command": "compare <repo>\\tmp\\verify-phase-08-release-rd94dfo8\\dev vs <repo>\\datasets\\dev",
+      "status": "PASS",
+      "duration_s": 0.04,
+      "summary": "byte-identical regeneration of inputs, labels, and manifests",
+      "gate_blocking": true
+    },
+    {
+      "name": "release-label-firewall",
+      "command": "<repo>\\.venv\\Scripts\\python.exe scripts/check_label_isolation.py",
+      "status": "PASS",
+      "duration_s": 0.32,
+      "summary": "label firewall holds: runtime code cannot reach ground-truth labels",
+      "gate_blocking": true
+    },
+    {
+      "name": "release-benchmark-rules-only-smoke",
+      "command": "<repo>\\.venv\\Scripts\\python.exe scripts/run_benchmark.py --dataset datasets/dev --mode rules-only --output <repo>\\tmp\\verify-phase-08-release-rd94dfo8\\release-rules-only-smoke.json",
+      "status": "PASS",
+      "duration_s": 0.59,
+      "summary": "[run_benchmark] PASS",
+      "gate_blocking": true
+    },
+    {
+      "name": "release-rules-only-fallback",
+      "command": "<repo>\\.venv\\Scripts\\python.exe -m pytest backend/tests/integration/test_release_rules_only.py -q --basetemp <repo>\\tmp\\pytest-phase-08-r1l_j6xq -p no:cacheprovider",
+      "status": "PASS",
+      "duration_s": 2.56,
+      "summary": "7 passed, 1 warning in 2.13s",
+      "gate_blocking": true
+    },
+    {
+      "name": "release-persistent-restart",
+      "command": "<repo>\\.venv\\Scripts\\python.exe -m pytest backend/tests/integration/test_persistent_state_restart.py -q --basetemp <repo>\\tmp\\pytest-phase-08-r1l_j6xq -p no:cacheprovider",
+      "status": "PASS",
+      "duration_s": 1.23,
+      "summary": "5 passed, 1 warning in 0.78s",
+      "gate_blocking": true
+    },
+    {
+      "name": "release-documents",
+      "command": "release document presence and links",
+      "status": "PASS",
+      "duration_s": 0.02,
+      "summary": "9 documents present; 34 repository-confined internal links valid",
+      "gate_blocking": true
+    },
+    {
+      "name": "release-benchmark-artifacts",
+      "command": "committed benchmark evidence and published claims",
+      "status": "PASS",
+      "duration_s": 0.0,
+      "summary": "2 benchmark artifacts match their release contract; final_summary.md derived from final.json; published figures agree",
+      "gate_blocking": true
+    },
+    {
+      "name": "release-fresh-checkout-readiness",
+      "command": "fresh-checkout readiness (no downloads)",
+      "status": "FAIL",
+      "duration_s": 0.1,
+      "summary": "14 release-critical file(s) exist only in the working tree and would not reach a fresh clone: README.md, backend/app/cors.py, backend/tests/integration/test_persistent_state_restart.py, backend/tests/integration/test_release_rules_only.py, backend/tests/unit/release_fixtures.py, backend/tests/unit/test_cors_policy.py, backend/tests/unit/test_release_assets.py, backend/tests/unit/test_release_evidence.py, backend/tests/unit/test_verify_phase8_release.py, docs/architecture.md, docs/data-flow.md, docs/security-and-deployment.md, (+2 more)",
+      "gate_blocking": true
+    },
+    {
+      "name": "release-prior-phase-evidence",
+      "command": "phase 0-7 evaluation artifacts",
+      "status": "FAIL",
+      "duration_s": 0.0,
+      "summary": "phase-06.json status is 'FAIL', not PASS",
+      "gate_blocking": true
+    },
+    {
+      "name": "release-submission-assets",
+      "command": "owner-supplied submission assets",
+      "status": "FAIL",
+      "duration_s": 0.0,
+      "summary": "artifacts/release/submission-manifest.json is absent: primary and backup demo videos and application screenshots have not been supplied (owner action)",
+      "gate_blocking": true
+    },
+    {
+      "name": "phase8-gate-assertions",
+      "command": "evaluator-side phase 8 release assertions",
+      "status": "FAIL",
+      "duration_s": 0.0,
+      "summary": "release-input-tree-certification: FAIL - input tree differs from the commit being certified; 8 modified tracked: M .env.e; release-fresh-checkout-readiness: FAIL - 14 release-critical file(s) exist only in the working tree and would not reach a; release-prior-phase-evidence: FAIL - phase-06.json status is 'FAIL', not PASS; release-submission-assets: FAIL - artifacts/release/submission-manifest.json is absent: primary and backup demo vi",
+      "gate_blocking": true
+    }
+  ],
+  "counts": {
+    "backend_tests_passed": 973,
+    "backend_tests_failed": 0,
+    "backend_tests_skipped": 0,
+    "release_commit": "9bde88c886254de419a3a989278eb81be30aa95f",
+    "release_branch": "main",
+    "release_input_tree_clean": false,
+    "backend_full_suite_passed": 1062,
+    "backend_full_suite_failed": 0,
+    "release_links_checked": 34,
+    "release_unresolved_exceptions": 5,
+    "release_throughput_records_per_second": 9656.1,
+    "release_benchmark_artifacts_checked": 2,
+    "release_tracked_files_required": 281,
+    "release_manifest_present": false
+  },
+  "known_failures": [],
+  "notes": [
+    "Phase 8 verifies committed Phase 1-7 evidence instead of regenerating benchmark artifacts; its dataset and benchmark smokes write only to a temporary scratch directory.",
+    "A hosted demo-video URL is validated for syntax and safety offline only. The gate never fetches it, so it cannot prove the recording is reachable."
+  ],
+  "failed_step": null,
+  "next_phase": 9,
+  "reviewer_note": ""
+}

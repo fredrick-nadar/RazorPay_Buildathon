@@ -58,6 +58,9 @@ Thumbs.db
 
 # Local AI context
 /cloud-reference.md
-.ai/GEMINI_CONTEXT.md
-.ai/GEMINI.md
+/.ai/
+/.claude/
+/.codex/
+/.zai/
+*.zai
 rzp-test-key.csv

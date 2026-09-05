@@ -172,9 +172,9 @@ class TestPhaseDispatch:
     removal of an earlier phase still fails loudly.
     """
 
-    def test_supported_phases_are_zero_through_seven(self, verify_phase: ModuleType) -> None:
+    def test_supported_phases_are_zero_through_eight(self, verify_phase: ModuleType) -> None:
         phases = verify_phase.SUPPORTED_PHASES
-        assert phases == {0, 1, 2, 3, 4, 5, 6, 7}
+        assert phases == {0, 1, 2, 3, 4, 5, 6, 7, 8}
 
     def test_phase_names_cover_all_phases(self, verify_phase: ModuleType) -> None:
         assert verify_phase.PHASE_NAMES[0] == "Foundation and Frozen Contracts"
@@ -188,6 +188,7 @@ class TestPhaseDispatch:
         )
         assert verify_phase.PHASE_NAMES[6] == "Failure Laboratory and Safe Adapter"
         assert verify_phase.PHASE_NAMES[7] == "Frozen Holdout Benchmark and Hardening"
+        assert verify_phase.PHASE_NAMES[8] == "Submission Release"
 
     def test_phase1_artifact_uses_phase_name_and_zero_padded_name(
         self, verify_phase: ModuleType, tmp_path: Path

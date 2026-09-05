@@ -15,6 +15,8 @@ from typing import Any
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.cors import CorsPolicy, CorsPolicyError, build_cors_policy
+
 APP_NAME = "ARGUS CONTROL"
 API_VERSION = "v1"
 DOMAIN_CONTRACT_VERSION = "domain-contracts-v0"
@@ -33,8 +35,18 @@ class Settings(BaseSettings):
     )
 
     app_version: str = "0.1.0"
+    # --- Persistence boundary -------------------------------------------
+    # These two paths are the ENTIRE durable state of a deployment. Both must
+    # live outside the source tree and outside ephemeral build output, and both
+    # must survive a restart together: the database holds run/session rows that
+    # reference immutable revisions under the staging root.
     db_path: Path = Path("argus.local.sqlite3")
     import_staging_root: Path = Path("artifacts/raw/imports")
+    # --- Browser origin policy ------------------------------------------
+    # Empty means the safe localhost defaults in app.cors, never "any origin".
+    # Production origins are configured explicitly, comma-separated.
+    cors_allowed_origins: str = ""
+    cors_allow_credentials: bool = True
     model_provider: str | None = None
     model_api_key: SecretStr | None = None
     host: str = "127.0.0.1"
@@ -320,6 +332,37 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _validate_persistence_paths(self) -> Settings:
+        """Both persistent paths must be usable file/directory targets.
+
+        Nothing is created here; startup creates only the required parents.
+        This rejects the configurations that would silently lose durable state
+        (an empty value, or a database path that is actually a directory).
+        """
+        if not str(self.db_path).strip():
+            raise ValueError("ARGUS_DB_PATH must not be empty")
+        if not str(self.import_staging_root).strip():
+            raise ValueError("ARGUS_IMPORT_STAGING_ROOT must not be empty")
+        if self.db_path.is_dir():
+            raise ValueError(f"ARGUS_DB_PATH points at a directory: {self.db_path}")
+        if self.import_staging_root.is_file():
+            raise ValueError(
+                f"ARGUS_IMPORT_STAGING_ROOT points at a file: {self.import_staging_root}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_cors_policy(self) -> Settings:
+        """Reject an unsafe or malformed origin policy at configuration time."""
+        try:
+            build_cors_policy(
+                self.cors_allowed_origins, allow_credentials=self.cors_allow_credentials
+            )
+        except CorsPolicyError as exc:
+            raise ValueError(f"ARGUS_CORS_ALLOWED_ORIGINS is invalid: {exc}") from None
+        return self
+
+    @model_validator(mode="after")
     def _require_telegram_token_when_enabled(self) -> Settings:
         if self.telegram_enabled and self.telegram_bot_token is None:
             raise ValueError("ARGUS_TELEGRAM_BOT_TOKEN is required when Telegram is enabled")
@@ -338,11 +381,29 @@ class Settings(BaseSettings):
         )
         return not live_configured
 
+    def cors_policy(self) -> CorsPolicy:
+        """The validated browser-origin policy. Safe to call after construction."""
+        return build_cors_policy(
+            self.cors_allowed_origins, allow_credentials=self.cors_allow_credentials
+        )
+
+    def persistence_summary(self) -> dict[str, object]:
+        """Non-secret description of the state that must survive a restart."""
+        return {
+            "db_path": str(self.db_path),
+            "db_path_resolved": str(self.db_path.expanduser().resolve()),
+            "db_exists": self.db_path.is_file(),
+            "import_staging_root": str(self.import_staging_root),
+            "import_staging_root_resolved": str(self.import_staging_root.expanduser().resolve()),
+            "import_staging_root_exists": self.import_staging_root.is_dir(),
+        }
+
     def safe_summary(self) -> dict[str, object]:
         """Loggable configuration snapshot. Never includes the API key value."""
         return {
             "app_version": self.app_version,
             "db_path": str(self.db_path),
+            **self.cors_policy().safe_summary(),
             "model_provider": self.ai_provider,
             "model_key_configured": any(
                 key is not None

@@ -61,10 +61,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def source_revision_error(request: Request, exc: SourceRevisionError) -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": str(exc)})
 
+    # Validated at settings construction; resolving again here keeps the
+    # middleware and the /version safe summary reading the same policy object.
+    cors = resolved.cors_policy()
+    app.state.cors_policy = cors
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=list(cors.allow_origins),
+        allow_credentials=cors.allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
     )

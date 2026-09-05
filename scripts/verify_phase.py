@@ -49,6 +49,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+import release_assets  # resolved via SCRIPTS_DIR above
+import release_evidence  # resolved via SCRIPTS_DIR above
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_DIR = REPO_ROOT / "backend"
 FRONTEND_DIR = REPO_ROOT / "frontend"
@@ -62,7 +69,7 @@ VENV_PYTHON = (
 if not VENV_PYTHON.is_file():
     VENV_PYTHON = Path(sys.executable)
 
-SUPPORTED_PHASES = {0, 1, 2, 3, 4, 5, 6, 7}
+SUPPORTED_PHASES = {0, 1, 2, 3, 4, 5, 6, 7, 8}
 
 PHASE_NAMES = {
     0: "Foundation and Frozen Contracts",
@@ -73,6 +80,7 @@ PHASE_NAMES = {
     5: "Control Room, Approval, Simulated Application, and Audit",
     6: "Failure Laboratory and Safe Adapter",
     7: "Frozen Holdout Benchmark and Hardening",
+    8: "Submission Release",
 }
 
 
@@ -179,6 +187,9 @@ class GateReport:
     known_failures: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     include_test_mode_smoke: bool = False
+    # Commit/working-tree snapshot taken BEFORE any artifact is written.
+    # Kept off `environment` because collect_environment() replaces that dict.
+    release_tree: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +232,23 @@ def emit(message: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def redact_machine_paths(text: str) -> str:
+    """Replace this machine's repository root with ``<repo>`` in recorded text.
+
+    Evaluation artifacts are committed and public. The absolute location of the
+    checkout is machine detail, not evidence, so it is redacted from every
+    recorded command and summary. Only the prefix is replaced; the
+    repository-relative remainder stays intact and readable.
+    """
+    if not text:
+        return text
+    root = str(REPO_ROOT)
+    for variant in (root, root.replace("\\", "/"), root.replace("/", "\\")):
+        if variant and variant in text:
+            text = text.replace(variant, "<repo>")
+    return text
+
+
 def write_artifact(report: GateReport, artifact_dir: Path) -> Path:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     artifact = {
@@ -233,10 +261,10 @@ def write_artifact(report: GateReport, artifact_dir: Path) -> Path:
         "commands": [
             {
                 "name": s.name,
-                "command": s.command,
+                "command": redact_machine_paths(s.command),
                 "status": s.status,
                 "duration_s": s.duration_s,
-                "summary": s.summary,
+                "summary": redact_machine_paths(s.summary),
                 "gate_blocking": s.gate_blocking,
             }
             for s in report.steps
@@ -859,6 +887,8 @@ def collect_environment(report: GateReport) -> None:
         "platform": platform.platform(),
         "git": git_detail,
     }
+    if report.release_tree is not None:
+        report.environment["release_tree"] = report.release_tree
 
 
 # ---------------------------------------------------------------------------
@@ -871,6 +901,13 @@ def run_gate(report: GateReport) -> None:
     emit(f"[verify_phase] phase {report.phase} gate started {report.started_at_utc}")
 
     if not run_phase0_steps(report):
+        return
+    if report.phase == 8:
+        # Phase 8 is the release gate, not a replay of the earlier phases. It
+        # appends its own release steps to the unchanged Phase 0 list and
+        # VERIFIES the committed Phase 1-7 evidence rather than regenerating
+        # benchmark artifacts, which would let a gate rewrite its own proof.
+        run_phase8_steps(report)
         return
     if report.phase >= 1:
         run_phase1_steps(report)
@@ -2307,37 +2344,25 @@ def phase7_gate_assertions(report: GateReport) -> StepResult:
     if final_benchmark_path.is_file():
         try:
             data = json.loads(final_benchmark_path.read_text(encoding="utf-8"))
+            # One shared implementation of the Phase 7 acceptance conditions,
+            # so the Phase 8 release gate can never be the weaker evaluator.
+            violations.extend(
+                release_evidence.phase7_core_conditions(
+                    release_evidence.FINAL_AGENT_ARTIFACT, data
+                )
+            )
             eval_res = data.get("evaluation", {})
             metrics = eval_res.get("metrics", {})
-            verif = eval_res.get("verification", {})
             counts = eval_res.get("counts", {})
-
-            eligible = counts.get("eligible_canonical_records", 0)
-            if eligible < 500:
-                violations.append(f"holdout eligible count {eligible} below 500 threshold")
-
-            prec = metrics.get("match_precision", {}).get("rate")
-            if prec != 1.0:
-                violations.append(f"match precision {prec} != 1.0")
-
-            acc = metrics.get("case_classification_accuracy", {}).get("rate")
-            if acc != 1.0:
-                violations.append(f"case classification accuracy {acc} != 1.0")
-
-            false_passes = verif.get("false_verifier_pass_count", 0)
-            if false_passes != 0:
-                violations.append(f"false verifier passes {false_passes} != 0")
-
-            dry_run_err = verif.get("money_weighted_dry_run_error_paise", 0)
-            if dry_run_err != 0:
-                violations.append(f"money-weighted dry-run error {dry_run_err} != 0")
-
-            if not verif.get("proof_completeness", {}).get("complete"):
-                violations.append("proof completeness incomplete")
-
-            report.counts["phase7_holdout_eligible_records"] = eligible
-            report.counts["phase7_holdout_match_precision"] = prec
-            report.counts["phase7_holdout_case_accuracy"] = acc
+            report.counts["phase7_holdout_eligible_records"] = counts.get(
+                "eligible_canonical_records", 0
+            )
+            report.counts["phase7_holdout_match_precision"] = metrics.get(
+                "match_precision", {}
+            ).get("rate")
+            report.counts["phase7_holdout_case_accuracy"] = metrics.get(
+                "case_classification_accuracy", {}
+            ).get("rate")
         except Exception as exc:  # noqa: BLE001
             violations.append(f"could not validate final benchmark: {exc}")
 
@@ -2381,6 +2406,840 @@ def run_phase7_steps(report: GateReport) -> None:
         shutil.rmtree(basetemp, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------------
+# Phase 8 steps (PRD 16: Submission Release).
+#
+# Phase 8 is a RELEASE gate, not a replay of Phases 1-7. It runs the unchanged
+# Phase 0 list, then appends release checks that VERIFY committed evidence
+# instead of regenerating it: a gate that rewrites artifacts/benchmark/final.json
+# would be manufacturing its own proof. Every step below is executed; none is
+# silently skipped, and the artifact records the real outcome of each one.
+#
+# Asset structure, benchmark schema and published-claim agreement live in
+# scripts/release_assets.py and scripts/release_evidence.py so they can be
+# tested directly and so Phase 7 and Phase 8 share one evaluator.
+# ---------------------------------------------------------------------------
+
+PHASE8_REQUIRED_DOCS = (
+    "README.md",
+    "docs/architecture.md",
+    "docs/data-flow.md",
+    "docs/security-and-deployment.md",
+    "README_ARGUS_CONTROL.md",
+    "ARGUS_CONTROL_PRD.md",
+    "ARGUS_CONTROL_MASTER_PROMPT.md",
+    "AGENTS.md",
+    "BUILD_STATUS.md",
+)
+
+PHASE8_LINK_SOURCES = (
+    "README.md",
+    "docs/architecture.md",
+    "docs/data-flow.md",
+    "docs/security-and-deployment.md",
+)
+
+PHASE8_REQUIRED_BENCHMARKS = (
+    release_evidence.FINAL_AGENT_ARTIFACT,
+    release_evidence.FINAL_RULES_ONLY_ARTIFACT,
+)
+
+# Release-critical trees whose every file must be committed for a fresh clone
+# to be able to install, run and gate ARGUS.
+PHASE8_TRACKED_TREES: tuple[tuple[str, str], ...] = (
+    ("backend/app", "*.py"),
+    ("backend/tests", "*.py"),
+    ("scripts", "*.py"),
+    ("frontend/src", "*"),
+    ("contracts", "*.json"),
+)
+
+PHASE8_TRACKED_FILES = (
+    "backend/pyproject.toml",
+    "backend/requirements.lock.txt",
+    "frontend/package.json",
+    "frontend/package-lock.json",
+    "frontend/next.config.mjs",
+    "frontend/tsconfig.json",
+    "frontend/playwright.config.ts",
+    "frontend/vitest.config.ts",
+    ".env.example",
+    ".gitignore",
+    "datasets/dev/inputs/payments.csv",
+    "datasets/holdout/inputs/payments.csv",
+    release_evidence.FINAL_AGENT_ARTIFACT,
+    release_evidence.FINAL_RULES_ONLY_ARTIFACT,
+    release_evidence.FINAL_SUMMARY_ARTIFACT,
+    *PHASE8_REQUIRED_DOCS,
+)
+
+# The only path Phase 8 may see dirty: the artifact this very run writes.
+PHASE8_SELF_ARTIFACT = "artifacts/evaluation/phase-08.json"
+
+MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+
+
+def _step(name: str, command: str, status: str, started: float, summary: str) -> StepResult:
+    return StepResult(
+        name, command, status, round(time.perf_counter() - started, 2), summary
+    )
+
+
+# ---------------------------------------------------------------------------
+# Release identity: what commit and working tree Phase 8 is certifying.
+# ---------------------------------------------------------------------------
+
+
+def capture_release_tree() -> dict[str, Any]:
+    """Snapshot commit, branch and dirty paths BEFORE any artifact is written.
+
+    Called from main() ahead of begin_run(), so the RUNNING artifact this gate
+    writes cannot make its own working tree look dirty. Only repository-relative
+    paths are recorded; no file content and no absolute machine path.
+    """
+    captured: dict[str, Any] = {
+        "available": False,
+        "commit": None,
+        "branch": None,
+        "clean": False,
+        "modified_tracked": [],
+        "untracked": [],
+        "ignored_self_artifact": PHASE8_SELF_ARTIFACT,
+    }
+    git = find_git()
+    if git is None:
+        captured["error"] = "git executable not found"
+        return captured
+    try:
+        commit = subprocess.run(
+            [git, "rev-parse", "HEAD"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        branch = subprocess.run(
+            [git, "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        status = subprocess.run(
+            [git, "status", "--porcelain=v1", "--untracked-files=all"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        captured["error"] = f"could not run git: {exc}"
+        return captured
+    if commit.returncode != 0 or status.returncode != 0:
+        captured["error"] = "git rev-parse/status failed"
+        return captured
+
+    captured["available"] = True
+    captured["commit"] = commit.stdout.strip()
+    captured["branch"] = branch.stdout.strip() if branch.returncode == 0 else None
+
+    modified: list[str] = []
+    untracked: list[str] = []
+    for line in status.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        code, path = line[:2], line[3:].strip().strip('"')
+        if " -> " in path:  # rename: record the destination
+            path = path.split(" -> ", 1)[1]
+        path = path.replace("\\", "/")
+        if path == PHASE8_SELF_ARTIFACT:
+            continue  # this gate's own output, written after this snapshot
+        if code == "??":
+            untracked.append(path)
+        else:
+            modified.append(f"{code.strip()} {path}")
+    captured["modified_tracked"] = sorted(modified)
+    captured["untracked"] = sorted(untracked)
+    captured["clean"] = not modified and not untracked
+    return captured
+
+
+def tracked_paths() -> tuple[set[str], str | None]:
+    """The set of repository-relative paths git actually tracks."""
+    git = find_git()
+    if git is None:
+        return set(), "git executable not found"
+    try:
+        listing = subprocess.run(
+            [git, "ls-files"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        return set(), f"could not run git ls-files: {exc}"
+    if listing.returncode != 0:
+        return set(), "git ls-files failed"
+    return {line.strip().replace("\\", "/") for line in listing.stdout.splitlines() if line.strip()}, None
+
+
+def _bounded(paths: list[str], limit: int = 12) -> str:
+    if len(paths) <= limit:
+        return ", ".join(paths)
+    return ", ".join(paths[:limit]) + f", (+{len(paths) - limit} more)"
+
+
+def phase8_input_tree_certification(report: GateReport) -> StepResult:
+    """Phase 8 may only certify a committed input tree.
+
+    The PRD stop condition is that a submission must not depend on a private
+    uncommitted file. A release gate run against a dirty tree certifies code
+    and assets that no clone would receive, so it fails here rather than
+    silently blessing the working copy.
+    """
+    set_current_step("release-input-tree-certification")
+    started = time.perf_counter()
+    captured = report.release_tree
+    if not isinstance(captured, dict) or not captured.get("available"):
+        detail = (
+            captured.get("error", "unknown") if isinstance(captured, dict) else "not captured"
+        )
+        return _step(
+            "release-input-tree-certification",
+            "certify the committed input tree",
+            "FAIL",
+            started,
+            f"could not determine the certified commit: {detail}",
+        )
+
+    report.counts["release_commit"] = captured.get("commit")
+    report.counts["release_branch"] = captured.get("branch")
+    report.counts["release_input_tree_clean"] = bool(captured.get("clean"))
+
+    modified = [str(item) for item in captured.get("modified_tracked", [])]
+    untracked = [str(item) for item in captured.get("untracked", [])]
+    if captured.get("clean"):
+        commit = str(captured.get("commit") or "")
+        return _step(
+            "release-input-tree-certification",
+            "certify the committed input tree",
+            "PASS",
+            started,
+            f"input tree matches commit {commit[:12]} on {captured.get('branch')} "
+            f"(only {PHASE8_SELF_ARTIFACT} is exempt)",
+        )
+    parts = []
+    if modified:
+        parts.append(f"{len(modified)} modified tracked: {_bounded(modified)}")
+    if untracked:
+        parts.append(f"{len(untracked)} untracked: {_bounded(untracked)}")
+    return _step(
+        "release-input-tree-certification",
+        "certify the committed input tree",
+        "FAIL",
+        started,
+        "input tree differs from the commit being certified; " + "; ".join(parts),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Mandatory suites and smokes.
+# ---------------------------------------------------------------------------
+
+
+def phase8_backend_full_tests(report: GateReport, basetemp: Path) -> StepResult:
+    """The COMPLETE backend suite, not just the Phase 0 unit subset."""
+    step = run_command(
+        "backend-pytest-full",
+        [
+            str(VENV_PYTHON),
+            "-m",
+            "pytest",
+            "backend/tests",
+            "-q",
+            "--basetemp",
+            str(basetemp),
+            "-p",
+            "no:cacheprovider",
+        ],
+        REPO_ROOT,
+        900,
+    )
+    passed = re.search(r"(\d+) passed", step.summary)
+    failed = re.search(r"(\d+) failed", step.summary)
+    report.counts["backend_full_suite_passed"] = int(passed.group(1)) if passed else None
+    report.counts["backend_full_suite_failed"] = int(failed.group(1)) if failed else 0
+    return step
+
+
+def phase8_focused_pytest(name: str, test_path: str, basetemp: Path) -> StepResult:
+    return run_command(
+        name,
+        [
+            str(VENV_PYTHON),
+            "-m",
+            "pytest",
+            test_path,
+            "-q",
+            "--basetemp",
+            str(basetemp),
+            "-p",
+            "no:cacheprovider",
+        ],
+        REPO_ROOT,
+        300,
+    )
+
+
+def phase8_dataset_smoke(report: GateReport, scratch: Path) -> None:
+    """Regenerate the dev profile into scratch and byte-compare it.
+
+    ``--output-root`` keeps generation inside the scratch tree, so the frozen
+    committed dataset (labels included) is read for comparison only and is
+    never rewritten by the gate.
+    """
+    profile, seed = DATASET_PROFILES[0]
+    generate = run_command(
+        "release-dataset-generate-smoke",
+        [
+            str(VENV_PYTHON),
+            "scripts/generate_dataset.py",
+            "--profile",
+            profile,
+            "--seed",
+            str(seed),
+            "--output-root",
+            str(scratch),
+        ],
+        REPO_ROOT,
+        180,
+    )
+    report.steps.append(generate)
+    emit(
+        f"[verify_phase] {generate.status}: {generate.name} "
+        f"({generate.duration_s}s) {generate.summary}"
+    )
+    compare = compare_directory_tree(
+        "release-dataset-reproducibility-smoke",
+        scratch / profile,
+        REPO_ROOT / "datasets" / profile,
+    )
+    report.steps.append(compare)
+    emit(
+        f"[verify_phase] {compare.status}: {compare.name} "
+        f"({compare.duration_s}s) {compare.summary}"
+    )
+
+
+def phase8_label_firewall(report: GateReport) -> StepResult:
+    return run_command(
+        "release-label-firewall",
+        [str(VENV_PYTHON), "scripts/check_label_isolation.py"],
+        REPO_ROOT,
+        120,
+    )
+
+
+def phase8_rules_only_benchmark_smoke(scratch: Path) -> StepResult:
+    """Deterministic rules-only benchmark written OUTSIDE artifacts/benchmark."""
+    return run_command(
+        "release-benchmark-rules-only-smoke",
+        [
+            str(VENV_PYTHON),
+            "scripts/run_benchmark.py",
+            "--dataset",
+            "datasets/dev",
+            "--mode",
+            "rules-only",
+            "--output",
+            str(scratch / "release-rules-only-smoke.json"),
+        ],
+        REPO_ROOT,
+        300,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Release documentation.
+# ---------------------------------------------------------------------------
+
+
+def _heading_anchors(text: str) -> set[str]:
+    anchors: set[str] = set()
+    for line in text.splitlines():
+        if not line.startswith("#"):
+            continue
+        title = line.lstrip("#").strip().lower()
+        slug = re.sub(r"[^a-z0-9\s-]", "", title)
+        anchors.add(re.sub(r"\s+", "-", slug).strip("-"))
+    return anchors
+
+
+def phase8_release_documents(report: GateReport) -> StepResult:
+    """Required release documents exist, are non-trivial, and link correctly."""
+    set_current_step("release-documents")
+    started = time.perf_counter()
+    problems: list[str] = []
+
+    for relative in PHASE8_REQUIRED_DOCS:
+        path = REPO_ROOT / relative
+        if not path.is_file():
+            problems.append(f"missing required document: {relative}")
+        elif path.stat().st_size < 200:
+            problems.append(f"required document is effectively empty: {relative}")
+
+    checked_links = 0
+    for relative in PHASE8_LINK_SOURCES:
+        source = REPO_ROOT / relative
+        if not source.is_file():
+            continue
+        try:
+            text = source.read_text(encoding="utf-8")
+        except OSError as exc:
+            problems.append(f"could not read {relative}: {exc}")
+            continue
+        own_anchors = _heading_anchors(text)
+        for target in MARKDOWN_LINK.findall(text):
+            if target.startswith(("http://", "https://", "mailto:")):
+                continue
+            checked_links += 1
+            anchor = ""
+            path_part = target
+            if "#" in target:
+                path_part, anchor = target.split("#", 1)
+            if not path_part:
+                if anchor and anchor.lower() not in own_anchors:
+                    problems.append(f"{relative}: broken anchor #{anchor}")
+                continue
+            # A relative link must stay inside the repository. Without this a
+            # link like ../../secrets.md would "resolve" merely because some
+            # unrelated local file happened to exist on this machine. An
+            # in-repository ".." (docs/ -> the root specifications) is fine.
+            source_dir = source.parent.resolve().relative_to(REPO_ROOT.resolve()).as_posix()
+            try:
+                confined = release_assets.resolve_within_repo(REPO_ROOT, source_dir, path_part)
+            except release_assets.ReleasePathError as exc:
+                problems.append(f"{relative}: link {target} {exc}")
+                continue
+            resolved = REPO_ROOT.resolve() / confined
+            if not resolved.exists():
+                problems.append(f"{relative}: broken link {target}")
+                continue
+            if anchor and resolved.suffix.lower() == ".md":
+                try:
+                    target_anchors = _heading_anchors(resolved.read_text(encoding="utf-8"))
+                except OSError:
+                    continue
+                if anchor.lower() not in target_anchors:
+                    problems.append(f"{relative}: broken anchor {target}")
+
+    report.counts["release_links_checked"] = checked_links
+    status = "PASS" if not problems else "FAIL"
+    summary = (
+        f"{len(PHASE8_REQUIRED_DOCS)} documents present; "
+        f"{checked_links} repository-confined internal links valid"
+        if not problems
+        else "; ".join(problems[:5])
+    )
+    return _step(
+        "release-documents", "release document presence and links", status, started, summary
+    )
+
+
+# ---------------------------------------------------------------------------
+# Committed benchmark evidence and published claims.
+# ---------------------------------------------------------------------------
+
+
+def phase8_benchmark_artifacts(report: GateReport) -> StepResult:
+    """Committed benchmark artifacts satisfy the real Phase 7 release contract.
+
+    This step never regenerates a benchmark; it reads what the benchmark runner
+    already wrote. It shares phase7_core_conditions() with the Phase 7 gate, so
+    the release gate can never be the weaker of the two evaluators.
+    """
+    set_current_step("release-benchmark-artifacts")
+    started = time.perf_counter()
+    problems: list[str] = []
+    checked: list[str] = []
+    final_data: dict[str, Any] | None = None
+
+    for relative in PHASE8_REQUIRED_BENCHMARKS:
+        path = REPO_ROOT / relative
+        if not path.is_file():
+            problems.append(f"missing benchmark artifact: {relative}")
+            continue
+        data, error = release_evidence.load_json(path)
+        if error is not None:
+            problems.append(f"{relative}: not parseable ({error})")
+            continue
+        checked.append(relative)
+        problems.extend(release_evidence.validate_benchmark_artifact(relative, data))
+        if relative == release_evidence.FINAL_AGENT_ARTIFACT and isinstance(data, dict):
+            final_data = data
+
+    summary_path = REPO_ROOT / release_evidence.FINAL_SUMMARY_ARTIFACT
+    if not summary_path.is_file():
+        problems.append(f"missing {release_evidence.FINAL_SUMMARY_ARTIFACT}")
+    elif final_data is not None:
+        problems.extend(
+            release_evidence.validate_summary_derivation(
+                summary_path.read_text(encoding="utf-8", errors="replace"), final_data
+            )
+        )
+
+    if final_data is not None:
+        problems.extend(release_evidence.validate_published_metrics(REPO_ROOT, final_data))
+        inventory = release_evidence.unresolved_inventory(final_data)
+        report.counts["release_unresolved_exceptions"] = len(inventory)
+        throughput = (
+            final_data.get("evaluation", {}).get("throughput", {}).get("records_per_second")
+        )
+        report.counts["release_throughput_records_per_second"] = throughput
+
+    report.counts["release_benchmark_artifacts_checked"] = len(checked)
+    status = "PASS" if not problems else "FAIL"
+    summary = (
+        f"{len(checked)} benchmark artifacts match their release contract; "
+        f"final_summary.md derived from final.json; published figures agree"
+        if not problems
+        else "; ".join(problems[:5])
+    )
+    return _step(
+        "release-benchmark-artifacts",
+        "committed benchmark evidence and published claims",
+        status,
+        started,
+        summary,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fresh-checkout readiness, provable without downloading anything.
+# ---------------------------------------------------------------------------
+
+
+def phase8_fresh_checkout_readiness(report: GateReport) -> StepResult:
+    """Everything a fresh clone needs is committed and exactly pinned.
+
+    This deliberately proves only what can be proven offline: it never runs an
+    installer. A real clean-install rehearsal remains an owner action.
+    """
+    set_current_step("release-fresh-checkout-readiness")
+    started = time.perf_counter()
+    problems: list[str] = []
+
+    lock = REPO_ROOT / "backend" / "requirements.lock.txt"
+    if not lock.is_file():
+        problems.append("backend/requirements.lock.txt missing")
+    else:
+        unpinned = [
+            line.strip()
+            for line in lock.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.strip().startswith("#") and "==" not in line
+        ]
+        if unpinned:
+            problems.append(f"unpinned backend requirements: {unpinned[:3]}")
+
+    package_lock = REPO_ROOT / "frontend" / "package-lock.json"
+    if not package_lock.is_file():
+        problems.append("frontend/package-lock.json missing (npm ci would fail)")
+    else:
+        parsed, error = release_evidence.load_json(package_lock)
+        if error is not None:
+            problems.append(f"frontend/package-lock.json is not parseable: {error}")
+        elif not isinstance(parsed, dict) or "lockfileVersion" not in parsed:
+            problems.append("frontend/package-lock.json has no lockfileVersion")
+
+    if not (REPO_ROOT / ".env.example").is_file():
+        problems.append(".env.example missing")
+
+    tracked, error = tracked_paths()
+    if error is not None:
+        problems.append(f"cannot prove required files are committed: {error}")
+    else:
+        required: list[str] = list(PHASE8_TRACKED_FILES)
+        for directory, pattern in PHASE8_TRACKED_TREES:
+            base = REPO_ROOT / directory
+            if not base.is_dir():
+                problems.append(f"release-critical tree missing: {directory}")
+                continue
+            for path in base.rglob(pattern):
+                if not path.is_file():
+                    continue
+                relative = path.resolve().relative_to(REPO_ROOT.resolve()).as_posix()
+                if any(part in SKIP_DIRS for part in Path(relative).parts):
+                    continue
+                required.append(relative)
+
+        # A manifest that points at local media makes those files release
+        # critical too: a clone without them cannot show the demo evidence.
+        manifest_path = REPO_ROOT / release_assets.RELEASE_MANIFEST_PATH
+        if manifest_path.is_file():
+            manifest, manifest_error = release_evidence.load_json(manifest_path)
+            if manifest_error is None:
+                _asset_problems, details = release_assets.validate_manifest(REPO_ROOT, manifest)
+                required.extend(release_assets.manifest_local_files(details))
+
+        missing = sorted({item for item in required if item not in tracked})
+        if missing:
+            problems.append(
+                f"{len(missing)} release-critical file(s) exist only in the working "
+                f"tree and would not reach a fresh clone: {_bounded(missing)}"
+            )
+        report.counts["release_tracked_files_required"] = len(set(required))
+
+    status = "PASS" if not problems else "FAIL"
+    summary = (
+        "lockfiles exactly pinned; all release-critical runtime code, config, "
+        "docs and assets are tracked"
+        if not problems
+        else "; ".join(problems[:3])
+    )
+    return _step(
+        "release-fresh-checkout-readiness",
+        "fresh-checkout readiness (no downloads)",
+        status,
+        started,
+        summary,
+    )
+
+
+def phase8_prior_phase_evidence(report: GateReport) -> StepResult:
+    """Phases 0-7 must have real PASS artifacts; Phase 8 does not re-run them.
+
+    Audit completeness is not a benchmark-artifact field: it is proved by the
+    audit service tests and asserted by the Phase 5 gate, so it is certified
+    here from the Phase 5 artifact rather than invented as a benchmark metric.
+    """
+    set_current_step("release-prior-phase-evidence")
+    started = time.perf_counter()
+    problems: list[str] = []
+    for phase in range(8):
+        path = ARTIFACT_DIR / f"phase-{phase:02d}.json"
+        if not path.is_file():
+            problems.append(f"missing artifacts/evaluation/phase-{phase:02d}.json")
+            continue
+        data, error = release_evidence.load_json(path)
+        if error is not None:
+            problems.append(f"phase-{phase:02d}.json not parseable: {error}")
+            continue
+        if not isinstance(data, dict) or data.get("status") != "PASS":
+            status_value = data.get("status") if isinstance(data, dict) else None
+            problems.append(f"phase-{phase:02d}.json status is {status_value!r}, not PASS")
+            continue
+        if phase == 5:
+            commands = data.get("commands", [])
+            audit_steps = [
+                entry
+                for entry in commands
+                if isinstance(entry, dict) and "audit" in str(entry.get("summary", "")).lower()
+            ]
+            if not audit_steps:
+                problems.append("phase-05.json records no audit-completeness evidence")
+            elif any(entry.get("status") != "PASS" for entry in audit_steps):
+                problems.append("phase-05.json audit-completeness evidence did not pass")
+
+    status = "PASS" if not problems else "FAIL"
+    summary = (
+        "phase 0-7 acceptance artifacts present and PASS; "
+        "phase 5 audit-completeness evidence recorded"
+        if not problems
+        else "; ".join(problems[:5])
+    )
+    return _step(
+        "release-prior-phase-evidence",
+        "phase 0-7 evaluation artifacts",
+        status,
+        started,
+        summary,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Owner-supplied submission assets. Never fabricated by this script.
+# ---------------------------------------------------------------------------
+
+
+def phase8_submission_assets(report: GateReport) -> StepResult:
+    """Owner-supplied release evidence. Absent evidence is a truthful FAIL.
+
+    This step never creates a manifest, a video or a screenshot, and it never
+    fetches a URL. Structural validation lives in scripts/release_assets.py.
+    """
+    set_current_step("release-submission-assets")
+    started = time.perf_counter()
+    manifest_path = REPO_ROOT / release_assets.RELEASE_MANIFEST_PATH
+
+    if not manifest_path.is_file():
+        report.counts["release_manifest_present"] = False
+        return _step(
+            "release-submission-assets",
+            "owner-supplied submission assets",
+            "FAIL",
+            started,
+            f"{release_assets.RELEASE_MANIFEST_PATH} is absent: primary and backup demo "
+            "videos and application screenshots have not been supplied (owner action)",
+        )
+
+    report.counts["release_manifest_present"] = True
+    manifest, error = release_evidence.load_json(manifest_path)
+    if error is not None:
+        return _step(
+            "release-submission-assets",
+            "owner-supplied submission assets",
+            "FAIL",
+            started,
+            f"{release_assets.RELEASE_MANIFEST_PATH} is not parseable: {error}",
+        )
+
+    problems, details = release_assets.validate_manifest(REPO_ROOT, manifest)
+    report.counts["release_screenshots"] = len(details.get("screenshot_paths", []))
+    report.counts["release_local_videos"] = len(details.get("local_video_paths", []))
+    report.counts["release_remote_videos"] = details.get("remote_video_count", 0)
+
+    status = "PASS" if not problems else "FAIL"
+    summary = (
+        "primary and backup videos are structurally valid and distinct; "
+        "screenshots are real images traceable to measured artifacts "
+        "(a hosted URL is syntax-checked only and is not proven reachable offline)"
+        if not problems
+        else "; ".join(problems[:5])
+    )
+    return _step(
+        "release-submission-assets",
+        "owner-supplied submission assets",
+        status,
+        started,
+        summary,
+    )
+
+
+PHASE8_MANDATORY_STEPS = (
+    # Carried over unchanged from the Phase 0 list.
+    "backend-ruff-check",
+    "backend-ruff-format",
+    "backend-mypy",
+    "frontend-lint",
+    "frontend-typecheck",
+    "frontend-test",
+    "frontend-build",
+    "backend-boot-health",
+    "frontend-boot-home",
+    "secret-scan",
+    "gitignore-coverage",
+    # Phase 8 release steps.
+    "release-input-tree-certification",
+    "backend-pytest-full",
+    "release-dataset-generate-smoke",
+    "release-dataset-reproducibility-smoke",
+    "release-label-firewall",
+    "release-benchmark-rules-only-smoke",
+    "release-rules-only-fallback",
+    "release-persistent-restart",
+    "release-documents",
+    "release-benchmark-artifacts",
+    "release-fresh-checkout-readiness",
+    "release-prior-phase-evidence",
+    "release-submission-assets",
+)
+
+
+def phase8_gate_assertions(report: GateReport) -> StepResult:
+    """Every Phase 8 release step must have actually passed."""
+    set_current_step("phase8-gate-assertions")
+    started = time.perf_counter()
+    seen = {step.name: step for step in report.steps}
+    violations: list[str] = []
+    for name in PHASE8_MANDATORY_STEPS:
+        step = seen.get(name)
+        if step is None:
+            violations.append(f"mandatory step never ran: {name}")
+        elif step.status != "PASS":
+            violations.append(f"{name}: {step.status} - {step.summary[:80]}")
+
+    status = "PASS" if not violations else "FAIL"
+    summary = (
+        f"all {len(PHASE8_MANDATORY_STEPS)} mandatory release checks passed"
+        if not violations
+        else "; ".join(violations[:5])
+    )
+    return _step(
+        "phase8-gate-assertions",
+        "evaluator-side phase 8 release assertions",
+        status,
+        started,
+        summary,
+    )
+
+
+def run_phase8_steps(report: GateReport) -> None:
+    """Phase 8 release steps appended after the unchanged Phase 0 list."""
+    basetemp = new_basetemp(8)
+    scratch = Path(tempfile.mkdtemp(prefix="verify-phase-08-release-", dir=str(TMP_DIR)))
+    emit(f"[verify_phase] phase 8 pytest basetemp: {basetemp}")
+    emit(f"[verify_phase] phase 8 release scratch: {scratch}")
+    report.notes.append(
+        "Phase 8 verifies committed Phase 1-7 evidence instead of regenerating "
+        "benchmark artifacts; its dataset and benchmark smokes write only to a "
+        "temporary scratch directory."
+    )
+    report.notes.append(
+        "A hosted demo-video URL is validated for syntax and safety offline only. "
+        "The gate never fetches it, so it cannot prove the recording is reachable."
+    )
+    try:
+        for factory in (
+            lambda: phase8_input_tree_certification(report),
+            lambda: phase8_backend_full_tests(report, basetemp),
+        ):
+            step = factory()
+            report.steps.append(step)
+            emit(
+                f"[verify_phase] {step.status}: {step.name} "
+                f"({step.duration_s}s) {step.summary}"
+            )
+
+        phase8_dataset_smoke(report, scratch)
+
+        for factory in (
+            lambda: phase8_label_firewall(report),
+            lambda: phase8_rules_only_benchmark_smoke(scratch),
+            lambda: phase8_focused_pytest(
+                "release-rules-only-fallback",
+                "backend/tests/integration/test_release_rules_only.py",
+                basetemp,
+            ),
+            lambda: phase8_focused_pytest(
+                "release-persistent-restart",
+                "backend/tests/integration/test_persistent_state_restart.py",
+                basetemp,
+            ),
+            lambda: phase8_release_documents(report),
+            lambda: phase8_benchmark_artifacts(report),
+            lambda: phase8_fresh_checkout_readiness(report),
+            lambda: phase8_prior_phase_evidence(report),
+            lambda: phase8_submission_assets(report),
+        ):
+            step = factory()
+            report.steps.append(step)
+            emit(
+                f"[verify_phase] {step.status}: {step.name} "
+                f"({step.duration_s}s) {step.summary}"
+            )
+
+        assertions = phase8_gate_assertions(report)
+        report.steps.append(assertions)
+        emit(
+            f"[verify_phase] {assertions.status}: {assertions.name} "
+            f"({assertions.duration_s}s) {assertions.summary}"
+        )
+    finally:
+        shutil.rmtree(basetemp, ignore_errors=True)
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def main() -> int:
 
     parser = argparse.ArgumentParser(description="ARGUS CONTROL phase acceptance gate")
@@ -2400,6 +3259,11 @@ def main() -> int:
         include_test_mode_smoke=getattr(args, "include_test_mode_smoke", False),
     )
     report.started_at_utc = utc_now()
+
+    # Capture the commit and working-tree state BEFORE any artifact is written,
+    # so the RUNNING artifact this gate writes cannot dirty its own snapshot.
+    if report.phase == 8:
+        report.release_tree = capture_release_tree()
 
     try:
         begin_run(report)  # replaces any stale artifact immediately
