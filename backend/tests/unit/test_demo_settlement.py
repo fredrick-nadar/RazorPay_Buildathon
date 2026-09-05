@@ -4,16 +4,98 @@ import csv
 import io
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.importers.demo_settlement import build_demo_evidence
+from app.importers.demo_settlement import DemoEvidenceError, build_demo_evidence
 from app.main import create_app
 from app.persistence.gateway_imports import GatewayEntity, persist_gateway_snapshot
 
 
 def _rows(content: str) -> list[dict[str, str]]:
     return list(csv.DictReader(io.StringIO(content)))
+
+
+def _payment(**changes: object) -> dict[str, object]:
+    return {
+        "id": "pay_boundary",
+        "order_id": "order_boundary",
+        "status": "captured",
+        "amount": 10000,
+        "fee": 236,
+        "tax": 36,
+        "currency": "INR",
+        "created_at": 1772437000,
+        **changes,
+    }
+
+
+def _refund(**changes: object) -> dict[str, object]:
+    return {
+        "id": "rfnd_boundary",
+        "payment_id": "pay_boundary",
+        "status": "processed",
+        "amount": 1000,
+        "currency": "INR",
+        "created_at": 1772437100,
+        **changes,
+    }
+
+
+def test_demo_refund_accounting_is_explicit_and_window_bounded() -> None:
+    bundle = build_demo_evidence(
+        import_id="gwi-boundary",
+        payments=[_payment()],
+        refunds=[
+            _refund(),
+            _refund(id="rfnd_failed", status="failed"),
+            _refund(id="rfnd_unmatched", payment_id="pay_elsewhere"),
+            _refund(id="rfnd_late", created_at=1772437000 + 86_401),
+        ],
+    )
+    assert bundle["input_counts"] == {
+        "payments_received": 1,
+        "captured_payments_included": 1,
+        "refunds_received": 4,
+        "processed_refunds_included": 1,
+        "refunds_excluded": 3,
+    }
+    assert [item["reason"] for item in bundle["refund_exclusions"]] == [
+        "STATUS_NOT_PROCESSED",
+        "PAYMENT_NOT_CAPTURED_IN_IMPORT",
+        "OUTSIDE_SYNTHETIC_SETTLEMENT_WINDOW",
+    ]
+    assert len(_rows(bundle["files"]["refunds.csv"])) == 1
+    assert bundle["synthetic_policy"]["policy_id"] == "argus-demo-settlement-v1"
+    assert "not Razorpay" in bundle["synthetic_policy"]["notice"]
+
+
+@pytest.mark.parametrize(
+    ("payments", "refunds", "message"),
+    [
+        ([_payment(amount=-1)], [], "negative monetary"),
+        ([_payment(fee=None)], [], "payment.fee"),
+        ([_payment(tax=None)], [], "payment.tax"),
+        ([_payment(created_at=10**30)], [], "UTC epoch"),
+        ([_payment()], [_refund(amount=-1)], "positive amount"),
+        ([_payment()], [_refund(currency="USD")], "currency differs"),
+        ([_payment()], [_refund(amount=10001)], "exceed payment"),
+        ([_payment()], [_refund(), _refund()], "duplicate IDs"),
+    ],
+)
+def test_demo_rejects_unsafe_financial_boundaries(
+    payments: list[dict[str, object]], refunds: list[dict[str, object]], message: str
+) -> None:
+    with pytest.raises(DemoEvidenceError, match=message):
+        build_demo_evidence(import_id="gwi-invalid", payments=payments, refunds=refunds)
+
+
+def test_single_payment_batch_is_valid_and_deterministic() -> None:
+    first = build_demo_evidence(import_id="gwi-single", payments=[_payment()], refunds=[])
+    second = build_demo_evidence(import_id="gwi-single", payments=[_payment()], refunds=[])
+    assert first == second
+    assert first["settlements_count"] == 1
 
 
 def test_demo_evidence_is_deterministic_conservative_and_labelled() -> None:

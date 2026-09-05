@@ -70,6 +70,19 @@ interface DossierData {
     regulatory_certification: false;
     money_representation: "SIGNED_INTEGER_PAISE";
     source_rows_immutable: boolean;
+    source_manifest: {
+      manifest_present: boolean;
+      manifest_fingerprint: string | null;
+      contains_synthetic_demo: boolean;
+      production_eligible: false;
+      notice: string;
+      sources: Array<{
+        source_type: string;
+        revision_id: string;
+        origin: string;
+        canonical_sha256: string;
+      }>;
+    };
     notice: string;
   };
 }
@@ -124,6 +137,14 @@ function printRunDossier(data: DossierData) {
         )
         .join("")
     : '<tr><td colspan="4" class="empty">No audit events were recorded.</td></tr>';
+  const sourceRows = data.provenance.source_manifest.sources.length
+    ? data.provenance.source_manifest.sources.map((item) => `<tr>
+  <td>${escapeHtml(humanizeEnum(item.source_type))}</td>
+  <td class="mono">${escapeHtml(item.revision_id)}</td>
+  <td>${escapeHtml(humanizeEnum(item.origin))}</td>
+  <td class="mono">${escapeHtml(item.canonical_sha256)}</td>
+</tr>`).join("")
+    : '<tr><td colspan="4" class="empty">No intake revision manifest accompanied this run.</td></tr>';
 
   const html = `<!doctype html>
 <html><head><meta charset="utf-8"><title>ARGUS_RUN_EVIDENCE_${escapeHtml(data.run_id)}</title>
@@ -165,6 +186,8 @@ function printRunDossier(data: DossierData) {
   <div class="metric"><span>Runtime match rate</span><b>${runtimeMatchRate(data.runtime_metrics)}</b></div>
   <div class="metric"><span>Exception cases</span><b>${formatCount(data.cases_count)}</b></div>
 </div>
+<h2>Immutable input provenance</h2>
+<table><thead><tr><th>Source</th><th>Revision</th><th>Origin</th><th>SHA-256</th></tr></thead><tbody>${sourceRows}</tbody></table>
 <h2>Exception cases and latest verifier results</h2>
 <table><thead><tr><th>Case ID</th><th>Category</th><th>Signed variance</th><th>Latest verifier result</th><th>Current case status</th></tr></thead><tbody>${caseRows}</tbody></table>
 <h2>Recorded audit events (${data.runtime_metrics.audit_event_count})</h2>
@@ -369,6 +392,27 @@ Notice: ${data.provenance.notice}`;
                     <p className="mt-1 font-mono text-xl font-semibold tabular-nums text-slate-950">{value}</p>
                   </div>
                 ))}
+              </section>
+
+              <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-xs font-semibold text-slate-950">Immutable input provenance</h3>
+                    <p className="mt-0.5 text-[10px] text-slate-500">{data.provenance.source_manifest.notice}</p>
+                  </div>
+                  {data.provenance.source_manifest.contains_synthetic_demo && (
+                    <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-amber-800">Synthetic demo evidence</span>
+                  )}
+                </div>
+                <div className="mt-2 grid gap-1 sm:grid-cols-2">
+                  {data.provenance.source_manifest.sources.map((item) => (
+                    <div key={item.source_type} className="flex items-center justify-between gap-3 rounded-lg bg-white px-2.5 py-2 text-[10px]">
+                      <span className="font-semibold text-slate-700">{humanizeEnum(item.source_type)}</span>
+                      <span className="truncate font-mono text-slate-500" title={`${item.revision_id} · ${item.canonical_sha256}`}>{humanizeEnum(item.origin)} · {item.revision_id}</span>
+                    </div>
+                  ))}
+                  {!data.provenance.source_manifest.sources.length && <p className="text-[10px] text-slate-500">No intake revision manifest accompanied this run.</p>}
+                </div>
               </section>
 
               <section className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">

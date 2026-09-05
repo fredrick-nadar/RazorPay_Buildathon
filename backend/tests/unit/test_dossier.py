@@ -45,6 +45,14 @@ def test_executive_dossier_endpoint(tmp_path: Path) -> None:
             "regulatory_certification": False,
             "money_representation": "SIGNED_INTEGER_PAISE",
             "source_rows_immutable": True,
+            "source_manifest": {
+                "manifest_present": False,
+                "manifest_fingerprint": None,
+                "contains_synthetic_demo": False,
+                "production_eligible": False,
+                "sources": [],
+                "notice": "No intake revision manifest accompanies this synthetic dataset run.",
+            },
             "notice": (
                 "This dossier reports reconciliation evidence and internal consistency only; "
                 "it is not an external audit or regulatory certification."

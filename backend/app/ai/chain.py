@@ -109,6 +109,20 @@ def _ordered_providers(
 
 
 @dataclass(frozen=True)
+class NativeToolRequest:
+    """An investigator turn rendered for the official function-calling protocol.
+
+    Carried alongside the legacy ``system``/``user`` rendering rather than
+    replacing it: a member that speaks the native protocol receives this, and
+    every other member receives exactly the request it received before, so
+    non-native providers are untouched.
+    """
+
+    messages: tuple[dict[str, Any], ...]
+    tools: tuple[dict[str, Any], ...]
+
+
+@dataclass(frozen=True)
 class ChatOutcome:
     """A completed model turn plus the full attempt history that produced it."""
 
@@ -220,6 +234,7 @@ class AIChain:
         deadline: Deadline | None = None,
         now: Callable[[], float] | None = None,
         sleep: Callable[[float], None] | None = None,
+        native: NativeToolRequest | None = None,
     ) -> ChatOutcome:
         """Walk the chain inside one absolute deadline, recording every attempt."""
         if not self.members:
@@ -263,9 +278,16 @@ class AIChain:
 
                 started = clock()
                 try:
-                    response: LLMResponse = member.chat(
-                        system, user, json_mode=json_mode, timeout_s=budget
-                    )
+                    if native is not None and getattr(member, "supports_native_tools", False):
+                        response: LLMResponse = member.chat(
+                            system,
+                            user,
+                            timeout_s=budget,
+                            messages=list(native.messages),
+                            tools=list(native.tools),
+                        )
+                    else:
+                        response = member.chat(system, user, json_mode=json_mode, timeout_s=budget)
                 except LLMError as exc:
                     outcome, retryable = _classify(exc)
                     attempts.append(
@@ -428,6 +450,7 @@ __all__ = [
     "AIChain",
     "AIChainError",
     "ChatOutcome",
+    "NativeToolRequest",
     "ProviderAttempt",
     "build_chain",
 ]

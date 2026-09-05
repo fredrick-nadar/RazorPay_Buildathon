@@ -511,7 +511,7 @@ def session_source_status(session_dir: Path) -> dict[str, Any]:
 def snapshot_active_sources(session_dir: Path, *, empty_refunds: str) -> Path:
     """Pin a hash-verified immutable input set; concurrent uploads cannot change a run."""
     with session_lock(session_dir):
-        active = verified_active_sources(session_dir, require_demo_metadata=False)
+        active = verified_active_sources(session_dir)
         identity = json.dumps(
             {key: row["revision_id"] for key, row in active.items()}, sort_keys=True
         )
@@ -528,6 +528,87 @@ def snapshot_active_sources(session_dir: Path, *, empty_refunds: str) -> Path:
         return snapshot_dir
 
 
+def load_snapshot_provenance(inputs_dir: Path) -> dict[str, Any]:
+    """Validate and minimize the immutable source manifest stored with a run snapshot."""
+    path = inputs_dir / ".evidence.json"
+    if not path.is_file():
+        return {
+            "manifest_present": False,
+            "manifest_fingerprint": None,
+            "contains_synthetic_demo": False,
+            "production_eligible": False,
+            "sources": [],
+            "notice": "No intake revision manifest accompanies this synthetic dataset run.",
+        }
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SourceRevisionError("Run input provenance manifest is unreadable.") from exc
+    if not isinstance(value, dict) or not value:
+        raise SourceRevisionError("Run input provenance manifest is invalid.")
+
+    sources: list[dict[str, Any]] = []
+    for source_type, revision in sorted(value.items()):
+        if source_type not in CANONICAL_FILENAMES or not isinstance(revision, dict):
+            raise SourceRevisionError("Run input provenance manifest has an invalid source.")
+        if revision.get("source_type") != source_type:
+            raise SourceRevisionError("Run input provenance source identity does not match.")
+        canonical_sha256 = str(revision.get("canonical_sha256") or "")
+        canonical = inputs_dir / CANONICAL_FILENAMES[source_type]
+        try:
+            actual_sha256 = hashlib.sha256(canonical.read_bytes()).hexdigest()
+        except OSError as exc:
+            raise SourceRevisionError("A provenance-bound run input is unavailable.") from exc
+        if len(canonical_sha256) != 64 or actual_sha256 != canonical_sha256:
+            raise SourceRevisionError("A provenance-bound run input failed its hash check.")
+        origin = str(revision.get("origin") or "")
+        external_import_id = revision.get("external_import_id")
+        row = {
+            "source_type": source_type,
+            "revision_id": str(revision.get("revision_id") or ""),
+            "revision_number": int(revision.get("revision_number", 0)),
+            "origin": origin,
+            "external_import_id": (
+                str(external_import_id) if external_import_id is not None else None
+            ),
+            "canonical_sha256": canonical_sha256,
+            "raw_sha256": str(revision.get("raw_sha256") or ""),
+            "accepted_count": int(revision.get("accepted_count", 0)),
+            "quarantined_count": int(revision.get("quarantined_count", 0)),
+        }
+        if not row["revision_id"] or row["revision_number"] < 1:
+            raise SourceRevisionError("Run input provenance revision identity is invalid.")
+        if row["accepted_count"] < 0 or row["quarantined_count"] < 0:
+            raise SourceRevisionError("Run input provenance row accounting is invalid.")
+        if origin == "SYNTHETIC_DEMO":
+            metadata = revision.get("demo_metadata")
+            if (
+                not isinstance(metadata, dict)
+                or metadata.get("provenance") != "SYNTHETIC_DEMO"
+                or metadata.get("canonical_filename") != CANONICAL_FILENAMES[source_type]
+                or metadata.get("derived_from_gateway_import") != external_import_id
+                or not metadata.get("manifest_hash")
+            ):
+                raise SourceRevisionError("Synthetic demo provenance binding is invalid.")
+            row["demo_manifest_hash"] = str(metadata["manifest_hash"])
+        sources.append(row)
+
+    material = json.dumps(sources, sort_keys=True, separators=(",", ":"))
+    contains_demo = any(row["origin"] == "SYNTHETIC_DEMO" for row in sources)
+    return {
+        "manifest_present": True,
+        "manifest_fingerprint": hashlib.sha256(material.encode("utf-8")).hexdigest(),
+        "contains_synthetic_demo": contains_demo,
+        "production_eligible": False,
+        "sources": sources,
+        "notice": (
+            "This run includes explicitly labelled ARGUS synthetic gateway evidence."
+            if contains_demo
+            else "This run uses the recorded Test Mode and merchant-upload source revisions."
+        ),
+    }
+
+
 __all__ = [
     "CANONICAL_FILENAMES",
     "RevisionActivation",
@@ -535,6 +616,7 @@ __all__ = [
     "SourceRecoveryError",
     "SourceType",
     "load_manifest",
+    "load_snapshot_provenance",
     "materialize_active_sources",
     "resolve_session_dir",
     "session_source_status",

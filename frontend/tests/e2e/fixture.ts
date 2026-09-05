@@ -31,6 +31,14 @@ export interface FixtureEntry {
   evidence_id?: string;
 }
 
+/** The two persisted runs the seeder executes before the servers start. */
+export interface FixtureRuns {
+  /** A fully linked run that raises no exceptions at all. */
+  clean_run_id: string;
+  /** The dev dataset run, which carries the four mandatory exception classes. */
+  exception_run_id: string;
+}
+
 function venvPython(): string {
   const candidates = [
     join(REPO_ROOT, ".venv", "Scripts", "python.exe"),
@@ -69,20 +77,29 @@ export function ensureFixture(): void {
   writeFileSync(E2E_FIXTURE, seeded, "utf-8");
 }
 
-let cached: Record<string, FixtureEntry> | null = null;
+let cached: Record<string, unknown> | null = null;
 
-function all(): Record<string, FixtureEntry> {
+function all(): Record<string, unknown> {
   if (cached === null) {
-    cached = JSON.parse(readFileSync(E2E_FIXTURE, "utf-8")) as Record<string, FixtureEntry>;
+    cached = JSON.parse(readFileSync(E2E_FIXTURE, "utf-8")) as Record<string, unknown>;
   }
   return cached;
 }
 
 /** Read one seeded scenario, failing loudly if the fixture is incomplete. */
 export function scenario(name: string): FixtureEntry {
-  const entry = all()[name];
+  const entry = all()[name] as FixtureEntry | undefined;
   if (!entry) {
     throw new Error(`Fixture is missing the ${name} scenario. Rerun the end-to-end suite.`);
+  }
+  return entry;
+}
+
+/** Read the seeded run identities, failing loudly if the seeder is stale. */
+export function runs(): FixtureRuns {
+  const entry = all().runs as FixtureRuns | undefined;
+  if (!entry?.clean_run_id || !entry.exception_run_id) {
+    throw new Error("Fixture is missing seeded run ids. Delete tmp/e2e-* and rerun the suite.");
   }
   return entry;
 }

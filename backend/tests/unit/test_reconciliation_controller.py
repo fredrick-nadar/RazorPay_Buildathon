@@ -220,7 +220,7 @@ def test_failure_is_durable_retryable_and_does_not_persist_exception_text(
     snapshot.mkdir()
 
     def failing(**kwargs: Any) -> RunResult:
-        raise RuntimeError("gsk_secret_must_not_be_stored")
+        raise RuntimeError("synthetic_secret_must_not_be_stored")
 
     controller = ReconciliationController(db, settings, run_executor=failing, background=False)
     try:
@@ -237,7 +237,7 @@ def test_failure_is_durable_retryable_and_does_not_persist_exception_text(
         failed = controller.run_once(job["job_id"])
         assert failed["status"] == "FAILED"
         assert failed["failure_code"] == "RUN_FAILED"
-        assert "gsk_secret" not in str(failed)
+        assert "synthetic_secret" not in str(failed)
         assert failed["recovery"] == {
             "retryable": True,
             "remaining_attempts": 1,

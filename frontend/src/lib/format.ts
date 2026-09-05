@@ -16,6 +16,30 @@ export function formatINR(paise: number): string {
     .padStart(2, "0")}`;
 }
 
+/**
+ * Render integer basis points as a percentage using exact integer arithmetic.
+ *
+ * 200 bps -> "2.00%", 1800 bps -> "18.00%", 12345 bps -> "123.45%". Policy
+ * rates arrive as integer bps precisely so they never pass through a float;
+ * this keeps the displayed rate on the same footing.
+ */
+export function formatBps(bps: number): string {
+  if (!Number.isInteger(bps)) return "—";
+  const negative = bps < 0;
+  const abs = Math.abs(bps);
+  const whole = Math.floor(abs / 100);
+  const fraction = abs % 100;
+  return `${negative ? "−" : ""}${whole}.${fraction.toString().padStart(2, "0")}%`;
+}
+
+/** Signed paise with an explicit sign, for a delta the reader must not misread. */
+export function formatSignedINR(paise: number): string {
+  if (!Number.isFinite(paise)) return "—";
+  if (paise === 0) return formatINR(0);
+  const rendered = formatINR(Math.abs(paise));
+  return paise < 0 ? `−${rendered}` : `+${rendered}`;
+}
+
 export function formatRate(numerator: number, denominator: number): string {
   if (!Number.isFinite(numerator) || !denominator || denominator <= 0) return "\u2014";
   return `${((numerator / denominator) * 100).toFixed(1)}%`;

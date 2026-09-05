@@ -608,11 +608,24 @@ def _demo_evidence_with_activation(
             "superseded_sources": list(expected_sources),
             "expected_sources": list(expected_sources),
         }
+    generation_metadata: dict[str, Any] = next(
+        (
+            source.get("demo_metadata", {})
+            for source in sources.values()
+            if source.get("origin") == "SYNTHETIC_DEMO"
+            and source.get("external_import_id") == import_id
+            and source.get("demo_metadata", {}).get("manifest_hash") == evidence["manifest_hash"]
+        ),
+        {},
+    )
     return {
         **evidence,
         **derive_demo_activation(
             sources, import_id, evidence["manifest_hash"], expected_sources=expected_sources
         ),
+        "input_counts": generation_metadata.get("input_counts"),
+        "refund_exclusions": generation_metadata.get("refund_exclusions", []),
+        "synthetic_policy": generation_metadata.get("synthetic_policy"),
     }
 
 
@@ -695,6 +708,9 @@ def generate_demo_evidence(
                             "manifest_hash": bundle["manifest_hash"],
                             "canonical_filename": filename,
                             "scope": bundle["scope"],
+                            "input_counts": bundle["input_counts"],
+                            "refund_exclusions": bundle["refund_exclusions"],
+                            "synthetic_policy": bundle["synthetic_policy"],
                         },
                         sort_keys=True,
                     ),
@@ -723,6 +739,9 @@ def generate_demo_evidence(
                         "settlements_count",
                     )
                 },
+                "input_counts": bundle["input_counts"],
+                "refund_exclusions": bundle["refund_exclusions"],
+                "synthetic_policy": bundle["synthetic_policy"],
             },
         )
         for filename, source_type in source_by_file.items():
@@ -752,11 +771,21 @@ def generate_demo_evidence(
         "manifest_hash": bundle["manifest_hash"],
         "source_revisions": revisions,
         "scope": bundle["scope"],
+        "input_counts": bundle["input_counts"],
+        "refund_exclusions": bundle["refund_exclusions"],
+        "synthetic_policy": bundle["synthetic_policy"],
         "message": (
             "Labelled synthetic gateway evidence is ready: payments, refunds and settlements. "
             "Official Razorpay counts are unchanged. Bank and merchant ledger files were not "
             "generated or replaced; upload them separately. This evidence is derived from "
-            "Test Mode IDs, not issued by Razorpay and not proof of a bank receipt."
+            "Test Mode IDs under an ARGUS synthetic policy, not issued by Razorpay and not "
+            "proof of a bank receipt."
+            + (
+                f" {bundle['input_counts']['refunds_excluded']} refund record(s) were excluded "
+                "with recorded reasons."
+                if bundle["input_counts"]["refunds_excluded"]
+                else ""
+            )
         ),
     }
 

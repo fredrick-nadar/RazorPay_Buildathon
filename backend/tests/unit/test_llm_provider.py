@@ -231,7 +231,7 @@ class TestAgenticLoop:
                         "reason_codes": ["NON_UNIQUE_EVIDENCE"],
                         "missing_evidence": ["unique UTR"],
                         "next_step": "manual review",
-                        "secret_echo": "gsk_model_echo_must_not_persist",
+                        "secret_echo": "synthetic_model_echo_must_not_persist",
                     },
                 }
             ),
@@ -262,7 +262,7 @@ class TestAgenticLoop:
 
         serialized_trace = json.dumps(result.trace)
         assert "INVALID_FINAL_SCHEMA" in serialized_trace
-        assert "gsk_model_echo" not in serialized_trace
+        assert "synthetic_model_echo" not in serialized_trace
 
     def test_budget_exhaustion_raises(self) -> None:
         tool_turn = json.dumps(

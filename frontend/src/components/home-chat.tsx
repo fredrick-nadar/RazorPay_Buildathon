@@ -15,6 +15,8 @@ import {
   IconSidebar,
   IconTrash,
 } from "@/components/icons";
+import type { ArgusView, SelectionStatus } from "@/lib/argus-selection";
+import { formatCount, formatINR } from "@/lib/format";
 
 export interface ChatMessageItem {
   id: string;
@@ -35,48 +37,73 @@ const SESSIONS_STORAGE_KEY = "argus_copilot_sessions_v2";
 const ACTIVE_SESSION_STORAGE_KEY = "argus_copilot_active_session_id_v2";
 
 const CRUNCHING_MESSAGES = [
-  "Analyzing live SQLite ledger...",
-  "Evaluating reconciliation records & variances...",
-  "Formulating verified response...",
+  "Reading the selected run from SQLite...",
+  "Collecting case and variance facts...",
+  "Composing an answer from those facts...",
 ];
 
 const STARTER_PROMPTS = [
   {
-    title: "Deterministic Match Rate",
-    query: "What is the current deterministic match rate?",
-    description: "Inspect reconciled batch volume, auto-match ratio, and rule passes",
-    badge: "Match Engine",
+    title: "Match rate",
+    query: "What is the runtime match rate for this run?",
+    description: "The run's own self-reported match rate, with its denominator",
+    badge: "This run",
   },
   {
-    title: "Unresolved Residuals",
-    query: "How many cases are unresolved and why?",
-    description: "Analyze residual exceptions requiring merchant controller review",
+    title: "Unresolved exceptions",
+    query: "How many cases are unresolved in this run and why?",
+    description: "Recorded reasons an exception stayed open, not a guess",
     badge: "Exceptions",
   },
   {
-    title: "Financial Variance Breakdown",
-    query: "Show the total financial variance breakdown",
-    description: "Audit exact signed paise deltas across gateway and merchant ledgers",
-    badge: "Ledger Audit",
+    title: "Variance breakdown",
+    query: "Show the case variance breakdown for this run",
+    description: "Signed integer paise across gateway, bank and ledger records",
+    badge: "Ledger",
   },
   {
-    title: "Duplicate Ledger Postings",
-    query: "Explain the duplicate ledger posting exceptions",
-    description: "Review double-credited settlements and automated verification proofs",
-    badge: "Safety Verifier",
+    title: "Duplicate postings",
+    query: "Explain the duplicate ledger posting exceptions in this run",
+    description: "Cited evidence and the deterministic verifier result per case",
+    badge: "Verifier",
   },
 ];
 
+export interface HomeChatCaseCounts {
+  total: number;
+  awaitingApproval: number;
+  verified: number;
+  unresolved: number;
+}
+
 interface HomeChatProps {
+  /**
+   * Facts for the SELECTED run only. The copilot header and the chat request
+   * both use this run id, so an answer can never describe a different batch
+   * than the one on screen.
+   */
   telemetry?: {
     runId: string;
+    status: string;
+    mode: string;
     matchRate: string;
+    eligible?: number;
     casesCount?: number;
+    quarantined?: number;
+    residualVariance?: number;
   } | null;
+  runStatus: SelectionStatus;
+  caseCounts: HomeChatCaseCounts;
+  onRetry: () => void;
+  onOpenView: (view: ArgusView) => void;
 }
 
 export function HomeChat({
   telemetry,
+  runStatus,
+  caseCounts,
+  onRetry,
+  onOpenView,
 }: HomeChatProps) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -630,18 +657,28 @@ export function HomeChat({
                     Reconciliation Copilot
                   </h1>
                   <p className="text-xs sm:text-sm text-slate-500 leading-normal">
-                    Query live reconciliation batches, ledger totals, and exception evidence with zero financial hallucinations.
+                    Ask about the selected run. Answers are grounded in that run&rsquo;s persisted
+                    records; the copilot cannot approve, apply, or close anything.
                   </p>
                 </div>
 
-                {/* 4 Engaging Starter Cards (Displayed only when chat length is zero) */}
+                <ActiveRunFacts
+                  telemetry={telemetry}
+                  runStatus={runStatus}
+                  caseCounts={caseCounts}
+                  onRetry={onRetry}
+                  onOpenView={onOpenView}
+                />
+
+                {/* Starter prompts, scoped to the selected run. */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-xl pt-2">
                   {STARTER_PROMPTS.map((item, idx) => (
                     <button
                       key={idx}
                       type="button"
+                      disabled={!telemetry}
                       onClick={() => void handleSendMessage(item.query)}
-                      className="group flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-3.5 text-left shadow-2xs hover:border-slate-300 hover:shadow-xs hover:bg-slate-50/80 transition-all active:scale-[0.99] cursor-pointer"
+                      className="group flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-3.5 text-left shadow-2xs hover:border-slate-300 hover:shadow-xs hover:bg-slate-50/80 transition-all active:scale-[0.99] cursor-pointer disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
@@ -847,3 +884,164 @@ export function HomeChat({
 }
 
 export default HomeChat;
+
+
+/**
+ * Grounded facts for the SELECTED run, plus one useful next action.
+ *
+ * The Home view previously showed no run identity at all: it opened straight
+ * onto starter prompts, so the operator could not tell which batch an answer
+ * would describe, and a missing or unavailable run looked identical to a
+ * healthy one. Nothing here is computed locally beyond counting the case rows
+ * the backend already returned.
+ */
+function ActiveRunFacts({
+  telemetry,
+  runStatus,
+  caseCounts,
+  onRetry,
+  onOpenView,
+}: {
+  telemetry: HomeChatProps["telemetry"];
+  runStatus: SelectionStatus;
+  caseCounts: HomeChatCaseCounts;
+  onRetry: () => void;
+  onOpenView: (view: ArgusView) => void;
+}) {
+  if (runStatus === "LOADING") {
+    return (
+      <p
+        aria-live="polite"
+        className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500"
+      >
+        Loading the selected run…
+      </p>
+    );
+  }
+
+  if (runStatus === "EMPTY") {
+    return (
+      <div
+        data-testid="home-run-empty"
+        className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left"
+      >
+        {/* The page banner above already carries the Import action. Repeating
+            it here would put the same primary button on screen twice, so this
+            card explains what an empty database means for the copilot and
+            points at that one action. */}
+        <p className="text-xs font-bold text-slate-950">Nothing to answer from yet</p>
+        <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+          No run has been persisted, so the copilot has no facts to ground an answer in. Use
+          <strong className="font-semibold text-slate-700"> Import evidence </strong>
+          above to create the first run.
+        </p>
+      </div>
+    );
+  }
+
+  if (runStatus === "UNAVAILABLE" || runStatus === "NOT_FOUND" || !telemetry) {
+    return (
+      <div
+        role="alert"
+        data-testid="home-run-unavailable"
+        className="w-full max-w-xl rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-left"
+      >
+        <p className="text-xs font-bold text-slate-950">Run facts are unavailable</p>
+        <p className="mt-1 text-[11px] leading-relaxed text-slate-600">
+          {runStatus === "NOT_FOUND"
+            ? "The selected run no longer exists, so the copilot has nothing to ground an answer in."
+            : "The backend did not answer, so no figure is offered rather than a stale one."}
+        </p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-3 rounded-lg border border-slate-900 bg-white px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-900 hover:bg-slate-50"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  const clean = caseCounts.total === 0;
+  const next = clean
+    ? { label: "Review matched records", view: "matrix" as ArgusView }
+    : caseCounts.awaitingApproval > 0
+      ? { label: "Open approval queue", view: "approval_queue" as ArgusView }
+      : caseCounts.unresolved > 0
+        ? { label: "Review unresolved cases", view: "unresolved" as ArgusView }
+        : { label: "Open verified resolutions", view: "verified_resolved" as ArgusView };
+
+  return (
+    <div
+      data-testid="home-run-facts"
+      className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Run</span>
+          <span
+            data-testid="home-run-id"
+            className="select-all truncate font-mono text-[11px] font-semibold text-slate-800"
+          >
+            {telemetry.runId}
+          </span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide text-slate-600">
+            {telemetry.mode}
+          </span>
+          <span className="text-[10px] font-medium text-slate-500">
+            {telemetry.status.toLowerCase()}
+          </span>
+        </span>
+      </div>
+
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+        <Stat label="Eligible" value={formatCount(telemetry.eligible)} />
+        <Stat label="Match rate" value={telemetry.matchRate} />
+        <Stat label="Exceptions" value={formatCount(caseCounts.total)} />
+        <Stat
+          label="Residual variance"
+          value={
+            telemetry.residualVariance !== undefined
+              ? formatINR(telemetry.residualVariance)
+              : "\u2014"
+          }
+        />
+      </dl>
+
+      <p className="mt-3 text-[11px] leading-relaxed text-slate-600">
+        {clean ? (
+          <>
+            This run reconciled cleanly: <strong>zero exception cases</strong>. That is a successful
+            result, not a missing one.
+          </>
+        ) : (
+          <>
+            {formatCount(caseCounts.awaitingApproval)} awaiting approval ·{" "}
+            {formatCount(caseCounts.verified)} verified · {formatCount(caseCounts.unresolved)}{" "}
+            unresolved. Figures cover this run only and are never combined across runs.
+          </>
+        )}
+      </p>
+
+      <button
+        type="button"
+        onClick={() => onOpenView(next.view)}
+        className="mt-3 rounded-lg border border-slate-900 bg-white px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-900 hover:bg-slate-50"
+      >
+        {next.label}
+      </button>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{label}</dt>
+      <dd className="mt-0.5 font-mono text-xs font-bold tabular-nums text-slate-900">{value}</dd>
+    </div>
+  );
+}

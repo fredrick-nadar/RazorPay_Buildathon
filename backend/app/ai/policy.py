@@ -24,11 +24,19 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 # Bump when the system prompt or turn protocol changes shape.
-PROMPT_PROTOCOL_VERSION = "investigator-prompt-v2"
+PROMPT_PROTOCOL_VERSION = "investigator-prompt-v5"
 # Bump when the tool catalogue, names or argument contract change.
-TOOL_PROTOCOL_VERSION = "investigator-tools-v2"
+TOOL_PROTOCOL_VERSION = "investigator-tools-v5"
 # Bump when the accepted final-result schema changes.
 RESULT_SCHEMA_VERSION = "provider-output-v2"
+# Bump when the PROVIDER WIRE REQUEST changes shape - the fields ARGUS puts
+# on the HTTP request itself, independent of the prompt, the tool catalogue
+# and the result schema. v2 added Groq's required JSON-mode
+# ``reasoning_format: "hidden"``; v3 replaces the prompt-simulated tool
+# envelope with Groq's official function-calling protocol - tools,
+# tool_choice, parallel_tool_calls and role-tool history
+# (cloud-reference sections 42 and 44).
+PROVIDER_REQUEST_PROTOCOL_VERSION = "provider-request-v4"
 
 # Defaults chosen so a real Groq turn fits comfortably while a stuck attempt
 # is abandoned early enough to leave fallback time inside the same case budget.
@@ -63,6 +71,7 @@ class InvestigatorExecutionPolicy:
     prompt_protocol_version: str
     tool_protocol_version: str
     result_schema_version: str
+    provider_request_protocol_version: str
 
     def __post_init__(self) -> None:
         if self.attempt_timeout_cap_s > self.turn_deadline_s:
@@ -110,15 +119,20 @@ class InvestigatorExecutionPolicy:
             "prompt_protocol_version": self.prompt_protocol_version,
             "tool_protocol_version": self.tool_protocol_version,
             "result_schema_version": self.result_schema_version,
+            # The wire request itself is part of execution identity: a run
+            # made under a rejected request shape must not be reused.
+            "provider_request_protocol_version": self.provider_request_protocol_version,
         }
 
     def fingerprint(self) -> str:
         """Stable SHA-256 over the non-secret description."""
         material = json.dumps(
-            # v2 adds watchdog_grace_s. Bumping the version guarantees a
-            # queued job created under v1 can never be executed under a v2
-            # identity: the request key differs, so the worker refuses.
-            {"version": "investigator-policy-v2", **self.describe()},
+            # v2 added watchdog_grace_s; v3 adds
+            # provider_request_protocol_version. Bumping the version
+            # guarantees a job queued under an older identity can never be
+            # executed under a newer one: the request key differs, so the
+            # worker refuses.
+            {"version": "investigator-policy-v3", **self.describe()},
             sort_keys=True,
             separators=(",", ":"),
         )
@@ -225,6 +239,7 @@ def policy_from_settings(settings: Any) -> InvestigatorExecutionPolicy:
         prompt_protocol_version=PROMPT_PROTOCOL_VERSION,
         tool_protocol_version=TOOL_PROTOCOL_VERSION,
         result_schema_version=RESULT_SCHEMA_VERSION,
+        provider_request_protocol_version=PROVIDER_REQUEST_PROTOCOL_VERSION,
     )
 
 
@@ -234,6 +249,7 @@ __all__ = [
     "DEFAULT_TURN_WINDOW_S",
     "InvestigatorExecutionPolicy",
     "PROMPT_PROTOCOL_VERSION",
+    "PROVIDER_REQUEST_PROTOCOL_VERSION",
     "RESULT_SCHEMA_VERSION",
     "TOOL_PROTOCOL_VERSION",
     "policy_from_settings",

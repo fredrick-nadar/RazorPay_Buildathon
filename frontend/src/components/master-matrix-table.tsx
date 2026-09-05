@@ -1,237 +1,436 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { formatINR } from "../lib/format";
-import {
-  IconRoute,
-  IconSearch,
-  IconShield,
-  IconX,
-} from "./icons";
+/**
+ * Five-way reconciled master matrix.
+ *
+ * This is the run's whole normalized inventory: payments, refunds,
+ * settlements, bank entries and ledger entries, each row once, each with its
+ * own link state. It previously showed only fully linked payments (84 of 282
+ * records on the dev fixture) and labelled that subset "84 Matched Records",
+ * so most of the evidence — and every unmatched row — was invisible.
+ *
+ * The component renders backend results only. Counts, link states and missing
+ * links are all backend-derived; nothing here decides what is reconciled.
+ */
 
-export interface MatrixRecord {
-  payment_id: string;
-  order_id: string | null;
-  gross_amount_paise: number;
-  fee_paise: number;
-  tax_paise: number;
-  net_amount_paise: number;
-  captured_at_utc: string;
-  settlement_id: string | null;
-  settlement_gross_paise: number | null;
-  utr: string | null;
-  bank_entry_id: string | null;
-  bank_amount_paise: number | null;
-  ledger_entry_id: string | null;
-  ledger_amount_paise: number | null;
-  account_code: string;
-  match_rule: string;
-  status: string;
+import { useCallback, useEffect, useRef, useState } from "react";
+import { formatCount, formatINR, formatUtc, shortHash } from "../lib/format";
+import type { MatrixLinkState, MatrixPage, MatrixRecord, MatrixRecordType } from "../lib/types";
+import { IconRoute, IconSearch, IconShield, IconX } from "./icons";
+
+type LoadState = "IDLE" | "LOADING" | "READY" | "UNAVAILABLE" | "NOT_FOUND";
+
+const RECORD_TYPES: Array<{ value: MatrixRecordType | "ALL"; label: string }> = [
+  { value: "ALL", label: "All sources" },
+  { value: "PAYMENT", label: "Payments" },
+  { value: "REFUND", label: "Refunds" },
+  { value: "SETTLEMENT", label: "Settlements" },
+  { value: "BANK_ENTRY", label: "Bank entries" },
+  { value: "LEDGER_ENTRY", label: "Ledger entries" },
+];
+
+const LINK_STATES: Array<{ value: MatrixLinkState | "ALL"; label: string }> = [
+  { value: "ALL", label: "All rows" },
+  { value: "RECONCILED", label: "Reconciled" },
+  { value: "UNMATCHED", label: "Unmatched" },
+];
+
+const CENSUS_ORDER: MatrixRecordType[] = [
+  "PAYMENT",
+  "REFUND",
+  "SETTLEMENT",
+  "BANK_ENTRY",
+  "LEDGER_ENTRY",
+];
+
+const TYPE_LABEL: Record<string, string> = {
+  PAYMENT: "Payment",
+  REFUND: "Refund",
+  SETTLEMENT: "Settlement",
+  BANK_ENTRY: "Bank entry",
+  LEDGER_ENTRY: "Ledger entry",
+};
+
+const MISSING_LINK_LABEL: Record<string, string> = {
+  NO_MATCH_GROUP: "no match group",
+  NO_SETTLEMENT: "no settlement",
+  NO_BANK_ENTRY: "no bank entry",
+  NO_LEDGER_ENTRY: "no ledger entry",
+  NON_UNIQUE_BANK_ENTRY: "multiple bank entries",
+  NON_UNIQUE_LEDGER_ENTRY: "multiple ledger entries",
+};
+
+function isMatrixPage(value: unknown, expectedRunId: string): value is MatrixPage {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<MatrixPage>;
+  const inventory = candidate.inventory;
+  return (
+    candidate.run_id === expectedRunId &&
+    Array.isArray(candidate.records) &&
+    typeof candidate.total === "number" &&
+    typeof candidate.total_pages === "number" &&
+    typeof inventory === "object" &&
+    inventory !== null &&
+    typeof inventory.total_records === "number" &&
+    typeof inventory.reconciled_records === "number" &&
+    typeof inventory.unmatched_records === "number" &&
+    typeof inventory.by_record_type === "object" &&
+    inventory.by_record_type !== null &&
+    candidate.records.every(
+      (record) =>
+        typeof record?.record_id === "string" &&
+        record.run_id === expectedRunId &&
+        (record.link_state === "RECONCILED" || record.link_state === "UNMATCHED"),
+    )
+  );
 }
 
 export function MasterMatrixTable({ runId }: { runId: string | null }) {
-  const [records, setRecords] = useState<MatrixRecord[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState<MatrixPage | null>(null);
+  const [state, setState] = useState<LoadState>("IDLE");
+  const [pageNumber, setPageNumber] = useState(1);
   const [limit, setLimit] = useState(25);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalRecords, setTotalRecords] = useState(0);
   const [search, setSearch] = useState("");
+  const [recordType, setRecordType] = useState<MatrixRecordType | "ALL">("ALL");
+  const [linkState, setLinkState] = useState<MatrixLinkState | "ALL">("ALL");
   const [activeTraceRecord, setActiveTraceRecord] = useState<MatrixRecord | null>(null);
+  const requestId = useRef(0);
 
-  const fetchMatrix = useCallback(async () => {
-    if (!runId) return;
-    setLoading(true);
-    try {
-      const q = encodeURIComponent(search.trim());
-      const res = await fetch(
-        `/api/v1/runs/${runId}/matrix?page=${page}&limit=${limit}&search=${q}`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setRecords(data.records || []);
-        setTotalRecords(data.total || 0);
-        setTotalPages(data.total_pages || 1);
+  const fetchMatrix = useCallback(
+    async (targetRunId: string) => {
+      // A monotonic generation means a slower earlier response can never
+      // overwrite a newer page, filter or run.
+      const generation = ++requestId.current;
+      setState("LOADING");
+      try {
+        const params = new URLSearchParams({
+          page: String(pageNumber),
+          limit: String(limit),
+          search: search.trim(),
+          record_type: recordType,
+          link_state: linkState,
+        });
+        const response = await fetch(
+          `/api/v1/runs/${encodeURIComponent(targetRunId)}/matrix?${params.toString()}`,
+        );
+        if (generation !== requestId.current) return;
+        if (response.status === 404) {
+          setPage(null);
+          setState("NOT_FOUND");
+          return;
+        }
+        if (!response.ok) {
+          setPage(null);
+          setState("UNAVAILABLE");
+          return;
+        }
+        const body: unknown = await response.json();
+        if (generation !== requestId.current) return;
+        if (!isMatrixPage(body, targetRunId)) {
+          // Never keep the previous page and present it as current.
+          setPage(null);
+          setState("UNAVAILABLE");
+          return;
+        }
+        setPage(body);
+        setState("READY");
+      } catch {
+        if (generation === requestId.current) {
+          setPage(null);
+          setState("UNAVAILABLE");
+        }
       }
-    } catch {
-      // keep previous
-    } finally {
-      setLoading(false);
-    }
-  }, [runId, page, limit, search]);
+    },
+    [pageNumber, limit, search, recordType, linkState],
+  );
 
   useEffect(() => {
-    void fetchMatrix();
-  }, [fetchMatrix]);
+    if (!runId) {
+      requestId.current += 1;
+      setPage(null);
+      setState("IDLE");
+      return;
+    }
+    void fetchMatrix(runId);
+  }, [runId, fetchMatrix]);
 
-  const handleSearchChange = (val: string) => {
-    setSearch(val);
-    setPage(1);
-  };
+  // Any filter change restarts at the first page.
+  useEffect(() => {
+    setPageNumber(1);
+  }, [search, recordType, linkState, limit, runId]);
+
+  const inventory = page?.inventory;
+  const records = page?.records ?? [];
+  const filtered = Boolean(search.trim()) || recordType !== "ALL" || linkState !== "ALL";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50/40 p-4 sm:p-6">
-      {/* Header & Controls Toolbar */}
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2.5">
+      <div className="mb-4 flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
             <h2 className="text-base font-bold tracking-tight text-slate-900">
-              5-Way Reconciled Master Transaction Matrix
+              Five-way master record matrix
             </h2>
-            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
-              {totalRecords} Matched Records
-            </span>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Every normalized record in this run, with the links it does and does not have.
+            </p>
           </div>
-          <p className="mt-0.5 text-xs text-slate-500">
-            End-to-end deterministic linking: Payment ➔ Order ➔ Settlement Batch ➔ Bank UTR ➔ ERP General Ledger
-          </p>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="relative">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+                <IconSearch size={14} />
+              </span>
+              <label className="sr-only" htmlFor="matrix-search">
+                Search records by identifier
+              </label>
+              <input
+                id="matrix-search"
+                type="search"
+                placeholder="Payment, refund, UTR, ledger…"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                className="w-[220px] rounded-xl border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs text-slate-900 shadow-2xs placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              />
+            </div>
+
+            <label className="sr-only" htmlFor="matrix-record-type">
+              Filter by record type
+            </label>
+            <select
+              id="matrix-record-type"
+              value={recordType}
+              onChange={(event) => setRecordType(event.target.value as MatrixRecordType | "ALL")}
+              className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              {RECORD_TYPES.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
+            <label className="sr-only" htmlFor="matrix-link-state">
+              Filter by link state
+            </label>
+            <select
+              id="matrix-link-state"
+              value={linkState}
+              onChange={(event) => setLinkState(event.target.value as MatrixLinkState | "ALL")}
+              className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              {LINK_STATES.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
+            <label className="sr-only" htmlFor="matrix-limit">
+              Rows per page
+            </label>
+            <select
+              id="matrix-limit"
+              value={limit}
+              onChange={(event) => setLimit(Number(event.target.value))}
+              className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              <option value={25}>25 / page</option>
+              <option value={50}>50 / page</option>
+              <option value={100}>100 / page</option>
+              <option value={200}>200 / page</option>
+            </select>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="relative">
-            <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400">
-              <IconSearch size={14} />
-            </span>
-            <input
-              type="text"
-              placeholder="Search Payment ID, UTR, Order..."
-              value={search}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              className="w-[240px] rounded-xl border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs text-slate-900 placeholder:text-slate-400 shadow-2xs focus:border-slate-400 focus:outline-none"
-            />
-          </div>
-
-          <select
-            value={limit}
-            onChange={(e) => {
-              setLimit(Number(e.target.value));
-              setPage(1);
-            }}
-            className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-none"
+        {inventory && (
+          <div
+            data-testid="matrix-inventory"
+            className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5"
           >
-            <option value={25}>25 / page</option>
-            <option value={50}>50 / page</option>
-            <option value={100}>100 / page</option>
-          </select>
-        </div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              Run inventory
+            </span>
+            <span className="font-mono text-xs font-bold text-slate-900">
+              {formatCount(inventory.total_records)} records
+            </span>
+            <span className="font-mono text-xs font-semibold text-emerald-700">
+              {formatCount(inventory.reconciled_records)} reconciled
+            </span>
+            <span className="font-mono text-xs font-semibold text-amber-700">
+              {formatCount(inventory.unmatched_records)} unmatched
+            </span>
+            <span aria-hidden className="h-4 w-px bg-slate-200" />
+            {CENSUS_ORDER.map((kind) => {
+              const bucket = inventory.by_record_type[kind];
+              if (!bucket) return null;
+              return (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => setRecordType(kind)}
+                  className="rounded-lg border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
+                  {TYPE_LABEL[kind]}{" "}
+                  <span className="font-mono font-bold text-slate-900">
+                    {formatCount(bucket.total)}
+                  </span>
+                  {bucket.unmatched > 0 && (
+                    <span className="ml-1 font-mono text-amber-700">
+                      ({formatCount(bucket.unmatched)} unmatched)
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Main Table Container */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xs">
         <div className="flex-1 overflow-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 backdrop-blur-xs font-semibold text-slate-700">
+          <table className="w-full border-collapse text-left text-xs">
+            <caption className="sr-only">
+              Normalized records for the selected run with reconciliation link state
+            </caption>
+            <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 font-semibold text-slate-700 backdrop-blur-xs">
               <tr>
-                <th className="px-3.5 py-3 font-medium uppercase tracking-wider text-[10px] text-slate-500">
-                  Payment Ref
-                </th>
-                <th className="px-3 py-3 font-medium uppercase tracking-wider text-[10px] text-slate-500">
-                  Order ID
-                </th>
-                <th className="px-3 py-3 font-medium uppercase tracking-wider text-[10px] text-slate-500">
-                  Gross / Fees
-                </th>
-                <th className="px-3 py-3 font-medium uppercase tracking-wider text-[10px] text-slate-500">
-                  Net Ledger
-                </th>
-                <th className="px-3 py-3 font-medium uppercase tracking-wider text-[10px] text-slate-500">
-                  Settlement Batch
-                </th>
-                <th className="px-3 py-3 font-medium uppercase tracking-wider text-[10px] text-slate-500">
-                  Bank UTR Deposit
-                </th>
-                <th className="px-3 py-3 font-medium uppercase tracking-wider text-[10px] text-slate-500">
-                  ERP Journal
-                </th>
-                <th className="px-3 py-3 font-medium uppercase tracking-wider text-[10px] text-slate-500 text-right">
-                  Interactive Graph
-                </th>
+                {["Record", "Type", "Signed amount", "Occurred", "Links", "Source", "Trace"].map(
+                  (heading) => (
+                    <th
+                      key={heading}
+                      scope="col"
+                      className={`px-3 py-3 text-[10px] font-medium uppercase tracking-wider text-slate-500 ${
+                        heading === "Trace" ? "text-right" : ""
+                      }`}
+                    >
+                      {heading}
+                    </th>
+                  ),
+                )}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 font-mono">
-              {loading && records.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="p-8 text-center font-sans text-xs text-slate-400">
-                    Loading 5-Way Reconciled Matrix...
-                  </td>
-                </tr>
+            <tbody className="divide-y divide-slate-100" aria-live="polite">
+              {state === "IDLE" ? (
+                <EmptyRow
+                  title="No run selected"
+                  detail="The matrix is scoped to one reconciliation run. Import evidence to create the first run."
+                />
+              ) : state === "LOADING" && !page ? (
+                <EmptyRow title="Loading run inventory…" detail="Reading normalized records." />
+              ) : state === "NOT_FOUND" ? (
+                <EmptyRow
+                  title="This run no longer exists"
+                  detail="The selected run could not be found, so no records are shown."
+                />
+              ) : state === "UNAVAILABLE" ? (
+                <EmptyRow
+                  title="Matrix data is unavailable"
+                  detail="The previous page is not treated as current. Retry when the backend is reachable."
+                  action={
+                    runId ? (
+                      <button
+                        type="button"
+                        onClick={() => void fetchMatrix(runId)}
+                        className="mt-3 rounded-lg border border-slate-900 bg-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-900 hover:bg-slate-50"
+                      >
+                        Retry matrix
+                      </button>
+                    ) : null
+                  }
+                />
               ) : records.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="p-8 text-center font-sans text-xs text-slate-400">
-                    No transactions found matching your search.
-                  </td>
-                </tr>
+                <EmptyRow
+                  title={filtered ? "No records match this filter" : "This run holds no records"}
+                  detail={
+                    filtered
+                      ? "Clear the search or choose a different source to see the full inventory."
+                      : "The run completed without any normalized records."
+                  }
+                />
               ) : (
-                records.map((r) => (
+                records.map((record) => (
                   <tr
-                    key={r.payment_id}
-                    className="hover:bg-slate-50/80 transition-colors group cursor-pointer"
-                    onClick={() => setActiveTraceRecord(r)}
+                    key={`${record.record_type}:${record.record_id}`}
+                    className="group cursor-pointer transition-colors hover:bg-slate-50/80"
+                    onClick={() => setActiveTraceRecord(record)}
                   >
-                    <td className="px-3.5 py-2.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-blue-700">{r.payment_id}</span>
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-sans">
-                        {r.captured_at_utc.replace("T", " ").replace("Z", "")}
+                    <td className="px-3 py-2.5">
+                      <span className="select-all font-mono text-[11px] font-bold text-slate-900">
+                        {record.record_id}
                       </span>
+                      {record.order_id ? (
+                        <span className="block font-mono text-[10px] text-slate-400">
+                          {record.order_id}
+                        </span>
+                      ) : null}
                     </td>
 
                     <td className="px-3 py-2.5">
-                      <span className="text-slate-800">{r.order_id || "—"}</span>
-                    </td>
-
-                    <td className="px-3 py-2.5">
-                      <div className="font-bold text-slate-900">
-                        {formatINR(r.gross_amount_paise)}
-                      </div>
-                      <div className="text-[10px] text-slate-400">
-                        MDR: {formatINR(r.fee_paise)} + GST: {formatINR(r.tax_paise)}
-                      </div>
-                    </td>
-
-                    <td className="px-3 py-2.5">
-                      <span className="font-bold text-emerald-700">
-                        {formatINR(r.net_amount_paise)}
+                      <span className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-700">
+                        {TYPE_LABEL[record.record_type] ?? record.record_type}
                       </span>
+                      {record.status ? (
+                        <span className="block text-[10px] text-slate-400">{record.status}</span>
+                      ) : null}
+                    </td>
+
+                    <td className="px-3 py-2.5 font-mono font-bold tabular-nums text-slate-900">
+                      {formatINR(record.signed_amount_paise)}
+                      {record.fee_paise !== undefined && record.tax_paise !== undefined ? (
+                        <span className="block text-[10px] font-normal text-slate-400">
+                          fee {formatINR(record.fee_paise)} · tax {formatINR(record.tax_paise)}
+                        </span>
+                      ) : null}
+                    </td>
+
+                    <td className="px-3 py-2.5 font-mono text-[10.5px] text-slate-500">
+                      {record.occurred_at_utc ? formatUtc(record.occurred_at_utc) : "—"}
                     </td>
 
                     <td className="px-3 py-2.5">
-                      <span className="inline-flex rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-700 border border-slate-200">
-                        {r.settlement_id || "—"}
-                      </span>
-                    </td>
-
-                    <td className="px-3 py-2.5">
-                      <div className="text-slate-800 font-bold text-[11px] truncate max-w-[150px]" title={r.utr || ""}>
-                        {r.utr || "—"}
-                      </div>
-                      {r.bank_amount_paise !== null && (
-                        <div className="text-[10px] text-slate-400 font-sans">
-                          Batch: {formatINR(r.bank_amount_paise)}
-                        </div>
+                      {record.link_state === "RECONCILED" ? (
+                        <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
+                          Reconciled
+                        </span>
+                      ) : (
+                        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                          Unmatched
+                        </span>
                       )}
+                      {record.missing_links.length > 0 ? (
+                        <span className="block text-[10px] text-slate-500">
+                          {record.missing_links
+                            .map((code) => MISSING_LINK_LABEL[code] ?? code.toLowerCase())
+                            .join(" · ")}
+                        </span>
+                      ) : record.match_rule ? (
+                        <span className="block font-mono text-[10px] text-slate-400">
+                          {record.match_rule}
+                        </span>
+                      ) : null}
                     </td>
 
-                    <td className="px-3 py-2.5">
-                      <span className="text-purple-700 font-bold text-[11px]">
-                        {r.ledger_entry_id || "—"}
-                      </span>
-                      <div className="text-[10px] text-slate-400 font-sans">
-                        {r.account_code}
-                      </div>
+                    <td className="px-3 py-2.5 font-mono text-[10px] text-slate-500">
+                      row {record.source_row_number}
+                      {record.content_hash ? (
+                        <span className="block" title={record.content_hash}>
+                          {shortHash(record.content_hash, 10)}
+                        </span>
+                      ) : null}
                     </td>
 
                     <td className="px-3 py-2.5 text-right">
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveTraceRecord(r);
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setActiveTraceRecord(record);
                         }}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-sans font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900 shadow-2xs transition-colors"
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-2xs transition-colors hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
                       >
-                        <IconRoute size={12} className="text-indigo-600" />
-                        <span>Trace Graph</span>
+                        <IconRoute size={12} className="text-slate-600" />
+                        <span>Trace</span>
                       </button>
                     </td>
                   </tr>
@@ -241,37 +440,48 @@ export function MasterMatrixTable({ runId }: { runId: string | null }) {
           </table>
         </div>
 
-        {/* Pagination Controls */}
-        <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-2.5">
-          <div className="text-xs font-sans text-slate-500">
-            Showing <span className="font-semibold text-slate-800">{records.length > 0 ? (page - 1) * limit + 1 : 0}</span> to{" "}
-            <span className="font-semibold text-slate-800">{Math.min(page * limit, totalRecords)}</span> of{" "}
-            <span className="font-semibold text-slate-800">{totalRecords}</span> records
-          </div>
+        {page && (
+          <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-2.5">
+            <p className="text-xs text-slate-500">
+              Showing{" "}
+              <span className="font-semibold text-slate-800">
+                {records.length > 0 ? (page.page - 1) * page.limit + 1 : 0}
+              </span>{" "}
+              to{" "}
+              <span className="font-semibold text-slate-800">
+                {Math.min(page.page * page.limit, page.total)}
+              </span>{" "}
+              of <span className="font-semibold text-slate-800">{formatCount(page.total)}</span>{" "}
+              {filtered ? "matching" : "inventory"} records
+            </p>
 
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
-              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-sans font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition-colors shadow-2xs"
-            >
-              Previous
-            </button>
-            <span className="px-2 font-mono text-xs font-bold text-slate-700">
-              Page {page} / {totalPages}
-            </span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-sans font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition-colors shadow-2xs"
-            >
-              Next
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPageNumber((current) => Math.max(1, current - 1))}
+                disabled={page.page <= 1}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-2xs transition-colors hover:bg-slate-50 disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span className="px-2 font-mono text-xs font-bold text-slate-700">
+                Page {page.page} / {page.total_pages}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setPageNumber((current) => Math.min(page.total_pages, current + 1))
+                }
+                disabled={page.page >= page.total_pages}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-2xs transition-colors hover:bg-slate-50 disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Enhanced Interactive 5-Pillar Trace Graph Modal */}
       {activeTraceRecord && (
         <TraceGraphModal
           record={activeTraceRecord}
@@ -282,6 +492,85 @@ export function MasterMatrixTable({ runId }: { runId: string | null }) {
   );
 }
 
+function EmptyRow({
+  title,
+  detail,
+  action,
+}: {
+  title: string;
+  detail: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <tr>
+      <td colSpan={7} className="p-8 text-center">
+        <p className="text-sm font-bold text-slate-800">{title}</p>
+        <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">{detail}</p>
+        {action}
+      </td>
+    </tr>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Trace modal                                                         */
+/* ------------------------------------------------------------------ */
+
+interface TraceLink {
+  label: string;
+  value: string | null;
+  amountPaise?: number | null;
+}
+
+function traceLinks(record: MatrixRecord): TraceLink[] {
+  switch (record.record_type) {
+    case "PAYMENT":
+      return [
+        { label: "Payment", value: record.record_id, amountPaise: record.gross_amount_paise },
+        { label: "Order", value: record.order_id ?? null },
+        {
+          label: "Settlement",
+          value: record.settlement_id ?? null,
+          amountPaise: record.settlement_gross_paise ?? null,
+        },
+        { label: "Bank UTR", value: record.utr ?? null, amountPaise: record.bank_amount_paise ?? null },
+        {
+          label: "Ledger entry",
+          value: record.ledger_entry_id ?? null,
+          amountPaise: record.ledger_amount_paise ?? null,
+        },
+      ];
+    case "REFUND":
+      return [
+        { label: "Refund", value: record.record_id, amountPaise: record.signed_amount_paise },
+        { label: "Original payment", value: record.payment_id ?? null },
+        { label: "Settlement", value: record.settlement_id ?? null },
+      ];
+    case "SETTLEMENT":
+      return [
+        { label: "Settlement", value: record.record_id, amountPaise: record.signed_amount_paise },
+        { label: "Gross credit", value: null, amountPaise: record.gross_credit_paise ?? null },
+        { label: "Bank UTR", value: record.utr ?? null },
+        { label: "Bank entry", value: record.bank_entry_id ?? null },
+      ];
+    case "BANK_ENTRY":
+      return [
+        { label: "Bank entry", value: record.record_id, amountPaise: record.signed_amount_paise },
+        { label: "UTR", value: record.utr ?? null },
+        { label: "Value date", value: record.value_date ?? null },
+      ];
+    case "LEDGER_ENTRY":
+      return [
+        { label: "Ledger entry", value: record.record_id, amountPaise: record.signed_amount_paise },
+        { label: "Account", value: record.account_code ?? null },
+        { label: "Source reference", value: record.source_reference ?? null },
+        { label: "Origin", value: record.entry_origin ?? null },
+      ];
+    default:
+      return [{ label: "Record", value: record.record_id, amountPaise: record.signed_amount_paise }];
+  }
+}
+
 function TraceGraphModal({
   record,
   onClose,
@@ -289,546 +578,111 @@ function TraceGraphModal({
   record: MatrixRecord;
   onClose: () => void;
 }) {
-  const [selectedNode, setSelectedNode] = useState<number>(0);
-  const [tab, setTab] = useState<"visual" | "math" | "json">("visual");
-  const [copied, setCopied] = useState(false);
-  const ledgerPaise = record.ledger_amount_paise ?? 0;
-  const ledgerDeltaPaise = ledgerPaise - record.net_amount_paise;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
-  const nodes = [
-    {
-      idx: 0,
-      code: "INGEST",
-      title: "1. GATEWAY INGEST",
-      subtitle: "Customer Checkout",
-      badge: "INGESTED",
-      color: "#2563eb",
-      id: record.payment_id,
-      amountLabel: "Gross Paid",
-      amountValue: formatINR(record.gross_amount_paise),
-      details: {
-        "Payment ID": record.payment_id,
-        "Gross Value": formatINR(record.gross_amount_paise),
-        "Currency": "INR (Signed Integer: " + record.gross_amount_paise + " paise)",
-        "Captured Timestamp": record.captured_at_utc.replace("T", " ").replace("Z", " UTC"),
-        "Payment Method": "UPI / Card / NetBanking",
-        "Ingest Status": "NORMALIZED_AND_HASHED",
-      },
-    },
-    {
-      idx: 1,
-      code: "PRICING",
-      title: "2. ORDER & PRICING",
-      subtitle: "Recorded fee + GST",
-      badge: "RECORDED",
-      color: "#4f46e5",
-      id: record.order_id || "Not linked",
-      amountLabel: "MDR + GST Deductions",
-      amountValue: `${formatINR(record.fee_paise)} + ${formatINR(record.tax_paise)}`,
-      details: {
-        "Order ID": record.order_id || "Not linked",
-        "Gateway Fee": formatINR(record.fee_paise) + ` (${record.fee_paise} paise)`,
-        "Recorded Tax": formatINR(record.tax_paise) + ` (${record.tax_paise} paise)`,
-        "Total Deductions": formatINR(record.fee_paise + record.tax_paise),
-        "Net Value Payable": formatINR(record.net_amount_paise),
-        "Source": "Normalized payment record",
-      },
-    },
-    {
-      idx: 2,
-      code: "SETTLEMENT",
-      title: "3. SETTLEMENT BATCH",
-      subtitle: "Linked settlement",
-      badge: "LINKED",
-      color: "#9333ea",
-      id: record.settlement_id || "Not linked",
-      amountLabel: "Payment Net",
-      amountValue: formatINR(record.net_amount_paise),
-      details: {
-        "Settlement Batch ID": record.settlement_id || "Not linked",
-        "Transaction Net Contribution": formatINR(record.net_amount_paise),
-        "Gross Batch Sum": record.settlement_gross_paise !== null ? formatINR(record.settlement_gross_paise) : "Aggregated",
-        "Relationship Rule": record.match_rule,
-      },
-    },
-    {
-      idx: 3,
-      code: "BANK",
-      title: "4. RBI NODAL WIRE",
-      subtitle: "Linked bank entry",
-      badge: "LINKED",
-      color: "#d97706",
-      id: record.utr || "Not linked",
-      amountLabel: "Bank Entry Amount",
-      amountValue: record.bank_amount_paise !== null ? formatINR(record.bank_amount_paise) : "UTR Matched",
-      details: {
-        "Bank UTR": record.utr || "Not linked",
-        "Bank Entry ID": record.bank_entry_id || "Not linked",
-        "Signed Amount": record.bank_amount_paise !== null ? formatINR(record.bank_amount_paise) : "Not linked",
-        "Relationship Rule": record.match_rule,
-      },
-    },
-    {
-      idx: 4,
-      code: "LEDGER",
-      title: "5. ERP GENERAL LEDGER",
-      subtitle: "Linked ledger entry",
-      badge: "LINKED",
-      color: "#059669",
-      id: record.ledger_entry_id || "Not linked",
-      amountLabel: "Signed Ledger Amount",
-      amountValue: formatINR(ledgerPaise),
-      details: {
-        "Journal Voucher ID": record.ledger_entry_id || "Not linked",
-        "General Ledger Head": record.account_code,
-        "Signed Ledger Amount": formatINR(ledgerPaise) + ` (${ledgerPaise} paise)`,
-        "Source Reference": record.payment_id,
-        "Ledger vs Computed Net Delta": formatINR(ledgerDeltaPaise),
-        "Arithmetic": "Signed integer paise",
-      },
-    },
-  ];
-
-  const activeNode = nodes[selectedNode] || nodes[0] || {
-    idx: 0,
-    code: "INGEST",
-    title: "1. GATEWAY INGEST",
-    subtitle: "Customer Checkout",
-    badge: "INGESTED",
-    color: "#2563eb",
-    id: record.payment_id,
-    amountLabel: "Gross Paid",
-    amountValue: formatINR(record.gross_amount_paise),
-    details: {},
-  };
-
-  const copyJsonTrace = () => {
-    navigator.clipboard.writeText(
-      JSON.stringify(
-        {
-          trace_type: "5_WAY_RECONCILIATION_RELATIONSHIP",
-          transaction_ref: record.payment_id,
-          order_id: record.order_id,
-          settlement_id: record.settlement_id,
-          utr: record.utr,
-          ledger_voucher: record.ledger_entry_id,
-          arithmetic: {
-            gross_paise: record.gross_amount_paise,
-            fee_paise: record.fee_paise,
-            tax_paise: record.tax_paise,
-            net_paise: record.net_amount_paise,
-            ledger_signed_paise: ledgerPaise,
-            ledger_delta_paise: ledgerDeltaPaise,
-          },
-          relationship_rule: record.match_rule,
-        },
-        null,
-        2
-      )
-    );
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const links = traceLinks(record);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs animate-in fade-in duration-200"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button
+        type="button"
+        aria-label="Close trace"
+        onClick={onClose}
+        className="fixed inset-0 bg-slate-950/50 backdrop-blur-[2px]"
+      />
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="trace-title"
+        className="relative z-10 max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl"
       >
-        {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
-          <div className="flex items-center gap-3.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-200">
-              <IconRoute size={20} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h3 className="text-base font-bold text-slate-900">
-                  5-Way Reconciliation Evidence Trace
-                </h3>
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800 border border-emerald-200">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                  DETERMINISTIC RELATIONSHIPS
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 font-mono mt-0.5">
-                Txn Ref: <span className="text-blue-700 font-bold">{record.payment_id}</span> · Rule: <span className="text-slate-800 font-bold">{record.match_rule}</span> · Net Disbursed: <span className="text-emerald-700 font-bold">{formatINR(record.net_amount_paise)}</span>
-              </p>
-            </div>
+        <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+          <div className="min-w-0">
+            <h3 id="trace-title" className="text-sm font-bold text-slate-900">
+              Record trace
+            </h3>
+            <p className="mt-0.5 select-all font-mono text-[11px] text-slate-500">
+              {record.record_id} · run {record.run_id}
+            </p>
           </div>
-
-          <div className="flex items-center gap-2">
-            {/* View Switcher Tabs */}
-            <div className="flex rounded-xl bg-slate-100 p-1 border border-slate-200">
-              <button
-                onClick={() => setTab("visual")}
-                className={`rounded-lg px-3 py-1 text-xs font-semibold transition-all ${
-                  tab === "visual"
-                    ? "bg-white text-slate-900 shadow-2xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Visual Trace
-              </button>
-              <button
-                onClick={() => setTab("math")}
-                className={`rounded-lg px-3 py-1 text-xs font-semibold transition-all ${
-                  tab === "math"
-                    ? "bg-white text-slate-900 shadow-2xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Exact Math
-              </button>
-              <button
-                onClick={() => setTab("json")}
-                className={`rounded-lg px-3 py-1 text-xs font-semibold transition-all ${
-                  tab === "json"
-                    ? "bg-white text-slate-900 shadow-2xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Trace JSON
-              </button>
-            </div>
-
-            <button
-              onClick={onClose}
-              className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-            >
-              <IconX size={18} />
-            </button>
-          </div>
-        </div>
-
-        {/* Tab 1: Visual Trace SVG Canvas */}
-        {tab === "visual" && (
-          <div className="flex-1 overflow-auto p-6 space-y-4">
-            {/* Subtle Dot-Grid SVG Flow Canvas */}
-            <div
-              className="relative overflow-x-auto rounded-2xl border border-slate-200 bg-[#fcfcfd] p-4 shadow-2xs"
-              style={{
-                backgroundImage:
-                  "linear-gradient(to right, rgba(10, 10, 10, 0.035) 1px, transparent 1px), linear-gradient(to bottom, rgba(10, 10, 10, 0.035) 1px, transparent 1px)",
-                backgroundSize: "36px 36px",
-              }}
-            >
-              <svg
-                viewBox="0 0 1180 430"
-                className="w-full min-w-[940px] h-auto select-none"
-              >
-                <defs>
-                  <filter id="packet-glow-emerald-5way" x="-50%" y="-50%" width="200%" height="200%">
-                    <feDropShadow dx="0" dy="0" stdDeviation="4" floodColor="#10b981" floodOpacity="0.9" />
-                  </filter>
-                  <style>{`
-                    .edge-line { fill: none; stroke: rgba(10, 10, 10, 0.22); stroke-width: 1.5; stroke-dasharray: 5 7; }
-                    .edge-line--main { stroke: rgba(10, 10, 10, 0.4); stroke-width: 2; }
-                    .edge-line--ok { stroke: #10b981; }
-                    .node-card { fill: #ffffff; stroke: rgba(10, 10, 10, 0.22); stroke-width: 1.5; transition: all 0.2s; cursor: pointer; }
-                    .node-card:hover { stroke-width: 2.5; stroke: #2563eb; }
-                    .node-card--active { stroke-width: 2.5; stroke: #2563eb; fill: #eff6ff; }
-                    .node-text { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; fill: #0a0a0a; text-anchor: middle; }
-                    .node-sub { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 400; fill: #64748b; text-anchor: middle; }
-                    .node-val { font-family: ui-monospace, monospace; font-size: 11px; font-weight: 700; fill: #047857; text-anchor: middle; }
-                    .edge-tag { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 600; fill: #64748b; text-anchor: middle; }
-                  `}</style>
-                </defs>
-
-                {/* Connecting Curved Dashed Lines */}
-                <g>
-                  <path className="edge-line" d="M 210 130 C 235 130, 235 130, 260 130" />
-                  <path className="edge-line" d="M 440 130 C 465 130, 465 130, 490 130" />
-                  <path className="edge-line" d="M 670 130 C 695 130, 695 130, 720 130" />
-                  <path className="edge-line" d="M 900 130 C 925 130, 925 130, 950 130" />
-
-                  {/* Branch to Deterministic Verifier */}
-                  <path className="edge-line edge-line--ok" d="M 580 170 C 580 230, 580 250, 580 280" />
-                  <path className="edge-line edge-line--ok" d="M 1040 170 C 1040 240, 780 280, 780 280" />
-                </g>
-
-                {/* Animated Flow Packet traveling through the 5 nodes */}
-                <g>
-                  <circle r="7" fill="#10b981" filter="url(#packet-glow-emerald-5way)">
-                    <animateMotion
-                      dur="5s"
-                      repeatCount="indefinite"
-                      path="M 120 130 L 350 130 L 580 130 L 810 130 L 1040 130 L 1040 170 C 1040 240, 780 280, 780 280 L 580 320"
-                    />
-                  </circle>
-                </g>
-
-                {/* Connecting Edge Text Labels */}
-                <g>
-                  <text className="edge-tag" x="235" y="115">Fee Fields</text>
-                  <text className="edge-tag" x="465" y="115">Settlement ID</text>
-                  <text className="edge-tag" x="695" y="115">Bank UTR</text>
-                  <text className="edge-tag" x="925" y="115">Source Reference</text>
-                  <text className="edge-tag" x="640" y="240">Ledger Comparison</text>
-                </g>
-
-                {/* Node 1: Gateway Ingest */}
-                <g onClick={() => setSelectedNode(0)}>
-                  <rect
-                    className={`node-card ${selectedNode === 0 ? "node-card--active" : ""}`}
-                    x="30"
-                    y="90"
-                    width="180"
-                    height="80"
-                    rx="12"
-                  />
-                  <text className="node-text" x="120" y="115">1. GATEWAY INGEST</text>
-                  <text className="node-sub" x="120" y="132">{record.payment_id}</text>
-                  <text className="node-val" x="120" y="152">Gross: {formatINR(record.gross_amount_paise)}</text>
-                </g>
-
-                {/* Node 2: Order & Pricing */}
-                <g onClick={() => setSelectedNode(1)}>
-                  <rect
-                    className={`node-card ${selectedNode === 1 ? "node-card--active" : ""}`}
-                    x="260"
-                    y="90"
-                    width="180"
-                    height="80"
-                    rx="12"
-                  />
-                  <text className="node-text" x="350" y="115">2. ORDER & PRICING</text>
-                  <text className="node-sub" x="350" y="132">{record.order_id || "Not linked"}</text>
-                  <text className="node-val" x="350" y="152" fill="#d97706">
-                    Fee: {formatINR(record.fee_paise + record.tax_paise)}
-                  </text>
-                </g>
-
-                {/* Node 3: Settlement Batch */}
-                <g onClick={() => setSelectedNode(2)}>
-                  <rect
-                    className={`node-card ${selectedNode === 2 ? "node-card--active" : ""}`}
-                    x="490"
-                    y="90"
-                    width="180"
-                    height="80"
-                    rx="12"
-                  />
-                  <text className="node-text" x="580" y="115">3. SETTLEMENT BATCH</text>
-                  <text className="node-sub" x="580" y="132">{record.settlement_id || "Not linked"}</text>
-                  <text className="node-val" x="580" y="152">Net: {formatINR(record.net_amount_paise)}</text>
-                </g>
-
-                {/* Node 4: RBI Nodal Wire */}
-                <g onClick={() => setSelectedNode(3)}>
-                  <rect
-                    className={`node-card ${selectedNode === 3 ? "node-card--active" : ""}`}
-                    x="720"
-                    y="90"
-                    width="180"
-                    height="80"
-                    rx="12"
-                  />
-                  <text className="node-text" x="810" y="115">4. RBI NODAL WIRE</text>
-                  <text className="node-sub" x="810" y="132">{record.utr || "Not linked"}</text>
-                  <text className="node-val" x="810" y="152" fill="#2563eb">
-                    {record.bank_amount_paise !== null ? formatINR(record.bank_amount_paise) : "Not linked"}
-                  </text>
-                </g>
-
-                {/* Node 5: ERP General Ledger */}
-                <g onClick={() => setSelectedNode(4)}>
-                  <rect
-                    className={`node-card ${selectedNode === 4 ? "node-card--active" : ""}`}
-                    x="950"
-                    y="90"
-                    width="180"
-                    height="80"
-                    rx="12"
-                  />
-                  <text className="node-text" x="1040" y="115">5. ERP GENERAL LEDGER</text>
-                  <text className="node-sub" x="1040" y="132">{record.ledger_entry_id || "Not linked"}</text>
-                  <text className="node-val" x="1040" y="152">Ledger: {formatINR(ledgerPaise)}</text>
-                </g>
-
-                {/* Verification Box at Bottom */}
-                <g onClick={() => setSelectedNode(4)}>
-                  <rect
-                    x="390"
-                    y="280"
-                    width="400"
-                    height="70"
-                    rx="12"
-                    fill="#ecfdf5"
-                    stroke="#10b981"
-                    strokeWidth="1.5"
-                    className="cursor-pointer"
-                  />
-                  <text className="node-text" x="590" y="308" fill="#047857">
-                    DETERMINISTIC RELATIONSHIP TRACE
-                  </text>
-                  <text className="node-sub" x="590" y="326">
-                    Rule: {record.match_rule} · Ledger delta: {formatINR(ledgerDeltaPaise)}
-                  </text>
-                </g>
-              </svg>
-            </div>
-
-            {/* Dynamic Node Detail Inspector */}
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 font-sans text-xs">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-3 mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-blue-600 animate-pulse" />
-                  <span className="font-bold text-slate-900 text-sm">
-                    {activeNode.title} ({activeNode.subtitle})
-                  </span>
-                  <span className="rounded bg-slate-200 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-800">
-                    {activeNode.badge}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs font-bold text-emerald-800">
-                    {activeNode.amountLabel}: {activeNode.amountValue}
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {Object.entries(activeNode.details).map(([key, val]) => (
-                  <div key={key} className="rounded-xl border border-slate-200 bg-white p-2.5">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
-                      {key}
-                    </span>
-                    <p className="mt-0.5 font-mono text-xs font-bold text-slate-900 truncate" title={String(val)}>
-                      {val}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Tab 2: Exact Integer Arithmetic */}
-        {tab === "math" && (
-          <div className="flex-1 overflow-auto p-6 space-y-4">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 font-mono">
-                  Exact Integer-Paise Calculation
-                </h4>
-                <span className="rounded bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800 border border-emerald-200">
-                  Signed integer paise only
-                </span>
-              </div>
-
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4 font-mono text-sm shadow-2xs">
-                <div>
-                  <span className="text-[10px] font-bold text-slate-500 block">1. Gross Paid</span>
-                  <span className="font-bold text-slate-900 text-base">{formatINR(record.gross_amount_paise)}</span>
-                  <span className="text-[10px] text-slate-400 block font-sans">({record.gross_amount_paise} paise)</span>
-                </div>
-
-                <span className="text-lg font-bold text-slate-400">-</span>
-
-                <div>
-                  <span className="text-[10px] font-bold text-slate-500 block">2. Recorded Gateway Fee</span>
-                  <span className="font-bold text-amber-700 text-base">{formatINR(record.fee_paise)}</span>
-                  <span className="text-[10px] text-slate-400 block font-sans">({record.fee_paise} paise)</span>
-                </div>
-
-                <span className="text-lg font-bold text-slate-400">-</span>
-
-                <div>
-                  <span className="text-[10px] font-bold text-slate-500 block">3. Recorded Tax</span>
-                  <span className="font-bold text-amber-700 text-base">{formatINR(record.tax_paise)}</span>
-                  <span className="text-[10px] text-slate-400 block font-sans">({record.tax_paise} paise)</span>
-                </div>
-
-                <span className="text-lg font-bold text-slate-400">=</span>
-
-                <div>
-                  <span className="text-[10px] font-bold text-emerald-700 block">4. Computed Net</span>
-                  <span className="font-bold text-emerald-700 text-base">{formatINR(record.net_amount_paise)}</span>
-                  <span className="text-[10px] text-slate-400 block font-sans">({record.net_amount_paise} paise)</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <span className="text-[10px] font-bold uppercase text-slate-500 block">Arithmetic Mode</span>
-                  <p className="font-mono text-xs font-bold text-emerald-700 mt-1">
-                    Exact signed integer paise; no float conversion
-                  </p>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-3">
-                  <span className="text-[10px] font-bold uppercase text-slate-500 block">Ledger Delta</span>
-                  <p className={`font-mono text-xs font-bold mt-1 ${ledgerDeltaPaise === 0 ? "text-emerald-700" : "text-amber-700"}`}>
-                    {formatINR(ledgerDeltaPaise)} (ledger − computed net)
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Tab 3: Raw Relationship Trace */}
-        {tab === "json" && (
-          <div className="flex-1 overflow-auto p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-mono text-slate-600">
-                Relationship trace from normalized records
-              </span>
-              <button
-                onClick={copyJsonTrace}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-mono font-bold text-slate-700 hover:bg-slate-200 transition-colors"
-              >
-                {copied ? "✓ Copied Trace JSON!" : "Copy Trace JSON"}
-              </button>
-            </div>
-
-            <pre className="max-h-[340px] overflow-auto rounded-2xl border border-slate-200 bg-slate-900 p-4 font-mono text-xs text-indigo-300">
-              {JSON.stringify(
-                {
-                  trace_type: "5_WAY_RECONCILIATION_RELATIONSHIP",
-                  relationship_rule: record.match_rule,
-                  transaction_id: record.payment_id,
-                  order_id: record.order_id,
-                  settlement_batch_id: record.settlement_id,
-                  bank_utr: record.utr,
-                  ledger_voucher_id: record.ledger_entry_id,
-                  account_head: record.account_code,
-                  amounts_paise: {
-                    gross: record.gross_amount_paise,
-                    mdr_fee: record.fee_paise,
-                    gst: record.tax_paise,
-                    net_disbursed: record.net_amount_paise,
-                    ledger_signed: ledgerPaise,
-                    ledger_delta: ledgerDeltaPaise,
-                  },
-                },
-                null,
-                2
-              )}
-            </pre>
-          </div>
-        )}
-
-        {/* Modal Footer */}
-        <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-6 py-3.5 text-xs">
-          <div className="flex items-center gap-2 text-slate-600 font-sans">
-            <IconShield size={14} className="text-emerald-600" />
-            <span>Click any node to inspect the linked source IDs and exact paise values.</span>
-          </div>
-
           <button
-            onClick={copyJsonTrace}
-            className="rounded-xl bg-slate-900 px-4 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-slate-800 transition-colors"
+            type="button"
+            onClick={onClose}
+            aria-label="Close dialog"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
           >
-            {copied ? "✓ Copied!" : "Copy Trace JSON"}
+            <IconX size={15} />
           </button>
+        </header>
+
+        <div className="space-y-4 p-5">
+          <p
+            className={`flex items-start gap-2 rounded-xl border p-3 text-xs font-medium ${
+              record.link_state === "RECONCILED"
+                ? "border-emerald-200 bg-emerald-50/60 text-emerald-900"
+                : "border-amber-200 bg-amber-50/60 text-amber-900"
+            }`}
+          >
+            <IconShield size={15} className="mt-px shrink-0" />
+            <span>
+              {record.link_state === "RECONCILED" ? (
+                <>
+                  Linked by persisted match evidence
+                  {record.match_rule ? (
+                    <> under <span className="font-mono">{record.match_rule}</span></>
+                  ) : null}
+                  . The related identifiers below come from stored source references.
+                </>
+              ) : (
+                <>
+                  This record is unmatched. Missing:{" "}
+                  {record.missing_links
+                    .map((code) => MISSING_LINK_LABEL[code] ?? code.toLowerCase())
+                    .join(", ") || "unknown"}
+                  . It is reported as-is; nothing is inferred to complete the chain.
+                </>
+              )}
+            </span>
+          </p>
+
+          <ol className="space-y-2">
+            {links.map((link, index) => (
+              <li
+                key={`${link.label}-${index}`}
+                className="flex items-baseline justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5"
+              >
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  {link.label}
+                </span>
+                <span className="min-w-0 text-right">
+                  <span className="block select-all truncate font-mono text-xs font-bold text-slate-900">
+                    {link.value ?? "not present"}
+                  </span>
+                  {link.amountPaise !== undefined && link.amountPaise !== null ? (
+                    <span className="block font-mono text-[10px] tabular-nums text-slate-500">
+                      {formatINR(link.amountPaise)}
+                    </span>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ol>
+
+          <footer className="flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-100 pt-3 font-mono text-[10px] text-slate-500">
+            <span>source row {record.source_row_number}</span>
+            {record.content_hash ? (
+              <span title={record.content_hash}>content {shortHash(record.content_hash, 16)}</span>
+            ) : null}
+            {record.occurred_at_utc ? <span>{formatUtc(record.occurred_at_utc)}</span> : null}
+          </footer>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

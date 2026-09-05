@@ -122,6 +122,8 @@ def test_apply_simulated_correction_approve_and_idempotence(tmp_path: Path) -> N
             reviewer_id="rev-john",
             action=ApprovalDecision.APPROVED,
             notes="Approved after verifying duplicate row",
+            expected_proof_id="proof-001",
+            expected_run_id="run-001",
         )
         assert res["status"] == CorrectionStatus.SIMULATED_APPLIED.value
         assert res["reused"] is False
@@ -140,6 +142,8 @@ def test_apply_simulated_correction_approve_and_idempotence(tmp_path: Path) -> N
             case_id="case-001",
             reviewer_id="rev-john",
             action=ApprovalDecision.APPROVED,
+            expected_proof_id="proof-001",
+            expected_run_id="run-001",
         )
         assert res2["reused"] is True
         assert res2["correction_id"] == res["correction_id"]
@@ -160,6 +164,8 @@ def test_apply_simulated_correction_reject(tmp_path: Path) -> None:
             reviewer_id="rev-sarah",
             action=ApprovalDecision.REJECTED,
             notes="Rejected: need more merchant ledger documentation",
+            expected_proof_id="proof-001",
+            expected_run_id="run-001",
         )
         assert res["status"] == "REJECTED"
         assert res["applied"] is False
@@ -204,7 +210,7 @@ def test_apply_unverified_case_raises(tmp_path: Path) -> None:
                     "case-inconcl",
                     "run-001",
                     "AMBIGUOUS_EVIDENCE",
-                    "UNRESOLVED",
+                    "APPROVAL_REQUIRED",
                     50000,
                     50000,
                     0,
@@ -255,6 +261,8 @@ def test_apply_unverified_case_raises(tmp_path: Path) -> None:
                 case_id="case-inconcl",
                 reviewer_id="rev-bad",
                 action=ApprovalDecision.APPROVED,
+                expected_proof_id="proof-inconcl",
+                expected_run_id="run-001",
             )
     finally:
         db.close()

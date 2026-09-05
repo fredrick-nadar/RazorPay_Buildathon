@@ -204,6 +204,107 @@ def _stage_pending_payments(
     )
 
 
+def _paise_text(paise: int) -> str:
+    """Render integer paise as the decimal rupee string the importers parse."""
+    sign = "-" if paise < 0 else ""
+    absolute = abs(paise)
+    return f"{sign}{absolute // 100}.{absolute % 100:02d}"
+
+
+def _write_clean_inputs(root: Path) -> Path:
+    """Write a fully linked five-source input set that raises no exceptions.
+
+    The dev dataset deliberately injects discrepancies, so on its own it can
+    never prove that a legitimate zero-exception run renders as a success
+    rather than a broken view. This set satisfies every deterministic rule
+    exactly: each payment's clearing entry equals its net, the settlement's
+    net equals gross minus fee and tax, the bank credit equals that net under
+    a shared UTR, and the settlement's bank entry books the same net.
+
+    All amounts are computed in integer paise and only rendered as decimal
+    text at the CSV boundary.
+    """
+    count = 6
+    payments: list[dict[str, int | str]] = []
+    gross_total = fee_total = tax_total = 0
+    for index in range(count):
+        gross = 50_000 + index * 1_000
+        fee = 1_000 + index * 20
+        tax = (fee * 1800 + 5000) // 10000
+        gross_total += gross
+        fee_total += fee
+        tax_total += tax
+        payments.append(
+            {
+                "payment_id": f"pay_clean_{index:03d}",
+                "order_id": f"order_clean_{index:03d}",
+                "gross": gross,
+                "fee": fee,
+                "tax": tax,
+                "net": gross - fee - tax,
+            }
+        )
+
+    settlement_id = "stl_clean_000"
+    utr = "UTRCLEANE2E000001"
+    net_total = gross_total - fee_total - tax_total
+
+    inputs = root / "clean-inputs"
+    inputs.mkdir(parents=True, exist_ok=True)
+
+    (inputs / "payments.csv").write_text(
+        "payment_id,order_id,status,currency,gross_amount,fee_amount,tax_amount,"
+        "captured_at_utc,settlement_id\n"
+        + "".join(
+            f"{row['payment_id']},{row['order_id']},CAPTURED,INR,"
+            f"{_paise_text(int(row['gross']))},{_paise_text(int(row['fee']))},"
+            f"{_paise_text(int(row['tax']))},2026-03-02T0{index}:00:00Z,{settlement_id}\n"
+            for index, row in enumerate(payments)
+        ),
+        encoding="utf-8",
+    )
+
+    # A clean run with no refunds at all: the header alone is a valid source.
+    (inputs / "refunds.csv").write_text(
+        "refund_id,payment_id,status,currency,refund_amount,created_at_utc,settlement_id\n",
+        encoding="utf-8",
+    )
+
+    (inputs / "settlements.csv").write_text(
+        "settlement_id,settled_at_utc,window_start_utc,window_end_utc,status,currency,"
+        "gross_credit,fee_amount,tax_amount,adjustment_amount,net_amount,utr\n"
+        f"{settlement_id},2026-03-03T04:00:00Z,2026-03-02T00:00:00Z,2026-03-03T00:00:00Z,"
+        f"PROCESSED,INR,{_paise_text(gross_total)},{_paise_text(fee_total)},"
+        f"{_paise_text(tax_total)},0.00,{_paise_text(net_total)},{utr}\n",
+        encoding="utf-8",
+    )
+
+    (inputs / "bank_entries.csv").write_text(
+        "bank_entry_id,posted_at_utc,value_date,currency,signed_amount,narration,utr,"
+        "account_fingerprint\n"
+        f"bnk_clean_000,2026-03-03T04:05:00Z,2026-03-03,INR,{_paise_text(net_total)},"
+        f"NEFT CR {utr} SYNTHETIC CLEAN SETTLEMENT {settlement_id},{utr},FP-ARGUS-E2E-CLEAN\n",
+        encoding="utf-8",
+    )
+
+    ledger_rows = "".join(
+        f"led_clean_p{index:03d},2100-PAYMENTS-CLEARING,2026-03-02,INR,"
+        f"{_paise_text(int(row['net']))},{row['payment_id']},PAYMENT,"
+        f"Payment captured {row['payment_id']},IMPORTED\n"
+        for index, row in enumerate(payments)
+    )
+    ledger_rows += (
+        f"led_clean_s000,1100-BANK-OPERATING,2026-03-03,INR,{_paise_text(net_total)},"
+        f"{settlement_id},SETTLEMENT,Settlement credit {settlement_id},IMPORTED\n"
+    )
+    (inputs / "ledger_entries.csv").write_text(
+        "ledger_entry_id,account_code,accounting_date,currency,signed_amount,source_reference,"
+        "source_type,description,entry_origin\n" + ledger_rows,
+        encoding="utf-8",
+    )
+    return inputs
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -306,15 +407,29 @@ def main() -> int:
             "import_id": invalid_import,
         }
 
-        # Dashboard smoke tests require one persisted runtime run. Execute it
-        # before Uvicorn starts so browser tests never need to trigger work in
-        # the server process they later ask Playwright to tear down.
-        execute_run(
+        # Two persisted runs, executed before Uvicorn starts so browser tests
+        # never trigger work in the process Playwright later tears down.
+        #
+        # The CLEAN run is seeded FIRST so the dev run stays the active one and
+        # existing scenarios are unaffected. Chunk 3C makes the clean run
+        # addressable by id through the URL selection, which is how the
+        # zero-exception scenario reaches it.
+        clean = execute_run(
+            inputs_dir=_write_clean_inputs(args.staging.parent),
+            database=db,
+            mode="rules-only",
+            force=True,
+        )
+        exceptions = execute_run(
             inputs_dir=REPO_ROOT / "datasets" / "dev" / "inputs",
             database=db,
             mode="rules-only",
             force=True,
         )
+        fixture["runs"] = {
+            "clean_run_id": clean.run_id,
+            "exception_run_id": exceptions.run_id,
+        }
     finally:
         db.close()
 

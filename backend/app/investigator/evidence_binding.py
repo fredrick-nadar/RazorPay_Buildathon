@@ -169,6 +169,24 @@ def _bind_get_record(
     return args.get("record_id") in index.typed_records
 
 
+def _bind_get_records(
+    case: CaseRecord, args: dict[str, Any], observation: dict[str, Any], index: CaseEvidenceIndex
+) -> bool:
+    """``_get_records`` must return at least one exact cited typed record."""
+    consumed = _exact_strings(args.get("record_ids"))
+    records = observation.get("records")
+    if not isinstance(records, list):
+        return False
+    returned = {
+        item.get("evidence_id")
+        for item in records
+        if isinstance(item, dict) and isinstance(item.get("record"), dict)
+    }
+    return any(
+        identifier in index.typed_records and identifier in returned for identifier in consumed
+    )
+
+
 def _bind_check_date_window(
     case: CaseRecord, args: dict[str, Any], observation: dict[str, Any], index: CaseEvidenceIndex
 ) -> bool:
@@ -229,6 +247,7 @@ _BINDERS: dict[
     "get_case": _bind_get_case,
     "get_evidence_graph": _bind_get_evidence_graph,
     "get_record": _bind_get_record,
+    "get_records": _bind_get_records,
     "check_date_window": _bind_check_date_window,
     "check_unique_identity": _bind_check_unique_identity,
     "calculate_expected_net": _bind_calculate_expected_net,

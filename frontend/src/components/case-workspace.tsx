@@ -59,6 +59,14 @@ function CaseOverview({ detail }: { detail: CaseDetail }) {
         Case dossier
       </SectionLabel>
 
+      {/* Which case, in which run. The dossier rendered no identity at all, so
+          a reader could not tell what they were looking at, and a wrong-case
+          render would have been invisible. */}
+      <p className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 font-mono text-[11px]">
+        <span className="select-all font-bold text-slate-900">{c.case_id}</span>
+        <span className="text-slate-500">run {c.run_id}</span>
+      </p>
+
       <p className="mt-3 text-sm leading-relaxed text-slate-700">{c.summary}</p>
 
       <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">

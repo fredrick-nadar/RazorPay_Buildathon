@@ -17,6 +17,19 @@ from app.domain.enums import ActorType, ApprovalDecision, CaseStatus, Correction
 from app.persistence.database import Database
 
 
+class ProofIdentityError(ValueError):
+    """The authority decision does not name the proof that is current for the case.
+
+    Human approval is authority over one specific verified proposal. If the
+    reviewed proof has been superseded, or the caller names a different proof,
+    the decision must not be silently retargeted onto whatever proof is latest.
+    """
+
+
+class AuthorityConflictError(ValueError):
+    """The reviewed proof already has a different final human decision."""
+
+
 @dataclass(frozen=True)
 class SimulatedCorrectionResult:
     correction_id: str
@@ -36,38 +49,109 @@ class SimulatedCorrectionResult:
         return asdict(self)
 
 
+def _find_applied(db: Database, idempotency_key: str) -> Any:
+    """Return the already-applied simulated correction for this key, or None."""
+    return db.query_one(
+        "SELECT * FROM simulated_corrections WHERE idempotency_key = ?", (idempotency_key,)
+    )
+
+
+def _reuse(row: Any, notes: str) -> dict[str, Any]:
+    """Describe an existing simulated correction without creating another."""
+    return SimulatedCorrectionResult(
+        correction_id=str(row["correction_id"]),
+        case_id=str(row["case_id"]),
+        run_id=str(row["run_id"]),
+        proof_id=str(row["proof_id"]),
+        approval_id=str(row["approval_id"]),
+        status=CorrectionStatus.SIMULATED_APPLIED.value,
+        target_ledger_entry_id=(
+            str(row["target_ledger_entry_id"]) if row["target_ledger_entry_id"] else None
+        ),
+        account_code=str(row["account_code"]),
+        delta_paise=int(row["delta_paise"]),
+        applied_at_utc=str(row["applied_at_utc"]),
+        reused=True,
+        notes=notes,
+    ).to_dict()
+
+
 def apply_simulated_correction(
     db: Database,
     case_id: str,
     reviewer_id: str,
     action: ApprovalDecision | str = ApprovalDecision.APPROVED,
     notes: str = "",
-    idempotency_key: str | None = None,
+    *,
+    expected_proof_id: str,
+    expected_run_id: str,
 ) -> dict[str, Any]:
-    """Execute human approval or rejection on a verified exception case."""
+    """Execute human approval or rejection on a verified exception case.
+
+    The proof and run are mandatory: internal callers cannot bypass the same
+    authority binding enforced at the HTTP boundary. The entire read/check/
+    write transition runs under one immediate transaction, so another process
+    cannot supersede the proof or apply a competing decision between checks.
+    """
     action_str = action.value if isinstance(action, ApprovalDecision) else str(action).upper()
     if action_str not in {ApprovalDecision.APPROVED.value, ApprovalDecision.REJECTED.value}:
         raise ValueError(f"invalid approval action: {action_str!r}")
 
-    # 1. Fetch case
-    case_row = db.query_one("SELECT * FROM cases WHERE case_id = ?", (case_id,))
-    if case_row is None:
-        raise ValueError(f"case {case_id!r} does not exist")
+    with db.transaction(immediate=True):
+        case_row = db.query_one("SELECT * FROM cases WHERE case_id = ?", (case_id,))
+        if case_row is None:
+            raise ValueError(f"case {case_id!r} does not exist")
 
-    # 2. Fetch latest proof if available
-    proof_rows = db.query_all(
-        "SELECT * FROM proofs WHERE case_id = ? ORDER BY rowid DESC LIMIT 1", (case_id,)
-    )
-    proof = proof_rows[0] if proof_rows else None
-    proof_id = str(proof["proof_id"]) if proof is not None else "none"
-    run_id = str(case_row["run_id"])
+        run_id = str(case_row["run_id"])
+        if expected_run_id != run_id:
+            raise ProofIdentityError(
+                f"case {case_id!r} belongs to run {run_id!r}, not {expected_run_id!r}"
+            )
 
-    # 3. Handle REJECTION
-    if action_str == ApprovalDecision.REJECTED.value:
-        approval_id = f"appr-{uuid4().hex[:12]}"
+        proof = db.query_one(
+            "SELECT * FROM proofs WHERE case_id = ? ORDER BY rowid DESC LIMIT 1", (case_id,)
+        )
+        if proof is None or str(proof["proof_id"]) != expected_proof_id:
+            raise ProofIdentityError(
+                f"proof {expected_proof_id!r} is not current for case {case_id!r}"
+            )
+        proof_id = str(proof["proof_id"])
+
+        applied = db.query_one(
+            "SELECT * FROM simulated_corrections WHERE case_id = ? AND proof_id = ?",
+            (case_id, proof_id),
+        )
+        prior_decision = db.query_one(
+            "SELECT * FROM approvals WHERE case_id = ? AND proof_id = ? ORDER BY rowid ASC LIMIT 1",
+            (case_id, proof_id),
+        )
+
+        if applied is not None:
+            if action_str == ApprovalDecision.APPROVED.value:
+                return _reuse(applied, notes)
+            raise AuthorityConflictError("an applied correction cannot later be rejected")
+
+        if prior_decision is not None:
+            prior_action = str(prior_decision["action"])
+            if action_str == prior_action == ApprovalDecision.REJECTED.value:
+                return {
+                    "status": "REJECTED",
+                    "case_id": case_id,
+                    "approval_id": str(prior_decision["approval_id"]),
+                    "reviewer_id": str(prior_decision["reviewer_id"]),
+                    "notes": str(prior_decision["notes"] or ""),
+                    "applied": False,
+                    "reused": True,
+                }
+            raise AuthorityConflictError("this proof already has a final human decision")
+
+        if str(case_row["status"]) != CaseStatus.APPROVAL_REQUIRED.value:
+            raise AuthorityConflictError("case is not awaiting an authority decision")
+
         now_utc = datetime.now(UTC).isoformat()
 
-        with db.transaction():
+        if action_str == ApprovalDecision.REJECTED.value:
+            approval_id = f"appr-{uuid4().hex[:12]}"
             db.execute(
                 "INSERT INTO approvals ("
                 "approval_id, case_id, proof_id, reviewer_id, action, notes, approved_at_utc"
@@ -78,11 +162,10 @@ def apply_simulated_correction(
                 "UPDATE cases SET status = ? WHERE case_id = ?",
                 (CaseStatus.UNRESOLVED.value, case_id),
             )
-            if proof is not None:
-                db.execute(
-                    "UPDATE corrections SET status = ? WHERE proof_id = ?",
-                    (CorrectionStatus.REJECTED.value, proof_id),
-                )
+            db.execute(
+                "UPDATE corrections SET status = ? WHERE proof_id = ?",
+                (CorrectionStatus.REJECTED.value, proof_id),
+            )
             record_audit_event(
                 db=db,
                 actor=ActorType.USER,
@@ -97,70 +180,41 @@ def apply_simulated_correction(
                 },
             )
 
-        return {
-            "status": "REJECTED",
-            "case_id": case_id,
-            "approval_id": approval_id,
-            "reviewer_id": reviewer_id,
-            "notes": notes,
-            "applied": False,
-        }
+            return {
+                "status": "REJECTED",
+                "case_id": case_id,
+                "approval_id": approval_id,
+                "reviewer_id": reviewer_id,
+                "notes": notes,
+                "applied": False,
+                "reused": False,
+            }
 
-    # 4. Handle APPROVAL & APPLICATION (Strictly requires verifier PASS)
-    if proof is None:
-        raise ValueError(f"case {case_id!r} has no verified proof package")
+        if proof["verifier_status"] != "PASS":
+            raise ValueError(f"cannot approve case {case_id!r}: verifier status must be PASS")
 
-    if proof["verifier_status"] != "PASS":
-        vstatus = proof["verifier_status"]
-        raise ValueError(
-            f"cannot approve case {case_id!r}: verifier status is {vstatus!r} (must be PASS)"
+        corr = db.query_one(
+            "SELECT * FROM corrections WHERE proof_id = ? ORDER BY rowid DESC LIMIT 1",
+            (proof_id,),
+        )
+        if corr is None:
+            raise ValueError(f"no dry-run correction exists for proof {proof_id!r}")
+
+        key = f"simcorr|{case_id}|{proof['canonical_hash']}"
+        existing = _find_applied(db, key)
+        if existing is not None:
+            return _reuse(existing, notes)
+
+        approval_id = f"appr-{uuid4().hex[:12]}"
+        sim_correction_id = f"simcorr-{uuid4().hex[:12]}"
+        delta_paise = int(corr["proposed_delta_paise"])
+        account_code = (
+            str(corr["account_code"]) if corr["account_code"] else "2100-MERCHANT-SETTLEMENT"
+        )
+        target_ledger_id = (
+            str(corr["target_ledger_entry_id"]) if corr["target_ledger_entry_id"] else None
         )
 
-    proof_hash = str(proof["canonical_hash"])
-
-    # Fetch draft correction preview
-    corr_rows = db.query_all(
-        "SELECT * FROM corrections WHERE proof_id = ? ORDER BY rowid DESC LIMIT 1",
-        (proof_id,),
-    )
-    if not corr_rows:
-        raise ValueError(f"no dry-run correction exists for proof {proof_id!r}")
-    corr = corr_rows[0]
-
-    # 5. Handle APPROVAL & APPLICATION
-    key = idempotency_key or f"simcorr|{case_id}|{proof_hash}"
-
-    # Check for existing applied correction with this idempotency key
-    existing = db.query_one("SELECT * FROM simulated_corrections WHERE idempotency_key = ?", (key,))
-    if existing is not None:
-        return SimulatedCorrectionResult(
-            correction_id=str(existing["correction_id"]),
-            case_id=str(existing["case_id"]),
-            run_id=str(existing["run_id"]),
-            proof_id=str(existing["proof_id"]),
-            approval_id=str(existing["approval_id"]),
-            status=CorrectionStatus.SIMULATED_APPLIED.value,
-            target_ledger_entry_id=str(existing["target_ledger_entry_id"])
-            if existing["target_ledger_entry_id"]
-            else None,
-            account_code=str(existing["account_code"]),
-            delta_paise=int(existing["delta_paise"]),
-            applied_at_utc=str(existing["applied_at_utc"]),
-            reused=True,
-            notes=notes,
-        ).to_dict()
-
-    approval_id = f"appr-{uuid4().hex[:12]}"
-    sim_correction_id = f"simcorr-{uuid4().hex[:12]}"
-    now_utc = datetime.now(UTC).isoformat()
-    delta_paise = int(corr["proposed_delta_paise"])
-    account_code = str(corr["account_code"]) if corr["account_code"] else "2100-MERCHANT-SETTLEMENT"
-    target_ledger_id = (
-        str(corr["target_ledger_entry_id"]) if corr["target_ledger_entry_id"] else None
-    )
-
-    with db.transaction():
-        # Insert approval record
         db.execute(
             "INSERT INTO approvals ("
             "approval_id, case_id, proof_id, reviewer_id, action, notes, approved_at_utc"
@@ -182,7 +236,6 @@ def apply_simulated_correction(
             },
         )
 
-        # Insert simulated correction entry
         db.execute(
             "INSERT INTO simulated_corrections ("
             "correction_id, case_id, run_id, proof_id, approval_id, target_ledger_entry_id, "
@@ -202,7 +255,6 @@ def apply_simulated_correction(
             ),
         )
 
-        # Update case and draft correction statuses
         db.execute(
             "UPDATE cases SET status = ? WHERE case_id = ?",
             (CaseStatus.SIMULATED_APPLIED.value, case_id),
@@ -212,7 +264,6 @@ def apply_simulated_correction(
             (CorrectionStatus.SIMULATED_APPLIED.value, str(corr["correction_id"])),
         )
 
-        # Append audit record
         record_audit_event(
             db=db,
             actor=ActorType.SYSTEM,

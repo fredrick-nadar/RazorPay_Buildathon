@@ -40,6 +40,7 @@ from app.corrections.authority import classify_authority
 from app.domain.enums import BatchStatus
 from app.graph.evidence import build_evidence_graph
 from app.importers.ingest import IngestResult, ingest_inputs
+from app.importers.session_staging import load_snapshot_provenance
 from app.investigator.engine import investigate_cases
 from app.persistence.database import Database
 from app.reconciliation.detectors import ReconciliationResult, reconcile
@@ -49,7 +50,7 @@ from app.verifier.engine import CaseVerification, VerificationOutcome, verify_ca
 from app.verifier.proof import verifier_manifest_fingerprint
 
 NORMALIZER_VERSION = "normalizer-v1"
-RUN_KEY_VERSION = "run-v2"
+RUN_KEY_VERSION = "run-v3"
 DEFAULT_TENANT = "argus-demo"
 ProgressCallback = Callable[[str], None]
 
@@ -77,34 +78,34 @@ def compute_idempotency_key(
     mode: str = "rules-only",
     provider_id: str = "none",
     policy_fingerprint: str = "none",
+    input_provenance_fingerprint: str | None = None,
 ) -> str:
     if mode == "agent":
-        material = "|".join(
-            (
-                # Bumped with the investigator execution policy so a corrected
-                # deadline policy cannot reuse a timed-out agent result.
-                "run-v4-agent",
-                DEFAULT_TENANT,
-                inputs_fingerprint,
-                NORMALIZER_VERSION,
-                _rule_manifest_fingerprint(),
-                verifier_manifest_fingerprint(),
-                mode,
-                provider_id,
-                policy_fingerprint,
-            )
-        )
+        parts = [
+            # Bumped with the investigator execution policy so a corrected
+            # deadline policy cannot reuse a timed-out agent result.
+            "run-v5-agent",
+            DEFAULT_TENANT,
+            inputs_fingerprint,
+            NORMALIZER_VERSION,
+            _rule_manifest_fingerprint(),
+            verifier_manifest_fingerprint(),
+            mode,
+            provider_id,
+            policy_fingerprint,
+        ]
     else:
-        material = "|".join(
-            (
-                RUN_KEY_VERSION,
-                DEFAULT_TENANT,
-                inputs_fingerprint,
-                NORMALIZER_VERSION,
-                _rule_manifest_fingerprint(),
-                verifier_manifest_fingerprint(),
-            )
-        )
+        parts = [
+            RUN_KEY_VERSION,
+            DEFAULT_TENANT,
+            inputs_fingerprint,
+            NORMALIZER_VERSION,
+            _rule_manifest_fingerprint(),
+            verifier_manifest_fingerprint(),
+        ]
+    if input_provenance_fingerprint:
+        parts.extend(("input-provenance-v1", input_provenance_fingerprint))
+    material = "|".join(parts)
     return sha256(material.encode("utf-8")).hexdigest()
 
 
@@ -672,6 +673,7 @@ def _runtime_output(
 
 def _compute_run_outputs(
     ingest: IngestResult,
+    run_id: str,
     mode: str = "rules-only",
     provider: Any = None,
     progress_callback: ProgressCallback | None = None,
@@ -686,7 +688,7 @@ def _compute_run_outputs(
     """Pure computation shared by the normal and forced-replacement paths."""
     if progress_callback:
         progress_callback("DETERMINISTIC_RECONCILIATION")
-    result = reconcile(ingest.records)
+    result = _scope_reconciliation_to_run(reconcile(ingest.records), run_id)
     if progress_callback:
         progress_callback("DETERMINISTIC_VERIFICATION")
     verification = verify_cases(ingest.records, list(result.cases))
@@ -763,6 +765,23 @@ def _compute_run_outputs(
     return verified, totals, graph.to_json(), econ_hash, verification, investigation_summary
 
 
+def _scope_reconciliation_to_run(result: ReconciliationResult, run_id: str) -> ReconciliationResult:
+    """Make database-primary output IDs unique to their immutable run."""
+
+    def scoped(kind: str, value: str) -> str:
+        return f"{kind}-{sha256(f'{run_id}|{value}'.encode()).hexdigest()[:12]}"
+
+    return ReconciliationResult(
+        matches=tuple(
+            replace(group, match_id=scoped("match", group.match_id)) for group in result.matches
+        ),
+        cases=tuple(replace(case, case_id=scoped("case", case.case_id)) for case in result.cases),
+        matched_record_keys=result.matched_record_keys,
+        case_evidence_keys=result.case_evidence_keys,
+        unaccounted_record_keys=result.unaccounted_record_keys,
+    )
+
+
 def _persist_completed_run(
     database: Database,
     run_id: str,
@@ -797,6 +816,7 @@ def _persist_completed_run(
     )
     _persist_ingest(database, run_id, ingest)
     _persist_reconciliation(database, run_id, result, verification, now_iso)
+    _record_input_provenance_audit(database, run_id, summary["source_provenance"], now_iso)
 
     # Append-only cryptographic audit event chain (PRD §6.12, §11.4)
     from app.audit.service import record_audit_event
@@ -815,7 +835,6 @@ def _persist_completed_run(
         run_id=run_id,
         timestamp_utc=now_iso,
     )
-
     denom = max(ingest.accepted_count, 1)
     rate_str = f"{(result.matched_record_count / denom * 100):.1f}%"
     record_audit_event(
@@ -831,7 +850,6 @@ def _persist_completed_run(
         run_id=run_id,
         timestamp_utc=now_iso,
     )
-
     if result.cases:
         record_audit_event(
             db=database,
@@ -878,6 +896,43 @@ def _persist_completed_run(
     )
 
 
+def _record_input_provenance_audit(
+    database: Database, run_id: str, provenance: dict[str, Any], timestamp_utc: str
+) -> None:
+    """Bind the run audit to the same minimized source manifest stored in its summary."""
+    from app.audit.service import record_audit_event
+
+    event_id = (
+        "evt-src-"
+        + sha256(f"{run_id}|{provenance.get('manifest_fingerprint')}".encode()).hexdigest()[:20]
+    )
+    if database.query_one("SELECT event_id FROM audit_log WHERE event_id = ?", (event_id,)):
+        return
+    record_audit_event(
+        db=database,
+        actor="SYSTEM_INGEST_PIPELINE",
+        action="RUN_INPUT_PROVENANCE_BOUND",
+        payload={
+            "manifest_present": provenance["manifest_present"],
+            "manifest_fingerprint": provenance["manifest_fingerprint"],
+            "contains_synthetic_demo": provenance["contains_synthetic_demo"],
+            "production_eligible": False,
+            "sources": [
+                {
+                    "source_type": row["source_type"],
+                    "revision_id": row["revision_id"],
+                    "origin": row["origin"],
+                    "canonical_sha256": row["canonical_sha256"],
+                }
+                for row in provenance["sources"]
+            ],
+        },
+        run_id=run_id,
+        timestamp_utc=timestamp_utc,
+        event_id=event_id,
+    )
+
+
 def execute_run(
     inputs_dir: Path,
     database: Database,
@@ -906,6 +961,7 @@ def execute_run(
     ingest_started = started_clock
 
     ingest = ingest_inputs(inputs_dir)
+    source_provenance = load_snapshot_provenance(inputs_dir)
     ingest_elapsed = time.perf_counter() - ingest_started
 
     if mode == "agent" and provider is None:
@@ -930,6 +986,7 @@ def execute_run(
         mode=mode,
         provider_id=provider_id,
         policy_fingerprint=policy_fingerprint,
+        input_provenance_fingerprint=source_provenance["manifest_fingerprint"],
     )
     run_id = f"run-{key[:16]}"
     existing = find_run(database, run_id)
@@ -950,6 +1007,7 @@ def execute_run(
         # an in-transaction failure rolls back to the previous result.
         result, totals, graph_json, econ_hash, verification, inv_summary = _compute_run_outputs(
             ingest,
+            run_id,
             mode=mode,
             provider=provider_obj,
             progress_callback=progress_callback,
@@ -978,6 +1036,7 @@ def execute_run(
         summary["run_id"] = run_id
         summary["idempotency_key"] = key
         summary["inputs_fingerprint"] = ingest.inputs_fingerprint
+        summary["source_provenance"] = source_provenance
         with database.transaction():
             delete_run_rows(database, run_id)
             _persist_completed_run(
@@ -1038,6 +1097,7 @@ def execute_run(
         reconcile_started = time.perf_counter()
         result, totals, graph_json, econ_hash, verification, inv_summary = _compute_run_outputs(
             ingest,
+            run_id,
             mode=mode,
             provider=provider_obj,
             progress_callback=progress_callback,
@@ -1070,18 +1130,21 @@ def execute_run(
         summary["run_id"] = run_id
         summary["idempotency_key"] = key
         summary["inputs_fingerprint"] = ingest.inputs_fingerprint
+        summary["source_provenance"] = source_provenance
         finished_at = _iso(_utc_now())
-        database.execute(
-            "UPDATE runs SET status = ?, economic_output_hash = ?,"
-            " finished_at_utc = ?, summary_json = ? WHERE run_id = ?",
-            (
-                BatchStatus.COMPLETED.value,
-                econ_hash,
-                finished_at,
-                json.dumps(summary, sort_keys=True),
-                run_id,
-            ),
-        )
+        with database.transaction():
+            database.execute(
+                "UPDATE runs SET status = ?, economic_output_hash = ?,"
+                " finished_at_utc = ?, summary_json = ? WHERE run_id = ?",
+                (
+                    BatchStatus.COMPLETED.value,
+                    econ_hash,
+                    finished_at,
+                    json.dumps(summary, sort_keys=True),
+                    run_id,
+                ),
+            )
+            _record_input_provenance_audit(database, run_id, source_provenance, finished_at)
         if progress_callback:
             progress_callback("COMPLETED")
         return RunResult(

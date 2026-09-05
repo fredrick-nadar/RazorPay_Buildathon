@@ -3,42 +3,66 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.audit.service import get_audit_trail
-from app.corrections.application import apply_simulated_correction
+from app.corrections.application import (
+    AuthorityConflictError,
+    ProofIdentityError,
+    apply_simulated_correction,
+)
 from app.domain.enums import ApprovalDecision
+from app.graph.provenance import resolve_case_evidence_provenance
 from app.persistence.database import Database
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/cases", tags=["cases"])
 
 
 class ApprovalPayload(BaseModel):
+    # The proof the reviewer actually saw. The dashboard already sent this
+    # field and Pydantic discarded it, so an approval was applied against
+    # whatever proof happened to be latest and a human could authorize a
+    # proposal they never reviewed. It is now required and enforced.
+    proof_id: str = Field(min_length=1, description="Proof the reviewer is deciding on")
+    run_id: str = Field(min_length=1, description="Run containing the reviewed case")
     reviewer_id: str = Field(default="reviewer-finance-ops", description="Reviewer identifier")
     notes: str = Field(default="", description="Reviewer explanation or approval note")
 
 
-@router.get("/{case_id}")
-def get_case_detail(case_id: str, request: Request) -> dict[str, Any]:
-    db: Database = request.app.state.db
-
+def _require_case(db: Database, case_id: str, run_id: str | None) -> Any:
+    """Resolve a case, optionally asserting it belongs to the selected run."""
     case_row = db.query_one("SELECT * FROM cases WHERE case_id = ?", (case_id,))
     if case_row is None:
         raise HTTPException(status_code=404, detail=f"case {case_id!r} not found")
+    if run_id is not None and str(case_row["run_id"]) != run_id:
+        # A cross-run request is a selection error, not an empty result.
+        raise HTTPException(status_code=409, detail="CASE_RUN_MISMATCH")
+    return case_row
 
-    evidence_rows = db.query_all(
-        "SELECT record_type, record_id, note FROM case_evidence WHERE case_id = ?", (case_id,)
-    )
+
+@router.get("/{case_id}")
+def get_case_detail(
+    case_id: str,
+    request: Request,
+    run_id: str | None = Query(
+        default=None, description="Assert the case belongs to this run before returning it"
+    ),
+) -> dict[str, Any]:
+    db: Database = request.app.state.db
+
+    case_row = _require_case(db, case_id, run_id)
+    case_run_id = str(case_row["run_id"])
+
+    # Evidence citations resolve to their immutable source rows, so the dossier
+    # and the trace can show revision, hash and provenance, not just a bare id.
     evidence = [
-        {
-            "record_type": str(e["record_type"]),
-            "record_id": str(e["record_id"]),
-            "note": str(e["note"]) if e["note"] else None,
-        }
-        for e in evidence_rows
+        item.to_dict() for item in resolve_case_evidence_provenance(db, case_id, case_run_id)
     ]
 
     hypotheses_rows = db.query_all(
@@ -151,7 +175,7 @@ def get_case_detail(case_id: str, request: Request) -> dict[str, Any]:
     return {
         "case": {
             "case_id": case_id,
-            "run_id": str(case_row["run_id"]),
+            "run_id": case_run_id,
             "category": str(case_row["category_candidate"]),
             "status": str(case_row["status"]),
             "variance_paise": int(case_row["variance_paise"]),
@@ -174,44 +198,61 @@ def get_case_detail(case_id: str, request: Request) -> dict[str, Any]:
     }
 
 
-@router.post("/{case_id}/approve")
-def approve_case(case_id: str, payload: ApprovalPayload, request: Request) -> dict[str, Any]:
-    db: Database = request.app.state.db
+def _decide(
+    db: Database,
+    case_id: str,
+    payload: ApprovalPayload,
+    action: ApprovalDecision,
+) -> dict[str, Any]:
+    """Record one human authority decision, bound to the reviewed proof."""
     try:
-        res = apply_simulated_correction(
+        return apply_simulated_correction(
             db=db,
             case_id=case_id,
             reviewer_id=payload.reviewer_id,
-            action=ApprovalDecision.APPROVED,
+            action=action,
             notes=payload.notes,
+            expected_proof_id=payload.proof_id,
+            expected_run_id=payload.run_id,
         )
-        return res
+    except ProofIdentityError as exc:
+        # The reviewed proposal is no longer the current one. Refuse rather
+        # than retarget the decision; the client must reload and decide again.
+        raise HTTPException(status_code=409, detail="PROOF_SUPERSEDED") from exc
+    except AuthorityConflictError as exc:
+        raise HTTPException(status_code=409, detail="AUTHORITY_ALREADY_DECIDED") from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        # Raw exception text never reaches a client; the log keeps the detail.
+        logger.exception("authority decision failed for case %s", case_id)
+        raise HTTPException(status_code=500, detail="AUTHORITY_DECISION_FAILED") from exc
+
+
+@router.post("/{case_id}/approve")
+def approve_case(case_id: str, payload: ApprovalPayload, request: Request) -> dict[str, Any]:
+    return _decide(request.app.state.db, case_id, payload, ApprovalDecision.APPROVED)
 
 
 @router.post("/{case_id}/reject")
 def reject_case(case_id: str, payload: ApprovalPayload, request: Request) -> dict[str, Any]:
-    db: Database = request.app.state.db
-    try:
-        res = apply_simulated_correction(
-            db=db,
-            case_id=case_id,
-            reviewer_id=payload.reviewer_id,
-            action=ApprovalDecision.REJECTED,
-            notes=payload.notes,
-        )
-        return res
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return _decide(request.app.state.db, case_id, payload, ApprovalDecision.REJECTED)
 
 
 @router.get("/{case_id}/audit")
-def get_case_audit(case_id: str, request: Request) -> list[dict[str, Any]]:
+def get_case_audit(
+    case_id: str,
+    request: Request,
+    run_id: str | None = Query(
+        default=None, description="Assert the case belongs to this run before returning events"
+    ),
+) -> list[dict[str, Any]]:
+    """Return this case's append-only events in authoritative order.
+
+    Fails closed on an unknown case, and on a case that does not belong to the
+    asserted run, so an empty trail always means "no events recorded".
+    """
     db: Database = request.app.state.db
-    events = get_audit_trail(db=db, case_id=case_id)
+    case_row = _require_case(db, case_id, run_id)
+    events = get_audit_trail(db=db, case_id=case_id, run_id=str(case_row["run_id"]))
     return [e.to_dict() for e in events]

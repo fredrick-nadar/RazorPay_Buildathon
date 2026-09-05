@@ -1,15 +1,24 @@
-"""Automated MDR & GST Fee Variance Reconciler for ARGUS CONTROL.
+"""Automated MDR & GST fee variance reconciler for ARGUS CONTROL.
 
-Audits gateway fee deductions and GST taxes down to exact signed integer paise
-against contractual merchant rate cards. Zero float arithmetic.
+Audits gateway fee and tax deductions down to exact signed integer paise
+against the CONFIGURED SYNTHETIC merchant fee policy in
+:mod:`app.domain.fee_policy`. Zero float arithmetic. The policy that produced
+the figures is returned with them, so a reader can always see the basis of a
+reported variance and that the basis is synthetic rather than Razorpay pricing.
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.domain.fee_policy import FeePolicy
 from app.domain.money import require_paise
 from app.persistence.database import Database
+
+# The response carries at most this many line items. The summary declares both
+# the audited population and how many rows were returned, so a truncated page
+# is never mistaken for the whole audit.
+MAX_RETURNED_ITEMS = 100
 
 
 class FeeAuditItem(BaseModel):
@@ -17,10 +26,10 @@ class FeeAuditItem(BaseModel):
     record_type: str  # payment, settlement, refund
     gross_amount_paise: int
     contractual_mdr_bps: int = Field(
-        default=200, description="Contractual MDR in basis points (200 = 2.00%)"
+        description="Synthetic policy MDR in basis points (200 = 2.00%)"
     )
     contractual_gst_bps: int = Field(
-        default=1800, description="GST on fees in basis points (1800 = 18.00%)"
+        description="Synthetic policy GST on fees in basis points (1800 = 18.00%)"
     )
     expected_fee_paise: int
     expected_gst_paise: int
@@ -47,21 +56,30 @@ class RunFeeAuditSummary(BaseModel):
     net_leakage_paise: int
     audited_records_count: int
     anomalous_records_count: int
+    items_returned_count: int = Field(default=0, description="Line items present in this response")
+    items_truncated: bool = Field(
+        default=False, description="True when the audited population exceeds the returned items"
+    )
+    policy: dict[str, object] = Field(
+        default_factory=dict,
+        description="Configured synthetic merchant fee policy that produced these figures",
+    )
     items: list[FeeAuditItem] = Field(default_factory=list)
 
 
-def audit_run_fees(
-    db: Database,
-    run_id: str,
-    contractual_mdr_bps: int = 200,
-    contractual_gst_bps: int = 1800,
-) -> RunFeeAuditSummary:
+def audit_run_fees(db: Database, run_id: str, policy: FeePolicy) -> RunFeeAuditSummary:
     """Audit fee and tax deductions for all normalized payments in a run.
 
+    ``policy`` is resolved from configuration by the caller; this function has
+    no rate defaults of its own, so an audit can never silently fall back to an
+    unidentified basis.
+
     Uses exact integer paise arithmetic:
-        expected_mdr = (gross_paise * mdr_bps + 5000) // 10000 (standard rounding to nearest paise)
+        expected_mdr = (gross_paise * mdr_bps + 5000) // 10000 (half-up to nearest paise)
         expected_gst = (expected_mdr * gst_bps + 5000) // 10000
     """
+    contractual_mdr_bps = policy.mdr_bps
+    contractual_gst_bps = policy.gst_on_fee_bps
     payments = db.query_all(
         "SELECT payment_id, gross_amount_paise, fee_paise, tax_paise "
         "FROM norm_payments "
@@ -90,8 +108,8 @@ def audit_run_fees(
         act_total = act_fee + act_gst
         variance = act_total - exp_total
 
-        # Anomaly if variance > 50 paise (tolerance for micro rounding)
-        is_anomaly = abs(variance) > 50
+        # Anomaly once the deviation exceeds the policy's declared tolerance.
+        is_anomaly = abs(variance) > policy.tolerance_paise
         reason = None
         if is_anomaly:
             if variance > 0:
@@ -142,5 +160,8 @@ def audit_run_fees(
         net_leakage_paise=net_leakage,
         audited_records_count=len(items),
         anomalous_records_count=anomalies_count,
-        items=items[:100],  # Return up to top 100 items in API response
+        items_returned_count=min(len(items), MAX_RETURNED_ITEMS),
+        items_truncated=len(items) > MAX_RETURNED_ITEMS,
+        policy=policy.to_dict(),
+        items=items[:MAX_RETURNED_ITEMS],
     )

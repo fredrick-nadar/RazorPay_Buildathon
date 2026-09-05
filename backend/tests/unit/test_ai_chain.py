@@ -62,7 +62,7 @@ class TestChainResolution:
         settings = Settings(
             _env_file=None,
             ai_provider="groq",
-            groq_api_key="gsk_test_only",
+            groq_api_key="synthetic_test_only",
             groq_investigator_model="openai/gpt-oss-20b",
         )
         chain = build_chain(settings)
@@ -74,7 +74,7 @@ class TestChainResolution:
         settings = Settings(
             _env_file=None,
             ai_provider="auto",
-            groq_api_key="gsk_test_only",
+            groq_api_key="synthetic_test_only",
             openai_api_key="sk-test-only",
         )
         assert build_chain(settings).member_ids[:2] == ["groq", "openai"]
@@ -158,11 +158,11 @@ class TestBackends:
             body: bytes,
             timeout_s: float = 11.0,
         ) -> tuple[int, bytes]:
-            return 500, b"gateway echoed gsk_secret_that_must_not_persist"
+            return 500, b"gateway echoed synthetic_secret_that_must_not_persist"
 
         backend = OpenAICompatBackend(
             "groq",
-            api_key="gsk_test_only",
+            api_key="synthetic_test_only",
             model="openai/gpt-oss-20b",
             base_url="https://api.groq.com/openai/v1",
             transport=transport,
@@ -172,7 +172,7 @@ class TestBackends:
         with pytest.raises(LLMError) as exc_info:
             backend.chat("s", "u")
         assert exc_info.value.retryable is True
-        assert "gsk_secret" not in str(exc_info.value)
+        assert "synthetic_secret" not in str(exc_info.value)
 
 
 class TestChainFallback:
@@ -234,7 +234,7 @@ class TestChainFallback:
 
         groq = OpenAICompatBackend(
             "groq",
-            api_key="gsk_test_only",
+            api_key="synthetic_test_only",
             model="openai/gpt-oss-20b",
             base_url="https://api.groq.com/openai/v1",
             transport=transport,
@@ -250,7 +250,7 @@ class TestInvestigatorSelection:
             Settings(
                 _env_file=None,
                 ai_provider="groq",
-                groq_api_key="gsk_test_only",
+                groq_api_key="synthetic_test_only",
             ),
             "agent",
         )
@@ -267,7 +267,7 @@ class TestInvestigatorSelection:
             Settings(
                 _env_file=None,
                 ai_provider="groq",
-                groq_api_key="gsk_test_only",
+                groq_api_key="synthetic_test_only",
             ),
             "agent",
             transport=transport,
@@ -277,7 +277,7 @@ class TestInvestigatorSelection:
         response = provider.chain.chat("system", "user", json_mode=True)  # type: ignore[attr-defined]
         assert response.provider_id == "groq"
         assert calls[0]["url"] == "https://api.groq.com/openai/v1/chat/completions"
-        assert calls[0]["headers"]["Authorization"] == "Bearer gsk_test_only"
+        assert calls[0]["headers"]["Authorization"] == "Bearer synthetic_test_only"
         assert calls[0]["body"]["response_format"] == {"type": "json_object"}
 
     def test_missing_live_provider_never_silently_becomes_fake(self) -> None:

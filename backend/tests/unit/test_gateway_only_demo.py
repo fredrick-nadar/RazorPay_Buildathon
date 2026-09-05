@@ -167,6 +167,119 @@ def test_separate_uploads_readiness_idempotency_and_snapshot_counts(
         assert restored["counts"] == before["counts"]
 
 
+def test_run_identity_dossier_and_audit_bind_source_provenance(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    app = create_app(settings)
+    with TestClient(app) as client:
+        import_id = _seed(app.state.db)
+        bundle = build_demo_evidence(
+            import_id=import_id, payments=[PAYMENT], refunds=[], include_merchant_sources=True
+        )
+        client.post(
+            f"/api/v1/razorpay/imports/{import_id}/generate-gateway-evidence",
+            json={"session_id": SESSION},
+        ).raise_for_status()
+        for source in ("bank_entries", "ledger_entries"):
+            _upload(client, source, bundle["files"][f"{source}.csv"])
+
+        first = client.post(
+            "/api/v1/ingest/reconcile-session", json={"session_id": SESSION, "mode": "rules-only"}
+        )
+        assert first.status_code == 200, first.text
+        first_result = first.json()
+        provenance = first_result["summary"]["source_provenance"]
+        origins = {item["source_type"]: item["origin"] for item in provenance["sources"]}
+        assert provenance["contains_synthetic_demo"] is True
+        assert provenance["production_eligible"] is False
+        assert origins == {
+            "bank_entries": "MANUAL_CSV",
+            "ledger_entries": "MANUAL_CSV",
+            "payments": "SYNTHETIC_DEMO",
+            "refunds": "SYNTHETIC_DEMO",
+            "settlements": "SYNTHETIC_DEMO",
+        }
+
+        dossier = client.get(f"/api/v1/runs/{first_result['run_id']}/dossier")
+        assert dossier.status_code == 200, dossier.text
+        assert dossier.json()["provenance"]["source_manifest"] == provenance
+        audit = client.get(f"/api/v1/runs/{first_result['run_id']}/audit").json()
+        bound = [item for item in audit if item["action"] == "RUN_INPUT_PROVENANCE_BOUND"]
+        assert len(bound) == 1
+        assert bound[0]["payload"]["manifest_fingerprint"] == provenance["manifest_fingerprint"]
+
+        first_case_ids = {
+            row["case_id"]
+            for row in app.state.db.query_all(
+                "SELECT case_id FROM cases WHERE run_id = ?", (first_result["run_id"],)
+            )
+        }
+        first_match_ids = {
+            row["match_id"]
+            for row in app.state.db.query_all(
+                "SELECT match_id FROM match_groups WHERE run_id = ?", (first_result["run_id"],)
+            )
+        }
+        assert first_case_ids
+        assert first_match_ids
+        case_detail = client.get(
+            f"/api/v1/cases/{next(iter(first_case_ids))}",
+            params={"run_id": first_result["run_id"]},
+        )
+        assert case_detail.status_code == 200, case_detail.text
+        assert all(
+            item["source_revision_id"] and item["source_origin"]
+            for item in case_detail.json()["case"]["evidence"]
+        )
+
+        restored = client.get(
+            f"/api/v1/razorpay/imports/{import_id}", params={"session_id": SESSION}
+        ).json()["demo_evidence"]
+        assert restored["input_counts"]["refunds_excluded"] == 0
+        assert restored["synthetic_policy"]["policy_id"] == "argus-demo-settlement-v1"
+
+        # Identical financial bytes with different evidence origins are a new
+        # run identity, while the deterministic economic result stays equal.
+        for source in ("payments", "settlements"):
+            _upload(client, source, bundle["files"][f"{source}.csv"])
+        session_dir = resolve_session_dir(settings, SESSION, create=False)
+        stage_source_revision(
+            session_dir=session_dir,
+            source_type="refunds",
+            original_filename="manual-empty-refunds.csv",
+            raw_content=bundle["files"]["refunds.csv"],
+            canonical_csv=bundle["files"]["refunds.csv"],
+            accepted_count=0,
+            quarantined_count=0,
+            origin="MANUAL_CSV",
+        )
+        second = client.post(
+            "/api/v1/ingest/reconcile-session", json={"session_id": SESSION, "mode": "rules-only"}
+        )
+        assert second.status_code == 200, second.text
+        second_result = second.json()
+        assert second_result["run_id"] != first_result["run_id"]
+        assert second_result["economic_output_hash"] == first_result["economic_output_hash"]
+        assert not second_result["summary"]["source_provenance"]["contains_synthetic_demo"]
+        assert {
+            row["case_id"]
+            for row in app.state.db.query_all(
+                "SELECT case_id FROM cases WHERE run_id = ?", (first_result["run_id"],)
+            )
+        } == first_case_ids
+        assert {
+            row["match_id"]
+            for row in app.state.db.query_all(
+                "SELECT match_id FROM match_groups WHERE run_id = ?", (first_result["run_id"],)
+            )
+        } == first_match_ids
+        assert not first_case_ids.intersection(
+            row["case_id"]
+            for row in app.state.db.query_all(
+                "SELECT case_id FROM cases WHERE run_id = ?", (second_result["run_id"],)
+            )
+        )
+
+
 def _seed_v6(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[str, str, dict[str, Any]]:

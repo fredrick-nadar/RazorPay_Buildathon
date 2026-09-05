@@ -245,10 +245,19 @@ def test_stale_proof_and_duplicate_approval_rejection(tmp_path: Path) -> None:
     db = Database(db_path)
 
     run = execute_run(dev_inputs, db, mode="rules-only")
-    case_rows = db.query_all("SELECT case_id FROM cases WHERE run_id = ?", (run.run_id,))
+    case_rows = db.query_all(
+        "SELECT case_id FROM cases WHERE run_id = ? AND status = 'APPROVAL_REQUIRED'",
+        (run.run_id,),
+    )
     assert len(case_rows) > 0
 
     target_case_id = case_rows[0]["case_id"]
+    proof = db.query_one(
+        "SELECT proof_id FROM proofs WHERE case_id = ? ORDER BY rowid DESC LIMIT 1",
+        (target_case_id,),
+    )
+    assert proof is not None
+    proof_id = str(proof["proof_id"])
 
     # 1. Nonexistent/unverified proof rejection
     with pytest.raises(ValueError) as exc_info:
@@ -258,6 +267,8 @@ def test_stale_proof_and_duplicate_approval_rejection(tmp_path: Path) -> None:
             action=ApprovalDecision.APPROVED,
             reviewer_id="reviewer-test",
             notes="Attempting approval without passing proof",
+            expected_proof_id="proof-not-current",
+            expected_run_id=run.run_id,
         )
     assert "must be pass" in str(exc_info.value).lower() or "proof" in str(exc_info.value).lower()
 
@@ -268,6 +279,8 @@ def test_stale_proof_and_duplicate_approval_rejection(tmp_path: Path) -> None:
         action=ApprovalDecision.REJECTED,
         reviewer_id="reviewer-test",
         notes="Rejected by controller due to ambiguity",
+        expected_proof_id=proof_id,
+        expected_run_id=run.run_id,
     )
     assert rej_result["status"] in ("REJECTED", "UNRESOLVED")
     assert "approval_id" in rej_result

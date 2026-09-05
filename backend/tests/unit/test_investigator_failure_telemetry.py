@@ -30,7 +30,7 @@ from app.investigator.tools import ToolDispatcher
 from app.verifier.snapshot import build_evidence_snapshot
 from tests.unit.test_investigator_engine import _make_duplicate_ledger_fixtures
 
-SENTINEL = "gsk_sentinel_that_must_never_be_persisted"
+SENTINEL = "synthetic_sentinel_that_must_never_be_persisted"
 
 ZERO_TOOL_FINAL = json.dumps(
     {

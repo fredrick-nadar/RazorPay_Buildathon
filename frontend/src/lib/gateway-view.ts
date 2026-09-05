@@ -53,6 +53,11 @@ export interface GatewayDemoEvidence {
   active_demo_sources: string[];
   superseded_sources: string[];
   expected_sources: string[];
+  input_counts?: {
+    refunds_excluded: number;
+  } | null;
+  refund_exclusions?: Array<{ refund_id: string; reason: string }>;
+  synthetic_policy?: { policy_id: string; notice: string } | null;
 }
 
 /** POST /api/v1/razorpay/sync - a fresh, request-scoped credentialed import. */
@@ -265,13 +270,17 @@ const DEMO_HEADINGS: Record<DemoActivationState, string> = {
 
 function demoBody(evidence: GatewayDemoEvidence): string {
   const generated = `Generated ${evidence.created_at_utc}.`;
+  const exclusions = evidence.input_counts?.refunds_excluded
+    ? ` ${evidence.input_counts.refunds_excluded} refund record(s) were excluded with recorded reasons.`
+    : "";
   switch (evidence.activation_state) {
     case "ACTIVE":
       if (evidence.scope === "GATEWAY_ONLY") {
         return (
           `${generated} ${evidence.active_demo_sources.length} synthetic gateway sources active: ` +
           "payments, refunds and settlements. No bank or merchant ledger file was generated or replaced. " +
-          "Upload those separately. Official API counts are unchanged; this is not Razorpay-issued settlement evidence."
+          "Upload those separately. Official API counts are unchanged; this is not Razorpay-issued settlement evidence." +
+          exclusions
         );
       }
       return (

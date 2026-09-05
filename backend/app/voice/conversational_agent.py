@@ -42,14 +42,28 @@ def _get_api_key_from_env_local(key_names: Sequence[str]) -> str | None:
     return None
 
 
-def _gather_live_financial_context(db: Database) -> dict[str, Any]:
-    """Extract complete real numbers, runs, cases, and facts from SQLite to ground Groq."""
+def _gather_live_financial_context(db: Database, scope_run_id: str | None = None) -> dict[str, Any]:
+    """Extract run-scoped facts from SQLite to ground the copilot.
+
+    ``scope_run_id`` is the run the operator currently has selected. Without it
+    this helper always read the newest run, so the answer could describe a
+    different batch than the one on screen. An unknown ``scope_run_id`` scopes
+    to nothing rather than silently falling back to the newest run.
+    """
     try:
         runs = [dict(r) for r in db.query_all("SELECT * FROM runs ORDER BY rowid DESC")]
     except Exception:
         runs = []
 
-    latest_run_id = str(runs[0]["run_id"]) if runs else None
+    if scope_run_id is not None:
+        scoped = [run for run in runs if str(run.get("run_id")) == scope_run_id]
+        active_run: dict[str, Any] | None = scoped[0] if scoped else None
+        scope_resolution = "SELECTED_RUN" if scoped else "SELECTED_RUN_NOT_FOUND"
+    else:
+        active_run = runs[0] if runs else None
+        scope_resolution = "LATEST_RUN" if runs else "NO_RUN"
+
+    latest_run_id = str(active_run["run_id"]) if active_run is not None else None
     cases = (
         [
             dict(r)
@@ -62,9 +76,17 @@ def _gather_live_financial_context(db: Database) -> dict[str, Any]:
     )
 
     try:
-        audit_events = [
-            dict(r) for r in db.query_all("SELECT * FROM audit_log ORDER BY rowid DESC LIMIT 8")
-        ]
+        audit_events = (
+            [
+                dict(r)
+                for r in db.query_all(
+                    "SELECT * FROM audit_log WHERE run_id = ? ORDER BY rowid DESC LIMIT 8",
+                    (latest_run_id,),
+                )
+            ]
+            if latest_run_id is not None
+            else []
+        )
     except Exception:
         audit_events = []
 
@@ -87,8 +109,8 @@ def _gather_live_financial_context(db: Database) -> dict[str, Any]:
             table_counts[tbl] = 0
 
     # Old database snapshots may lack case rows; retain a summary-only fallback.
-    if not cases and runs:
-        raw_sum = runs[0].get("summary_json")
+    if not cases and active_run is not None:
+        raw_sum = active_run.get("summary_json")
         if raw_sum:
             try:
                 parsed_sum = json.loads(raw_sum) if isinstance(raw_sum, str) else raw_sum
@@ -110,7 +132,7 @@ def _gather_live_financial_context(db: Database) -> dict[str, Any]:
         1
         for c in cases
         if str(c.get("status") or c.get("case_status") or c.get("authority_decision"))
-        in ("RESOLVED", "VERIFIED_RESOLVED", "SIMULATED_CORRECTION")
+        in ("RESOLVED", "VERIFIED_RESOLVED", "SIMULATED_APPLIED")
     )
     pending_approval = sum(
         1
@@ -118,33 +140,45 @@ def _gather_live_financial_context(db: Database) -> dict[str, Any]:
         if str(c.get("status") or c.get("case_status") or c.get("authority_decision"))
         in ("PENDING_APPROVAL", "APPROVAL_REQUIRED")
     )
-    total_variance_paise = sum(
-        abs(int(c.get("variance_paise") or c.get("proposed_delta_paise") or 0)) for c in cases
-    )
 
-    # Deterministic Match Rate computation
+    def case_variance_paise(case: dict[str, Any]) -> int:
+        value = case.get("variance_paise")
+        if value is None:
+            value = case.get("proposed_delta_paise")
+        return int(value) if value is not None else 0
+
+    total_variance_paise = sum(abs(case_variance_paise(case)) for case in cases)
+
+    # Match rate is REPORTED, never derived here. The previous fallbacks
+    # computed (source_rows - cases) / source_rows, and then 0.0, and labelled
+    # either "deterministic_match_rate" - an invented figure presented as a
+    # measurement. Only the run's own persisted runtime_match_rate counts;
+    # when it is absent the copilot is told the metric is unavailable.
     total_source_rows = table_counts.get("source_rows", 0)
-    match_rate_pct = None
-    if runs:
-        raw_sum = runs[0].get("summary_json")
+    match_rate_numerator: int | None = None
+    match_rate_denominator: int | None = None
+    if active_run is not None:
+        raw_sum = active_run.get("summary_json")
         if raw_sum:
             try:
                 parsed_sum = json.loads(raw_sum) if isinstance(raw_sum, str) else raw_sum
                 if isinstance(parsed_sum, dict):
                     rmr = parsed_sum.get("runtime_match_rate")
-                    if isinstance(rmr, dict) and rmr.get("denominator"):
-                        match_rate_pct = round(
-                            (float(rmr["numerator"]) / float(rmr["denominator"])) * 100, 2
-                        )
-                    elif parsed_sum.get("deterministic_match_rate"):
-                        match_rate_pct = parsed_sum.get("deterministic_match_rate")
+                    if isinstance(rmr, dict):
+                        numerator = rmr.get("numerator")
+                        denominator = rmr.get("denominator")
+                        if isinstance(numerator, int) and isinstance(denominator, int):
+                            match_rate_numerator = numerator
+                            match_rate_denominator = denominator
             except Exception:
-                pass
-    if match_rate_pct is None and total_source_rows > 0:
-        matched_records = max(0, total_source_rows - total_cases)
-        match_rate_pct = round((matched_records / total_source_rows) * 100, 2)
-    elif match_rate_pct is None:
-        match_rate_pct = 0.0
+                logger.warning("run %s has an unreadable summary_json", latest_run_id)
+    match_rate_display = (
+        f"{(match_rate_numerator * 10000) // match_rate_denominator / 100:.2f}%"
+        if match_rate_numerator is not None
+        and match_rate_denominator is not None
+        and match_rate_denominator > 0
+        else "NOT_REPORTED_BY_THIS_RUN"
+    )
 
     def format_inr(paise: int) -> str:
         sign = "-" if paise < 0 else ""
@@ -153,7 +187,7 @@ def _gather_live_financial_context(db: Database) -> dict[str, Any]:
 
     case_details = []
     for c in cases[:30]:
-        v_paise = int(c.get("variance_paise") or c.get("proposed_delta_paise") or 0)
+        v_paise = case_variance_paise(c)
         case_details.append(
             {
                 "case_id": str(c.get("case_id")),
@@ -167,29 +201,40 @@ def _gather_live_financial_context(db: Database) -> dict[str, Any]:
             }
         )
 
-    run_summaries = [
-        {
-            "run_id": str(r.get("run_id")),
-            "status": str(r.get("status")),
-            "started_at": str(r.get("started_at_utc", "")),
-            "finished_at": str(r.get("finished_at_utc", "")),
-        }
-        for r in runs[:5]
-    ]
+    # Only the scoped run is offered as fact. Other runs are named so the
+    # copilot can say another batch exists, without mixing their totals in.
+    run_summaries = (
+        [
+            {
+                "run_id": str(active_run.get("run_id")),
+                "status": str(active_run.get("status")),
+                "started_at": str(active_run.get("started_at_utc", "")),
+                "finished_at": str(active_run.get("finished_at_utc", "")),
+            }
+        ]
+        if active_run is not None
+        else []
+    )
 
     return {
         "summary": {
-            "deterministic_match_rate": f"{match_rate_pct:.2f}%"
-            if isinstance(match_rate_pct, (int, float))
-            else str(match_rate_pct),
+            "scope": scope_resolution,
+            "active_run_id": latest_run_id,
+            "deterministic_match_rate": match_rate_display,
+            "match_rate_numerator": match_rate_numerator,
+            "match_rate_denominator": match_rate_denominator,
             "total_input_records": total_source_rows,
             "total_cases": total_cases,
             "unresolved_cases": unresolved_count,
             "resolved_cases": resolved_count,
             "pending_approval": pending_approval,
-            "total_variance_paise": total_variance_paise,
-            "total_variance_inr": format_inr(total_variance_paise),
-            "active_runs": len(runs),
+            "total_abs_case_variance_paise": total_variance_paise,
+            "total_abs_case_variance_inr": format_inr(total_variance_paise),
+            "persisted_run_count": len(runs),
+            "figures_scope_note": (
+                "Every figure above belongs to active_run_id only. Totals are "
+                "never combined across runs."
+            ),
         },
         "table_row_counts": table_counts,
         "runs": run_summaries,

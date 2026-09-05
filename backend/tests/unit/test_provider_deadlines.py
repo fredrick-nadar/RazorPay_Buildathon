@@ -33,7 +33,7 @@ from tests.unit.test_investigator_engine import _make_duplicate_ledger_fixtures
 def _settings(**overrides: Any) -> Settings:
     base: dict[str, Any] = {
         "ai_provider": "auto",
-        "groq_api_key": "gsk_scripted_offline_only",
+        "groq_api_key": "synthetic_scripted_offline_only",
         "sarvam_api_key": "scripted_offline_only",
         "_env_file": None,
     }
@@ -261,7 +261,7 @@ class TestFallbackWithinOneDeadline:
 class TestAttemptMetadataSafety:
     def test_attempt_metadata_carries_no_secret_or_body_content(self) -> None:
         clock = FakeClock()
-        secret = "gsk_live_secret_value_must_never_persist"
+        secret = "synthetic_live_secret_value_must_never_persist"
         transport, _calls = scripted_transport(clock, [(1.0, 500), (1.0, 500)])
         chain = build_chain(
             _settings(ai_provider="groq", groq_api_key=secret, ai_timeout_s=10.0),
@@ -324,10 +324,10 @@ class TestAttemptMetadataSafety:
 
 class TestPolicyFingerprint:
     def test_fingerprint_covers_policy_and_never_a_key(self) -> None:
-        settings = _settings(groq_api_key="gsk_secret_never_hashed")
+        settings = _settings(groq_api_key="synthetic_secret_never_hashed")
         policy = policy_from_settings(settings)
         described = json.dumps(policy.describe(), sort_keys=True)
-        assert "gsk_secret_never_hashed" not in described
+        assert "synthetic_secret_never_hashed" not in described
         assert "gsk_" not in described
         assert len(policy.fingerprint()) == 64
 
@@ -352,8 +352,8 @@ class TestPolicyFingerprint:
 
     def test_changing_only_a_key_does_not_change_the_fingerprint(self) -> None:
         """The fingerprint is policy identity, not credential identity."""
-        before = policy_from_settings(_settings(groq_api_key="gsk_one")).fingerprint()
-        after = policy_from_settings(_settings(groq_api_key="gsk_two")).fingerprint()
+        before = policy_from_settings(_settings(groq_api_key="synthetic_one")).fingerprint()
+        after = policy_from_settings(_settings(groq_api_key="synthetic_two")).fingerprint()
         assert before == after
 
     def test_provider_order_is_part_of_the_fingerprint(self) -> None:
@@ -465,7 +465,7 @@ class TestCaseWallTime:
 class TestDeadlineExhaustionIsSafe:
     def test_exhaustion_metadata_holds_no_secret_and_no_sentinel(self) -> None:
         clock = FakeClock()
-        secret = "gsk_sentinel_value_that_must_never_appear"
+        secret = "synthetic_sentinel_value_that_must_never_appear"
         transport, _calls = scripted_transport(clock, [(600.0, None), (600.0, None)])
         chain = build_chain(
             _settings(
@@ -516,7 +516,7 @@ class TestFallbackReservation:
         transport, calls = scripted_transport(clock, [(600.0, None), (3.0, '{"action": "final"}')])
         settings = Settings(
             ai_provider="auto",
-            groq_api_key="gsk_scripted_offline_only",
+            groq_api_key="synthetic_scripted_offline_only",
             sarvam_api_key="scripted_offline_only",
             _env_file=None,
         )
@@ -661,6 +661,7 @@ class TestConfigurationEdgeSemantics:
                 prompt_protocol_version="p",
                 tool_protocol_version="t",
                 result_schema_version="r",
+                provider_request_protocol_version="w",
             )
 
     @pytest.mark.parametrize(
@@ -700,8 +701,8 @@ class TestWatchdogGraceIsPolicyIdentity:
         assert "watchdog_grace_s" in low.describe()
 
     def test_rotating_a_key_still_does_not_change_the_fingerprint(self) -> None:
-        one = policy_from_settings(_settings(groq_api_key="gsk_one")).fingerprint()
-        two = policy_from_settings(_settings(groq_api_key="gsk_two")).fingerprint()
+        one = policy_from_settings(_settings(groq_api_key="synthetic_one")).fingerprint()
+        two = policy_from_settings(_settings(groq_api_key="synthetic_two")).fingerprint()
         assert one == two
 
     def test_the_fingerprint_material_is_versioned_and_non_secret(self) -> None:
@@ -822,7 +823,7 @@ class TestAttemptedMeansContacted:
 
     def test_refusal_metadata_carries_no_secret_url_or_body(self) -> None:
         clock = FakeClock()
-        secret = "gsk_refusal_sentinel_must_never_persist"
+        secret = "synthetic_refusal_sentinel_must_never_persist"
         transport, _calls = scripted_transport(clock, [(600.0, None)])
         chain = build_chain(
             _settings(
@@ -885,7 +886,7 @@ class TestEffectivePolicyReachesTheRuntime:
 
         settings = Settings(
             ai_provider="groq",
-            groq_api_key="gsk_scripted_offline_only",
+            groq_api_key="synthetic_scripted_offline_only",
             ai_timeout_s=0.2,
             investigator_turn_timeout_s=0.5,
             investigator_timeout_s=1.0,
@@ -930,7 +931,7 @@ class TestEffectivePolicyReachesTheRuntime:
 
         settings = Settings(
             ai_provider="groq",
-            groq_api_key="gsk_scripted_offline_only",
+            groq_api_key="synthetic_scripted_offline_only",
             ai_timeout_s=4.0,
             investigator_turn_timeout_s=4.0,
             investigator_timeout_s=4.0,
@@ -957,7 +958,7 @@ class TestEffectivePolicyReachesTheRuntime:
         """min_attempt_s above the cap is clamped, and the clamp propagates."""
         settings = Settings(
             ai_provider="groq",
-            groq_api_key="gsk_scripted_offline_only",
+            groq_api_key="synthetic_scripted_offline_only",
             ai_timeout_s=2.0,
             investigator_min_attempt_s=9.0,
             _env_file=None,
@@ -972,7 +973,7 @@ class TestEffectivePolicyReachesTheRuntime:
     def test_an_inverted_configuration_stays_clamped_through_selection(self) -> None:
         settings = Settings(
             ai_provider="groq",
-            groq_api_key="gsk_scripted_offline_only",
+            groq_api_key="synthetic_scripted_offline_only",
             ai_timeout_s=45.0,
             investigator_turn_timeout_s=90.0,
             investigator_timeout_s=30.0,
@@ -985,7 +986,7 @@ class TestEffectivePolicyReachesTheRuntime:
 
     def test_the_recommended_defaults_survive_the_whole_path(self) -> None:
         settings = Settings(
-            ai_provider="groq", groq_api_key="gsk_scripted_offline_only", _env_file=None
+            ai_provider="groq", groq_api_key="synthetic_scripted_offline_only", _env_file=None
         )
         policy = policy_from_settings(settings)
         assert policy.attempt_timeout_cap_s == pytest.approx(11.0)

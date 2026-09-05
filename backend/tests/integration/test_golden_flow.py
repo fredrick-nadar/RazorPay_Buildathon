@@ -56,10 +56,13 @@ def test_golden_flow_reconciliation_approval_and_audit(tmp_path: Path) -> None:
         assert detail["dry_run"] is not None
         assert detail["dry_run"]["status"] == "DRAFT"
 
-        # 5. Approve case
+        # 5. Approve case, naming the exact proof that was just reviewed.
+        proof_id = detail["proof"]["proof_id"]
         resp_appr = client.post(
             f"/api/v1/cases/{case_id}/approve",
             json={
+                "proof_id": proof_id,
+                "run_id": run_id,
                 "reviewer_id": "rev-controller-alice",
                 "notes": "Verified source UTR and duplicate entry.",
             },
@@ -73,11 +76,29 @@ def test_golden_flow_reconciliation_approval_and_audit(tmp_path: Path) -> None:
         # 6. Idempotent re-approval
         resp_appr2 = client.post(
             f"/api/v1/cases/{case_id}/approve",
-            json={"reviewer_id": "rev-controller-alice", "notes": "Re-run check"},
+            json={
+                "proof_id": proof_id,
+                "run_id": run_id,
+                "reviewer_id": "rev-controller-alice",
+                "notes": "Re-run check",
+            },
         )
         assert resp_appr2.status_code == 200
         assert resp_appr2.json()["reused"] is True
         assert resp_appr2.json()["correction_id"] == appr_result["correction_id"]
+
+        # 6b. A decision naming a proof that is not current is refused outright
+        # rather than retargeted onto whatever proof happens to be latest.
+        resp_spoof = client.post(
+            f"/api/v1/cases/{case_id}/approve",
+            json={
+                "proof_id": "proof-never-reviewed",
+                "run_id": run_id,
+                "reviewer_id": "rev-controller-alice",
+            },
+        )
+        assert resp_spoof.status_code == 409
+        assert resp_spoof.json()["detail"] == "PROOF_SUPERSEDED"
 
         # 7. Check case status transitioned
         resp_detail2 = client.get(f"/api/v1/cases/{case_id}")
@@ -98,17 +119,32 @@ def test_golden_flow_reconciliation_approval_and_audit(tmp_path: Path) -> None:
         unres_cases = [c for c in cases if c["status"] == CaseStatus.UNRESOLVED.value]
         if unres_cases:
             unres_id = unres_cases[0]["case_id"]
-            # Approval must fail
+            unres_detail = client.get(f"/api/v1/cases/{unres_id}?run_id={run_id}").json()
+            unres_proof = unres_detail["proof"]
+
+            # Approval must fail. An ambiguous case carries no verified proof to
+            # authorize, so naming one is refused as a proof-identity error;
+            # a case that does carry a non-PASS proof is refused by the
+            # authority rules instead.
             resp_fail = client.post(
                 f"/api/v1/cases/{unres_id}/approve",
-                json={"reviewer_id": "rev-bob"},
+                json={
+                    "proof_id": unres_proof["proof_id"] if unres_proof else "proof-absent",
+                    "run_id": run_id,
+                    "reviewer_id": "rev-bob",
+                },
             )
-            assert resp_fail.status_code == 400
+            assert resp_fail.status_code in (400, 409)
 
-            # Rejection succeeds
+            # An already-unresolved case has no pending authority transition.
             resp_rej = client.post(
                 f"/api/v1/cases/{unres_id}/reject",
-                json={"reviewer_id": "rev-bob", "notes": "Confirmed ambiguity: leaving open"},
+                json={
+                    "proof_id": unres_proof["proof_id"] if unres_proof else "none",
+                    "run_id": run_id,
+                    "reviewer_id": "rev-bob",
+                    "notes": "Confirmed ambiguity: leaving open",
+                },
             )
-            assert resp_rej.status_code == 200
-            assert resp_rej.json()["status"] == "REJECTED"
+            assert resp_rej.status_code == 409
+            assert resp_rej.json()["detail"] == "AUTHORITY_ALREADY_DECIDED"

@@ -1,14 +1,26 @@
 /**
  * Human authority modal. Approval and rejection are explicit user actions.
- * Clean, minimal, bright & professional.
+ *
+ * The decision is bound to the exact proof rendered in this dialog. The
+ * confirm handler previously passed the reviewer's typed name as the first
+ * argument while the page forwarded it as `proof_id`, so the identity of the
+ * reviewed proposal never actually reached the backend. `onConfirm` now
+ * carries the proof id explicitly, and approval is refused outright when the
+ * open dossier has no verified proof to decide on.
  */
 
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import type { CaseDetail } from "../lib/types";
-import { formatINR } from "../lib/format";
+import { formatINR, formatSignedINR } from "../lib/format";
 import { IconShield, IconX } from "./icons";
+
+export interface AuthorityDecision {
+  proofId: string;
+  reviewerId: string;
+  notes: string;
+}
 
 export function ApprovalModal({
   detail,
@@ -21,12 +33,16 @@ export function ApprovalModal({
   action: "APPROVE" | "REJECT";
   busy: boolean;
   onClose: () => void;
-  onConfirm: (reviewerId: string, notes: string) => void;
+  onConfirm: (decision: AuthorityDecision) => void;
 }) {
   const [reviewerId, setReviewerId] = useState("reviewer-finance-ops");
   const [notes, setNotes] = useState("");
   const dialogRef = useRef<HTMLDivElement>(null);
   const approving = action === "APPROVE";
+  const proof = detail.proof;
+  // Authority requires a verified proof to act on. Without one there is
+  // nothing for a human to authorize, so the action is not offered.
+  const decidable = proof !== null && (!approving || proof.verifier_status === "PASS");
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -107,6 +123,48 @@ export function ApprovalModal({
             )}
           </p>
 
+          {proof ? (
+            <p
+              data-testid="approval-proof-identity"
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-[10px] leading-relaxed text-slate-600"
+            >
+              deciding on proof <span className="font-bold text-slate-900">{proof.proof_id}</span>
+              <br />
+              {proof.verifier_rule_id} v{proof.verifier_rule_version} ·{" "}
+              <span
+                className={
+                  proof.verifier_status === "PASS"
+                    ? "font-bold text-emerald-700"
+                    : "font-bold text-rose-700"
+                }
+              >
+                {proof.verifier_status}
+              </span>
+              <br />
+              run <span className="text-slate-900">{detail.case.run_id}</span>
+            </p>
+          ) : (
+            <p
+              role="alert"
+              data-testid="approval-no-proof"
+              className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-medium text-rose-900"
+            >
+              This case has no verified proof package, so there is nothing for a human to
+              authorize. Nothing will be written.
+            </p>
+          )}
+
+          {approving && proof && proof.verifier_status !== "PASS" && (
+            <p
+              role="alert"
+              className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-medium text-rose-900"
+            >
+              The recorded verifier status is{" "}
+              <span className="font-mono font-bold">{proof.verifier_status}</span>. Approval
+              requires a deterministic PASS, so authorization is disabled.
+            </p>
+          )}
+
           {approving && detail.dry_run && (
             <dl className="grid grid-cols-3 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
               <div>
@@ -117,9 +175,8 @@ export function ApprovalModal({
               </div>
               <div>
                 <dt className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Delta</dt>
-                <dd className="mt-1 font-mono text-xs font-bold text-emerald-700">
-                  {detail.dry_run.proposed_delta_paise < 0 ? "\u2212" : "+"}
-                  {formatINR(Math.abs(detail.dry_run.proposed_delta_paise))}
+                <dd className="mt-1 font-mono text-xs font-bold text-slate-900">
+                  {formatSignedINR(detail.dry_run.proposed_delta_paise)}
                 </dd>
               </div>
               <div>
@@ -170,8 +227,9 @@ export function ApprovalModal({
 
         {/* Footer */}
         <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/50 px-6 py-4">
-          <p className="hidden text-[10px] font-medium text-slate-500 sm:block">
-            Voice is not an approval channel. This dialog is the only path.
+          <p className="hidden max-w-xs text-[10px] font-medium leading-relaxed text-slate-500 sm:block">
+            Voice is not an approval channel. Confirming twice reuses the one existing entry; it
+            never applies a correction twice.
           </p>
           <div className="flex gap-2.5">
             <button
@@ -182,10 +240,17 @@ export function ApprovalModal({
               Cancel
             </button>
             <button
-              onClick={() => onConfirm(reviewerId.trim() || "reviewer-finance-ops", notes)}
-              disabled={busy}
+              onClick={() => {
+                if (!proof) return;
+                onConfirm({
+                  proofId: proof.proof_id,
+                  reviewerId: reviewerId.trim() || "reviewer-finance-ops",
+                  notes,
+                });
+              }}
+              disabled={busy || !decidable}
               autoFocus
-              className={`flex items-center gap-2 rounded-xl px-5 py-2 text-xs font-bold tracking-wide text-white shadow-sm transition-all active:scale-[0.99] disabled:cursor-wait disabled:opacity-60 ${
+              className={`flex items-center gap-2 rounded-xl px-5 py-2 text-xs font-bold tracking-wide text-white shadow-sm transition-all active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 ${
                 approving
                   ? "bg-slate-900 hover:bg-slate-800"
                   : "bg-rose-600 hover:bg-rose-700"

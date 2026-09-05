@@ -57,30 +57,42 @@ def handle_chat_message(payload: ChatRequest, request: Request) -> ChatResponse:
 
         db = open_database(settings)
 
-    context = _gather_live_financial_context(db)
+    # Ground the answer in the run the operator has selected. Without this the
+    # copilot always described the newest persisted run, so its figures could
+    # belong to a different batch than the one on screen.
+    requested_run_id = payload.page_context.get("active_run_id")
+    scope_run_id = (
+        requested_run_id if isinstance(requested_run_id, str) and requested_run_id else None
+    )
+    context = _gather_live_financial_context(db, scope_run_id=scope_run_id)
     summary = context.get("summary", {})
+    scoped_run_id = summary.get("active_run_id")
 
-    # If page_context contains a specific case, fetch detailed evidence for that case
+    # A selected case is only grounding material when it belongs to the scoped
+    # run. Previously any case id was loaded, so one run's view could ground an
+    # answer with another run's case.
     selected_case_id = payload.page_context.get("case_id")
     case_detail_context: dict[str, Any] | None = None
-    if selected_case_id:
-        try:
-            row = db.query_one(
-                "SELECT * FROM cases WHERE case_id = ?",
-                (selected_case_id,),
-            )
-            if row:
-                case_detail_context = dict(row)
-        except Exception:
-            pass
+    case_scope_note = "NO_CASE_SELECTED"
+    if isinstance(selected_case_id, str) and selected_case_id:
+        row = db.query_one("SELECT * FROM cases WHERE case_id = ?", (selected_case_id,))
+        if row is None:
+            case_scope_note = "SELECTED_CASE_NOT_FOUND"
+        elif scoped_run_id is None or str(row["run_id"]) != scoped_run_id:
+            case_scope_note = "SELECTED_CASE_BELONGS_TO_ANOTHER_RUN"
+        else:
+            case_detail_context = dict(row)
+            case_scope_note = "SELECTED_CASE_IN_SCOPE"
 
     ctx_payload = {
         "ledger_summary": summary,
         "active_tab": payload.page_context.get("tab", "home"),
+        "requested_run_id": scope_run_id,
         "table_counts": context.get("table_row_counts", {}),
-        "recent_runs": context.get("runs", [])[:3],
+        "scoped_run": context.get("runs", []),
         "cases_sample": context.get("recon_cases", [])[:15],
         "selected_case": case_detail_context,
+        "selected_case_scope": case_scope_note,
     }
     ctx_json = json.dumps(ctx_payload, indent=2)
 
@@ -89,8 +101,14 @@ def handle_chat_message(payload: ChatRequest, request: Request) -> ChatResponse:
         "GROUNDING & TRUTH RULES:\n"
         "1. Ground all figures, match rates, variance amounts, case IDs, "
         "and batch totals in the provided live SQLite context. Never invent numbers.\n"
-        "2. If a metric is not in context, state clearly that it is not in the active ledger.\n"
+        "2. If a metric is not in context, state clearly that it is not in the active ledger. "
+        "A match rate of NOT_REPORTED_BY_THIS_RUN means the run did not report "
+        "one; say so and never estimate it.\n"
         "3. Ambiguous cases stay unresolved — never assume closure without human approval.\n"
+        "4. Every figure in context belongs to ledger_summary.active_run_id alone. "
+        "Never combine or compare totals across runs, and name the run you are "
+        "describing. If selected_case_scope is not SELECTED_CASE_IN_SCOPE, do "
+        "not describe that case.\n"
         "5. Maintain conversation continuity with earlier messages in this thread.\n\n"
         f"LIVE SQLITE RECONCILIATION CONTEXT:\n{ctx_json}\n\n"
         "MARKDOWN FORMATTING INSTRUCTIONS:\n"
@@ -130,36 +148,50 @@ def handle_chat_message(payload: ChatRequest, request: Request) -> ChatResponse:
     if not reply:
         provider_used = "deterministic-synthesizer"
         # Fallback intelligent synthesizer
-        rate_str = summary.get("deterministic_match_rate", "not measured")
-        total_var = summary.get("total_variance_inr", "not available")
+        rate_str = summary.get("deterministic_match_rate", "NOT_REPORTED_BY_THIS_RUN")
+        rate_text = (
+            "not reported by this run" if rate_str == "NOT_REPORTED_BY_THIS_RUN" else str(rate_str)
+        )
+        total_var = summary.get("total_abs_case_variance_inr", "not available")
         unresolved = summary.get("unresolved_cases", 0)
         total_cases = summary.get("total_cases", 0)
         pending_approval = summary.get("pending_approval", "not available")
+        run_label = scoped_run_id or "no run selected"
         q = payload.message.lower()
 
-        if any(w in q for w in ("match rate", "deterministic", "accuracy", "rate")):
+        if scoped_run_id is None:
             reply = (
-                f"### Deterministic Reconciliation Status\n\n"
-                f"- **Deterministic Match Rate**: **{rate_str}**\n"
-                f"- **Total Exception Cases**: **{total_cases}**\n"
-                f"- **Unresolved Exceptions**: **{unresolved}** (awaiting human review)\n"
-                f"- **Tracked Ledger Variance**: **{total_var}**\n\n"
-                f"All matched records were reconciled with zero AI guesswork."
+                "### No reconciliation run in scope\n\n"
+                "There is no persisted run to describe yet, so no figure can be "
+                "reported. Import gateway, bank and ledger evidence to create "
+                "the first run, then ask again."
+            )
+        elif any(w in q for w in ("match rate", "deterministic", "accuracy", "rate")):
+            reply = (
+                f"### Deterministic reconciliation status — run `{run_label}`\n\n"
+                f"- **Runtime match rate**: **{rate_text}**\n"
+                f"- **Exception cases**: **{total_cases}**\n"
+                f"- **Unresolved exceptions**: **{unresolved}** (awaiting human review)\n"
+                f"- **Absolute case variance**: **{total_var}**\n\n"
+                f"Figures cover this run only. The match rate is the run's own "
+                f"runtime self-report, not evaluator accuracy."
             )
         elif any(w in q for w in ("variance", "money", "difference", "total")):
             reply = (
-                f"### Active Financial Variance Summary\n\n"
-                f"- **Total Tracked Variance**: **{total_var}**\n"
-                f"- **Unresolved Cases**: **{unresolved}** cases\n"
-                f"- **Pending Approval**: **{pending_approval}** cases\n\n"
-                f"You can review dry-run proposals in the **Approval Queue**."
+                f"### Case variance — run `{run_label}`\n\n"
+                f"- **Absolute case variance**: **{total_var}**\n"
+                f"- **Unresolved cases**: **{unresolved}**\n"
+                f"- **Awaiting approval**: **{pending_approval}**\n\n"
+                f"Review dry-run proposals in the **Approval Queue**. No "
+                f"correction applies without explicit human authorization."
             )
         else:
             reply = (
-                f"### ARGUS Financial Copilot\n\n"
-                f"Monitoring **{total_cases} reconciliation cases** across active ledger with "
-                f"**{total_var}** tracked variance and **{rate_str} deterministic match rate**.\n\n"
-                f"Ask me about specific cases, variance breakdowns, delays, or fee calculations."
+                f"### ARGUS financial copilot — run `{run_label}`\n\n"
+                f"This run holds **{total_cases} exception cases** with "
+                f"**{total_var}** absolute case variance and a "
+                f"**{rate_text}** runtime match rate.\n\n"
+                f"Ask about a specific case, the variance breakdown, or the fee audit."
             )
 
     latency_ms = int((time.perf_counter() - start_time) * 1000)

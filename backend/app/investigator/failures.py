@@ -36,6 +36,16 @@ InvestigationFailureCode = Literal[
     "TOOL_BUDGET_EXHAUSTED",
     # A live investigator was constructed with no configured backend.
     "NO_PROVIDER_CONFIGURED",
+    # --- native function-calling protocol failures (REVIEW-017) -----------
+    # The model asked for more than one tool in a single turn.
+    # A tool call arrived without a usable id or name.
+    "MALFORMED_TOOL_CALL",
+    # The requested tool is not in the canonical contract.
+    "UNKNOWN_TOOL_REQUESTED",
+    # The arguments were not a JSON object matching the tool contract.
+    "INVALID_TOOL_ARGUMENTS",
+    # A tool result could not be tied back to the call that produced it.
+    "TOOL_CALL_ID_MISMATCH",
 ]
 
 

@@ -18,6 +18,8 @@ from app.domain.money import require_paise
 
 DEMO_BATCH_SIZE = 20
 DEMO_ACCOUNT_FINGERPRINT = "SYNTHETIC-DEMO-BANK"
+DEMO_SETTLEMENT_DELAY_SECONDS = 86_400
+DEMO_BANK_POSTING_DELAY_SECONDS = 300
 
 
 class DemoEvidenceError(ValueError):
@@ -36,6 +38,20 @@ def _decimal(paise: int) -> str:
     sign = "-" if checked < 0 else ""
     absolute = abs(checked)
     return f"{sign}{absolute // 100}.{absolute % 100:02d}"
+
+
+def _epoch(value: Any, field: str) -> int:
+    try:
+        epoch = _money(value, field)
+    except DemoEvidenceError as exc:
+        raise DemoEvidenceError(f"Invalid UTC epoch field: {field}") from exc
+    if epoch < 0:
+        raise DemoEvidenceError(f"Invalid UTC epoch field: {field}")
+    try:
+        datetime.fromtimestamp(epoch, UTC)
+    except (OSError, OverflowError, ValueError) as exc:
+        raise DemoEvidenceError(f"Invalid UTC epoch field: {field}") from exc
+    return epoch
 
 
 def _timestamp(epoch: int) -> str:
@@ -72,25 +88,84 @@ def build_demo_evidence(
     never the import endpoint. Bank receipt and accounting require separate
     merchant uploads; a gateway-derived file cannot establish either fact.
     """
-    captured = sorted(
-        (item for item in payments if item.get("status") == "captured"),
-        key=lambda item: (item.get("created_at", 0), str(item.get("id") or "")),
-    )
+    captured: list[dict[str, Any]] = []
+    seen_payment_ids: set[str] = set()
+    for item in payments:
+        if item.get("status") != "captured":
+            continue
+        payment_id = str(item.get("id") or "")
+        if not payment_id or payment_id in seen_payment_ids:
+            raise DemoEvidenceError("Captured payments contain missing or duplicate IDs")
+        seen_payment_ids.add(payment_id)
+        gross = _money(item.get("amount"), "payment.amount")
+        fee_including_tax = _money(item.get("fee"), "payment.fee")
+        tax = _money(item.get("tax"), "payment.tax")
+        created_at = _epoch(item.get("created_at"), "payment.created_at")
+        if gross <= 0 or fee_including_tax < 0 or tax < 0:
+            raise DemoEvidenceError(f"Payment {payment_id} has invalid negative monetary values")
+        if tax > fee_including_tax:
+            raise DemoEvidenceError(f"Payment {payment_id} has tax greater than fee")
+        if str(item.get("currency") or "") != "INR":
+            raise DemoEvidenceError("Demo settlement evidence supports INR only")
+        captured.append(
+            {
+                **item,
+                "_gross": gross,
+                "_fee_including_tax": fee_including_tax,
+                "_tax": tax,
+                "_created_at": created_at,
+            }
+        )
+    captured.sort(key=lambda item: (item["_created_at"], str(item["id"])))
     if not captured:
         raise DemoEvidenceError("No captured Test Mode payments are available")
 
-    payment_ids = {str(item.get("id") or "") for item in captured}
-    if "" in payment_ids or len(payment_ids) != len(captured):
-        raise DemoEvidenceError("Captured payments contain missing or duplicate IDs")
-    processed_refunds = sorted(
-        (
-            item
-            for item in refunds
-            if item.get("status") == "processed"
-            and str(item.get("payment_id") or "") in payment_ids
-        ),
-        key=lambda item: (item.get("created_at", 0), str(item.get("id") or "")),
-    )
+    payment_by_id = {str(item["id"]): item for item in captured}
+    payment_batch: dict[str, tuple[int, int]] = {}
+    settlement_count = (len(captured) + DEMO_BATCH_SIZE - 1) // DEMO_BATCH_SIZE
+    for batch_index in range(settlement_count):
+        members = captured[batch_index * DEMO_BATCH_SIZE : (batch_index + 1) * DEMO_BATCH_SIZE]
+        cutoff = max(int(item["_created_at"]) for item in members) + DEMO_SETTLEMENT_DELAY_SECONDS
+        for item in members:
+            payment_batch[str(item["id"])] = (batch_index, cutoff)
+
+    processed_refunds: list[dict[str, Any]] = []
+    refund_exclusions: list[dict[str, str]] = []
+    seen_refund_ids: set[str] = set()
+    refunded_by_payment: dict[str, int] = {}
+    for item in refunds:
+        refund_id = str(item.get("id") or "")
+        if item.get("status") != "processed":
+            refund_exclusions.append({"refund_id": refund_id, "reason": "STATUS_NOT_PROCESSED"})
+            continue
+        if not refund_id or refund_id in seen_refund_ids:
+            raise DemoEvidenceError("Processed refunds contain missing or duplicate IDs")
+        seen_refund_ids.add(refund_id)
+        payment_id = str(item.get("payment_id") or "")
+        payment = payment_by_id.get(payment_id)
+        if payment is None:
+            refund_exclusions.append(
+                {"refund_id": refund_id, "reason": "PAYMENT_NOT_CAPTURED_IN_IMPORT"}
+            )
+            continue
+        if str(item.get("currency") or "") != str(payment["currency"]):
+            raise DemoEvidenceError(f"Refund {refund_id} currency differs from its payment")
+        amount = _money(item.get("amount"), "refund.amount")
+        created_at = _epoch(item.get("created_at"), "refund.created_at")
+        if amount <= 0:
+            raise DemoEvidenceError(f"Refund {refund_id} must have a positive amount")
+        _batch_index, cutoff = payment_batch[payment_id]
+        if created_at < int(payment["_created_at"]) or created_at > cutoff:
+            refund_exclusions.append(
+                {"refund_id": refund_id, "reason": "OUTSIDE_SYNTHETIC_SETTLEMENT_WINDOW"}
+            )
+            continue
+        cumulative = refunded_by_payment.get(payment_id, 0) + amount
+        if cumulative > int(payment["_gross"]):
+            raise DemoEvidenceError(f"Processed refunds exceed payment {payment_id}")
+        refunded_by_payment[payment_id] = cumulative
+        processed_refunds.append({**item, "_amount": amount, "_created_at": created_at})
+    processed_refunds.sort(key=lambda item: (item["_created_at"], str(item["id"])))
     refunds_by_payment: dict[str, list[dict[str, Any]]] = {}
     for refund in processed_refunds:
         refunds_by_payment.setdefault(str(refund["payment_id"]), []).append(refund)
@@ -100,14 +175,12 @@ def build_demo_evidence(
     settlement_rows: list[list[str]] = []
     bank_rows: list[list[str]] = []
     ledger_rows: list[list[str]] = []
-    settlement_count = (len(captured) + DEMO_BATCH_SIZE - 1) // DEMO_BATCH_SIZE
-
     for batch_index in range(settlement_count):
         members = captured[batch_index * DEMO_BATCH_SIZE : (batch_index + 1) * DEMO_BATCH_SIZE]
         settlement_id = _stable_id("setl", import_id, batch_index)
         utr = f"DEMO{hashlib.sha256(settlement_id.encode()).hexdigest()[:18].upper()}"
-        created_values = [_money(item.get("created_at"), "payment.created_at") for item in members]
-        settled_at = max(created_values) + 86_400
+        created_values = [int(item["_created_at"]) for item in members]
+        settled_at = max(created_values) + DEMO_SETTLEMENT_DELAY_SECONDS
         gross_total = 0
         fee_total = 0
         tax_total = 0
@@ -115,16 +188,12 @@ def build_demo_evidence(
 
         for payment in members:
             payment_id = str(payment["id"])
-            gross = _money(payment.get("amount"), "payment.amount")
-            fee_including_tax = _money(payment.get("fee"), "payment.fee")
-            tax = _money(payment.get("tax"), "payment.tax")
+            gross = int(payment["_gross"])
+            fee_including_tax = int(payment["_fee_including_tax"])
+            tax = int(payment["_tax"])
             fee = fee_including_tax - tax
-            if fee < 0:
-                raise DemoEvidenceError(f"Payment {payment_id} has tax greater than fee")
             currency = str(payment.get("currency") or "")
-            if currency != "INR":
-                raise DemoEvidenceError("Demo settlement evidence supports INR only")
-            created_at = _money(payment.get("created_at"), "payment.created_at")
+            created_at = int(payment["_created_at"])
             gross_total += gross
             fee_total += fee
             tax_total += tax
@@ -156,8 +225,8 @@ def build_demo_evidence(
                     ]
                 )
             for refund in refunds_by_payment.get(payment_id, []):
-                refund_amount = _money(refund.get("amount"), "refund.amount")
-                refund_created = _money(refund.get("created_at"), "refund.created_at")
+                refund_amount = int(refund["_amount"])
+                refund_created = int(refund["_created_at"])
                 refund_id = str(refund.get("id") or "")
                 if not refund_id:
                     raise DemoEvidenceError("Processed refund is missing its ID")
@@ -211,7 +280,7 @@ def build_demo_evidence(
             bank_rows.append(
                 [
                     _stable_id("bank", import_id, batch_index),
-                    _timestamp(settled_at + 300),
+                    _timestamp(settled_at + DEMO_BANK_POSTING_DELAY_SECONDS),
                     _date(settled_at),
                     "INR",
                     _decimal(net),
@@ -322,6 +391,21 @@ def build_demo_evidence(
         "settlements_count": len(settlement_rows),
         "bank_entries_count": len(bank_rows),
         "ledger_entries_count": len(ledger_rows),
+        "input_counts": {
+            "payments_received": len(payments),
+            "captured_payments_included": len(captured),
+            "refunds_received": len(refunds),
+            "processed_refunds_included": len(processed_refunds),
+            "refunds_excluded": len(refund_exclusions),
+        },
+        "refund_exclusions": refund_exclusions,
+        "synthetic_policy": {
+            "policy_id": "argus-demo-settlement-v1",
+            "batch_size": DEMO_BATCH_SIZE,
+            "settlement_delay_seconds": DEMO_SETTLEMENT_DELAY_SECONDS,
+            "bank_posting_delay_seconds": DEMO_BANK_POSTING_DELAY_SECONDS,
+            "notice": "ARGUS synthetic demo policy; not Razorpay settlement policy.",
+        },
     }
 
 

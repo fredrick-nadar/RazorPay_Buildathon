@@ -28,6 +28,11 @@ class AuditEvent:
     action: str
     payload: dict[str, Any]
     digest: str
+    # Position in the append-only log, taken from the storage rowid. Wall-clock
+    # timestamps can tie or arrive out of order; this is the authoritative
+    # append order a client may render and assert on. 0 when the event was just
+    # constructed by record_audit_event and not yet read back.
+    sequence: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -113,30 +118,28 @@ def get_audit_trail(
     case_id: str | None = None,
     run_id: str | None = None,
 ) -> list[AuditEvent]:
-    """Retrieve chronological audit trail for a case or run."""
+    """Retrieve the append-ordered audit trail, narrowed by the given scope.
+
+    Passing both ids narrows to the events of that case WITHIN that run. It
+    previously widened to ``case_id = ? OR run_id = ?``, which returned the
+    whole run's trail for a case query and let one case's view show another
+    case's events.
+    """
+    columns = (
+        "SELECT rowid AS sequence, event_id, case_id, run_id, timestamp_utc, "
+        "actor, action, payload_json, digest FROM audit_log"
+    )
     if case_id is not None and run_id is not None:
         rows = db.query_all(
-            "SELECT event_id, case_id, run_id, timestamp_utc, actor, action, payload_json, digest "
-            "FROM audit_log WHERE case_id = ? OR run_id = ? ORDER BY rowid ASC",
+            f"{columns} WHERE case_id = ? AND run_id = ? ORDER BY rowid ASC",
             (case_id, run_id),
         )
     elif case_id is not None:
-        rows = db.query_all(
-            "SELECT event_id, case_id, run_id, timestamp_utc, actor, action, payload_json, digest "
-            "FROM audit_log WHERE case_id = ? ORDER BY rowid ASC",
-            (case_id,),
-        )
+        rows = db.query_all(f"{columns} WHERE case_id = ? ORDER BY rowid ASC", (case_id,))
     elif run_id is not None:
-        rows = db.query_all(
-            "SELECT event_id, case_id, run_id, timestamp_utc, actor, action, payload_json, digest "
-            "FROM audit_log WHERE run_id = ? ORDER BY rowid ASC",
-            (run_id,),
-        )
+        rows = db.query_all(f"{columns} WHERE run_id = ? ORDER BY rowid ASC", (run_id,))
     else:
-        rows = db.query_all(
-            "SELECT event_id, case_id, run_id, timestamp_utc, actor, action, payload_json, digest "
-            "FROM audit_log ORDER BY rowid ASC"
-        )
+        rows = db.query_all(f"{columns} ORDER BY rowid ASC")
 
     events: list[AuditEvent] = []
     for r in rows:
@@ -150,6 +153,7 @@ def get_audit_trail(
                 action=str(r["action"]),
                 payload=json.loads(str(r["payload_json"])),
                 digest=str(r["digest"]),
+                sequence=int(r["sequence"]),
             )
         )
     return events

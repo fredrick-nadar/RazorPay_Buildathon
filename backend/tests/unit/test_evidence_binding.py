@@ -93,6 +93,14 @@ class TestAcceptedBindings:
         assert observation.get("error") is None
         assert verdict is True
 
+    def test_a_cited_get_records_batch_is_accepted(
+        self, bench: tuple[CaseRecord, ToolDispatcher, str]
+    ) -> None:
+        case, tools, cited = bench
+        verdict, observation = _decide(case, tools, "get_records", {"record_ids": [cited]})
+        assert observation.get("error") is None
+        assert verdict is True
+
     def test_a_case_bound_date_window_calculation_is_accepted(
         self, bench: tuple[CaseRecord, ToolDispatcher, str]
     ) -> None:
@@ -427,6 +435,7 @@ class TestCaseIdCannotSpoofRecordEvidence:
             ("check_unique_identity", "record_ids"),
             ("check_date_window", "record_ids"),
             ("get_record", "record_id"),
+            ("get_records", "record_ids"),
         ],
     )
     def test_no_record_tool_accepts_the_bare_case_id(

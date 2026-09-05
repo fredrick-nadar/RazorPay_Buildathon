@@ -23,6 +23,7 @@ from app.domain.records import (
     RefundRecord,
     SettlementRecord,
 )
+from app.investigator.tool_contract import CONTRACT_TOOL_NAMES, MAX_BATCH_RECORDS
 from app.reconciliation.detectors import CaseRecord
 from app.reconciliation.rules import (
     BANK_POSTING_WINDOW_S,
@@ -38,19 +39,10 @@ from app.verifier.snapshot import EvidenceSnapshot
 # Allowlist — exactly the read + exploratory-calculation tools.
 # ---------------------------------------------------------------------------
 
-TOOL_ALLOWLIST: frozenset[str] = frozenset(
-    {
-        "get_case",
-        "get_evidence_graph",
-        "get_record",
-        "list_candidate_records",
-        "get_rule_manifest",
-        "calculate_control_totals",
-        "calculate_expected_net",
-        "check_date_window",
-        "check_unique_identity",
-    }
-)
+# Derived from the ONE canonical contract, never re-listed here: the wire
+# schemas, the prompt catalogue and this allowlist cannot drift apart
+# (REVIEW-017).
+TOOL_ALLOWLIST: frozenset[str] = CONTRACT_TOOL_NAMES
 
 
 def _error(code: str, detail: str = "") -> dict[str, str]:
@@ -153,6 +145,25 @@ def _get_record(dispatcher: ToolDispatcher, args: dict[str, Any]) -> dict[str, A
         return _error("UNKNOWN_EVIDENCE_ID", f"{record_id!r} not found")
 
     return _record_to_dict(record)
+
+
+def _get_records(dispatcher: ToolDispatcher, args: dict[str, Any]) -> dict[str, Any]:
+    record_ids = args.get("record_ids")
+    if not isinstance(record_ids, list) or not record_ids:
+        return _error("INVALID_ARGUMENTS", "record_ids must be a non-empty list")
+    if len(record_ids) > MAX_BATCH_RECORDS or any(not isinstance(item, str) for item in record_ids):
+        return _error(
+            "INVALID_ARGUMENTS",
+            f"record_ids must contain at most {MAX_BATCH_RECORDS} strings",
+        )
+
+    records: list[dict[str, Any]] = []
+    for evidence_id in record_ids:
+        record = _get_record(dispatcher, {"record_id": evidence_id})
+        if record.get("error"):
+            return record
+        records.append({"evidence_id": evidence_id, "record": record})
+    return {"record_ids": record_ids, "count": len(records), "records": records}
 
 
 def _list_candidate_records(
@@ -321,6 +332,7 @@ _HANDLERS: dict[str, Callable[[ToolDispatcher, dict[str, Any]], dict[str, Any]]]
     "get_case": _get_case,
     "get_evidence_graph": _get_evidence_graph,
     "get_record": _get_record,
+    "get_records": _get_records,
     "list_candidate_records": _list_candidate_records,
     "get_rule_manifest": _get_rule_manifest,
     "calculate_control_totals": _calculate_control_totals,

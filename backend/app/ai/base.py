@@ -24,15 +24,45 @@ from typing import Any, Protocol
 # Fallback used only when no caller-supplied deadline is in play.
 DEFAULT_ATTEMPT_TIMEOUT_S = 11.0
 
+# Honest, fixed client identity.  ``urlopen`` otherwise sends
+# ``Python-urllib/3.x``, which the edge in front of at least one provider host
+# rejects with a bare 403 before the request reaches the API - measured as a
+# 403 -> 200 flip on a single-variable experiment (cloud-reference section 38).
+# It is deliberately a constant, not a setting: an operator-tunable identity
+# would be one more way for a deployment to drift into being rejected.
+USER_AGENT = "ARGUS-Control/1.0"
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    """One structured tool call returned by a provider's native protocol.
+
+    ``arguments_json`` is kept as the provider returned it, unparsed: the
+    investigator validates and parses it, and a malformed value must fail
+    closed rather than be silently repaired here.
+    """
+
+    id: str
+    name: str
+    arguments_json: str
+
 
 @dataclass(frozen=True)
 class LLMResponse:
-    """One successful completion from any backend."""
+    """One successful completion from any backend.
+
+    ``tool_calls`` is populated only by a backend running the native tool
+    protocol; it is empty for every legacy text/JSON turn, so existing callers
+    are unaffected. Provider reasoning is never captured: no field here can
+    hold it, and no backend reads one.
+    """
 
     text: str
     provider_id: str
     model: str
     latency_ms: float
+    tool_calls: tuple[ToolCall, ...] = ()
+    native_tool_protocol: bool = False
 
 
 class LLMError(Exception):
@@ -73,6 +103,18 @@ class Transport(Protocol):
     ) -> tuple[int, bytes]: ...
 
 
+def _with_user_agent(headers: dict[str, str]) -> dict[str, str]:
+    """Add the ARGUS identity unless the caller already set one.
+
+    HTTP header names are case-insensitive, so an explicit ``user-agent`` in
+    any casing wins and the caller's dict is returned untouched.  Nothing else
+    about the headers is altered.
+    """
+    if any(name.lower() == "user-agent" for name in headers):
+        return headers
+    return {**headers, "User-Agent": USER_AGENT}
+
+
 def urllib_transport(
     method: str,
     url: str,
@@ -81,7 +123,9 @@ def urllib_transport(
     timeout_s: float = DEFAULT_ATTEMPT_TIMEOUT_S,
 ) -> tuple[int, bytes]:
     """Default production transport; ``timeout_s`` is applied to this attempt."""
-    request = urllib.request.Request(url, data=body, headers=headers, method=method)
+    request = urllib.request.Request(
+        url, data=body, headers=_with_user_agent(headers), method=method
+    )
     try:
         with urllib.request.urlopen(request, timeout=timeout_s) as response:
             return response.status, response.read()
@@ -150,7 +194,9 @@ __all__ = [
     "DEFAULT_ATTEMPT_TIMEOUT_S",
     "LLMError",
     "LLMResponse",
+    "ToolCall",
     "Transport",
+    "USER_AGENT",
     "post_json",
     "urllib_transport",
     "urllib_transport_with_timeout",

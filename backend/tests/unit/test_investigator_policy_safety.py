@@ -337,7 +337,7 @@ class TestPolicyIsPartOfIdempotency:
             return policy_from_settings(
                 Settings(
                     ai_provider="groq",
-                    groq_api_key="gsk_offline",
+                    groq_api_key="synthetic_offline",
                     groq_investigator_model=model,
                     _env_file=None,
                 )
@@ -354,7 +354,7 @@ class TestWatchdogGraceReachesRunAndJobIdentity:
         return policy_from_settings(
             Settings(
                 ai_provider="groq",
-                groq_api_key="gsk_offline_only",
+                groq_api_key="synthetic_offline_only",
                 investigator_watchdog_grace_s=grace,
                 _env_file=None,
             )
@@ -431,7 +431,7 @@ class TestWatchdogGraceReachesRunAndJobIdentity:
                 Settings(ai_provider="groq", groq_api_key=key_value, _env_file=None)
             ).fingerprint()
 
-        assert fingerprint("gsk_one") == fingerprint("gsk_two")
+        assert fingerprint("synthetic_one") == fingerprint("synthetic_two")
         common = {
             "session_id": "session-a",
             "snapshot_identity": "snapshot-1",
@@ -439,5 +439,5 @@ class TestWatchdogGraceReachesRunAndJobIdentity:
             "provider_id": "llm:groq",
         }
         assert request_key_for(
-            **common, policy_fingerprint=fingerprint("gsk_one")
-        ) == request_key_for(**common, policy_fingerprint=fingerprint("gsk_two"))
+            **common, policy_fingerprint=fingerprint("synthetic_one")
+        ) == request_key_for(**common, policy_fingerprint=fingerprint("synthetic_two"))

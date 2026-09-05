@@ -71,6 +71,28 @@ class Settings(BaseSettings):
     # the fallback reserve above protects the next provider.
     ai_provider_max_attempts: int = Field(default=1, ge=1, le=3)
     workflow_max_attempts: int = Field(default=2, ge=1, le=5)
+    # SYNTHETIC demo merchant fee agreement. Not Razorpay published pricing.
+    # Integer basis points keep every expected amount exact integer paise.
+    # The MDR/GST audit reads these instead of request query parameters, so a
+    # caller can never dictate the basis of a reported leakage figure.
+    synthetic_fee_policy_id: str = Field(
+        default="SYNTHETIC-MERCHANT-STANDARD",
+        min_length=1,
+        max_length=64,
+        description="Identifier for the configured synthetic merchant fee agreement",
+    )
+    synthetic_mdr_bps: int = Field(
+        default=200, ge=0, le=10_000, description="Synthetic MDR in basis points (200 = 2.00%)"
+    )
+    synthetic_gst_on_fee_bps: int = Field(
+        default=1800, ge=0, le=10_000, description="Synthetic GST on fees in bps (1800 = 18.00%)"
+    )
+    synthetic_fee_tolerance_paise: int = Field(
+        default=50,
+        ge=0,
+        le=100_000,
+        description="Absolute paise deviation tolerated before a fee row is an anomaly",
+    )
     razorpay_key_id: str | None = Field(
         default=None,
         validation_alias=AliasChoices(

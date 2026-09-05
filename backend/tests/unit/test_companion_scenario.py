@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import copy
 import csv
+import hashlib
+import json
 import runpy
 from pathlib import Path
 
@@ -80,18 +82,27 @@ def test_csv_route(tmp_path: Path) -> None:
     session_id = "companion"
     session_dir = resolve_session_dir(settings, session_id, create=True)
     assert session_dir is not None
+    import_id = "gwi-38a22e8d7367bac0af9d"
+    manifest_hash = hashlib.sha256((FIXTURE / "manifest.json").read_bytes()).hexdigest()
     for source, rows in gateway().items():
         content = (FIXTURE / "inputs" / f"{source}.csv").read_text(encoding="utf-8")
         stage_source_revision(
             session_dir=session_dir,
             source_type=source,
             original_filename=f"{source}.csv",
-            raw_content=content,
+            raw_content=json.dumps(
+                {
+                    "provenance": "SYNTHETIC_DEMO",
+                    "derived_from_gateway_import": import_id,
+                    "manifest_hash": manifest_hash,
+                    "canonical_filename": f"{source}.csv",
+                }
+            ),
             canonical_csv=content,
             accepted_count=len(rows),
             quarantined_count=0,
             origin="SYNTHETIC_DEMO",
-            external_import_id="gwi-38a22e8d7367bac0af9d",
+            external_import_id=import_id,
         )
     with TestClient(create_app(settings)) as client:
         for source in ("bank_entries", "ledger_entries"):

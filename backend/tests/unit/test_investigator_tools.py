@@ -66,6 +66,7 @@ def test_tool_allowlist_contains_only_read_and_calculation_tools() -> None:
             "get_case",
             "get_evidence_graph",
             "get_record",
+            "get_records",
             "list_candidate_records",
             "get_rule_manifest",
             "calculate_control_totals",
@@ -141,6 +142,28 @@ def test_get_record_with_valid_id() -> None:
     result = dispatcher.dispatch("get_record", {"record_id": "PAYMENT:pay-001"})
     assert result["payment_id"] == "pay-001"
     assert result["gross_amount_paise"] == 100000
+
+
+def test_get_records_returns_each_requested_record_with_its_canonical_id() -> None:
+    dispatcher = _make_sample_dispatcher()
+    result = dispatcher.dispatch(
+        "get_records", {"record_ids": ["PAYMENT:pay-001", "LEDGER_ENTRY:led-001"]}
+    )
+
+    assert result["count"] == 2
+    assert [item["evidence_id"] for item in result["records"]] == [
+        "PAYMENT:pay-001",
+        "LEDGER_ENTRY:led-001",
+    ]
+
+
+def test_get_records_never_silently_drops_an_unknown_id() -> None:
+    dispatcher = _make_sample_dispatcher()
+    result = dispatcher.dispatch(
+        "get_records", {"record_ids": ["PAYMENT:pay-001", "PAYMENT:missing"]}
+    )
+
+    assert result["error"] == "UNKNOWN_EVIDENCE_ID"
 
 
 def test_list_candidate_records() -> None:
