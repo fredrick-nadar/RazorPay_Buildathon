@@ -466,6 +466,43 @@ def _migration_8_to_9_statements() -> tuple[str, ...]:
     )
 
 
+def _migration_9_to_10_statements() -> tuple[str, ...]:
+    """One-time Telegram pairing and idempotent long-poll cursor state."""
+    return (
+        """
+        CREATE TABLE telegram_pairings (
+            pairing_id TEXT PRIMARY KEY,
+            code_hash TEXT NOT NULL UNIQUE,
+            session_id TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('PENDING', 'CLAIMED', 'REVOKED')),
+            bot_id INTEGER,
+            telegram_user_id INTEGER,
+            telegram_chat_id INTEGER,
+            chat_type TEXT,
+            pending_upload_type TEXT CHECK (
+                pending_upload_type IS NULL OR
+                pending_upload_type IN ('bank_entries', 'ledger_entries')
+            ),
+            created_at_utc TEXT NOT NULL,
+            expires_at_utc TEXT NOT NULL,
+            claimed_at_utc TEXT,
+            revoked_at_utc TEXT
+        )
+        """,
+        "CREATE INDEX idx_telegram_pairings_session ON telegram_pairings(session_id, status)",
+        "CREATE UNIQUE INDEX idx_telegram_pairings_claimed_chat ON "
+        "telegram_pairings(bot_id, telegram_user_id, telegram_chat_id) "
+        "WHERE status = 'CLAIMED'",
+        """
+        CREATE TABLE telegram_bot_offsets (
+            bot_id INTEGER PRIMARY KEY,
+            next_update_id INTEGER NOT NULL CHECK (next_update_id >= 0),
+            updated_at_utc TEXT NOT NULL
+        )
+        """,
+    )
+
+
 # The chain stores statement-function NAMES resolved at call time so that
 # tests can monkeypatch a broken migration into any step.
 _MIGRATION_CHAIN: tuple[tuple[int, int, str], ...] = (
@@ -477,6 +514,7 @@ _MIGRATION_CHAIN: tuple[tuple[int, int, str], ...] = (
     (6, 7, "_migration_6_to_7_statements"),
     (7, 8, "_migration_7_to_8_statements"),
     (8, 9, "_migration_8_to_9_statements"),
+    (9, 10, "_migration_9_to_10_statements"),
 )
 
 

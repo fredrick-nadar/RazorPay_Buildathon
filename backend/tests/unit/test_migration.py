@@ -50,6 +50,7 @@ V5_TABLES = (
 
 V6_TABLES = ("gateway_demo_evidence",)
 V8_TABLES = ("reconciliation_jobs", "reconciliation_job_events")
+V10_TABLES = ("telegram_pairings", "telegram_bot_offsets")
 
 ALL_RUNTIME_TABLES = (
     *V2_TABLES,
@@ -58,6 +59,7 @@ ALL_RUNTIME_TABLES = (
     *V5_TABLES,
     *V6_TABLES,
     *V8_TABLES,
+    *V10_TABLES,
 )
 
 
@@ -82,10 +84,10 @@ def _create_v1_database(path: Path) -> None:
 
 
 class TestFreshDatabase:
-    def test_fresh_database_migrates_to_v9(self, tmp_path: Path) -> None:
+    def test_fresh_database_migrates_to_v10(self, tmp_path: Path) -> None:
         database = Database(tmp_path / "fresh.sqlite3")
         try:
-            assert database.schema_version == 9
+            assert database.schema_version == 10
             assert database.healthcheck() is True
             tables = _table_names(database.path)
             assert set(ALL_RUNTIME_TABLES) <= tables
@@ -108,9 +110,9 @@ class TestUpgradeFromV1:
         _create_v1_database(path)
         database = Database(path)
         try:
-            assert database.schema_version == 9
+            assert database.schema_version == 10
             assert database.get_meta("tenant_note") == "phase0-metadata"
-            assert database.get_meta("schema_version") == "9"
+            assert database.get_meta("schema_version") == "10"
             assert database.healthcheck() is True
             assert set(ALL_RUNTIME_TABLES) <= _table_names(path)
             # No run row exists; none is claimed.
@@ -125,12 +127,12 @@ class TestUpgradeFromV1:
         first.close()
         second = Database(path)
         try:
-            assert second.schema_version == 9
+            assert second.schema_version == 10
             assert second.get_meta("tenant_note") == "phase0-metadata"
         finally:
             second.close()
 
-    def test_v2_database_upgrades_to_v9_preserving_rows(self, tmp_path: Path) -> None:
+    def test_v2_database_upgrades_to_v10_preserving_rows(self, tmp_path: Path) -> None:
         path = tmp_path / "phase2.sqlite3"
         _create_v1_database(path)
         original_chain = migrations._MIGRATION_CHAIN
@@ -165,12 +167,13 @@ class TestUpgradeFromV1:
 
         upgraded = Database(path)
         try:
-            assert upgraded.schema_version == 9
+            assert upgraded.schema_version == 10
             assert set(V3_TABLES) <= _table_names(path)
             assert set(V4_TABLES) <= _table_names(path)
             assert set(V5_TABLES) <= _table_names(path)
             assert set(V6_TABLES) <= _table_names(path)
             assert set(V8_TABLES) <= _table_names(path)
+            assert set(V10_TABLES) <= _table_names(path)
             rows = upgraded.query_all("SELECT run_id FROM runs")
             assert [row["run_id"] for row in rows] == ["run-existing"]
         finally:
@@ -229,7 +232,7 @@ class TestMigrationFailure:
 
         database = Database(path)
         try:
-            assert database.schema_version == 9
+            assert database.schema_version == 10
             assert database.get_meta("tenant_note") == "phase0-metadata"
         finally:
             database.close()

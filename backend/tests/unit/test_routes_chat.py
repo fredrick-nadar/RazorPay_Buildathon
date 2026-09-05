@@ -7,12 +7,13 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.main import app, create_app
+from app.main import create_app
 from app.voice.conversational_agent import _gather_live_financial_context
 
 
-def test_chat_message_endpoint_success() -> None:
-    with TestClient(app) as client:
+def test_chat_message_endpoint_success(tmp_path: Path) -> None:
+    isolated_app = create_app(Settings(db_path=tmp_path / "chat.sqlite3", _env_file=None))
+    with TestClient(isolated_app) as client:
         response = client.post(
             "/api/v1/chat/message",
             json={
@@ -31,8 +32,9 @@ def test_chat_message_endpoint_success() -> None:
         assert "context_summary" in data
 
 
-def test_chat_message_empty_rejected() -> None:
-    with TestClient(app) as client:
+def test_chat_message_empty_rejected(tmp_path: Path) -> None:
+    isolated_app = create_app(Settings(db_path=tmp_path / "chat.sqlite3", _env_file=None))
+    with TestClient(isolated_app) as client:
         response = client.post(
             "/api/v1/chat/message",
             json={

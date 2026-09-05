@@ -12,13 +12,10 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, SecretStr, model_validator
 
-from app.api.routes_ingest import (
-    SESSION_ID_PATTERN,
-    get_or_create_session_dir,
-    validate_canonical_rows,
-)
+from app.api.routes_ingest import SESSION_ID_PATTERN
 from app.config import Settings
 from app.domain.money import MoneyError, require_paise
+from app.importers.csv_intake import get_or_create_session_dir, validate_canonical_rows
 from app.importers.demo_settlement import (
     DEMO_BUNDLE_SOURCES,
     GATEWAY_DEMO_SOURCES,

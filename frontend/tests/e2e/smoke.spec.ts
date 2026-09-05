@@ -29,6 +29,12 @@ test("empty dashboard gives one truthful path to the first run", async ({ page }
   // Home says what the empty database means for the copilot, without repeating
   // the banner's headline.
   await expect(page.getByText("Nothing to answer from yet")).toBeVisible();
+
+  await page.getByRole("button", { name: "Import evidence" }).click();
+  await page.getByText("Telegram intake", { exact: true }).click();
+  await expect(
+    page.getByText(/Configure the BotFather token and restart the backend/),
+  ).toBeVisible();
 });
 
 test("unavailable dashboard fails closed and exposes retry", async ({ page }) => {

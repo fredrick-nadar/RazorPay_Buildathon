@@ -27,7 +27,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
-from app.api.routes_ingest import validate_canonical_rows  # noqa: E402
+from app.importers.csv_intake import validate_canonical_rows  # noqa: E402
 from app.config import Settings  # noqa: E402
 from app.importers.demo_settlement import build_demo_evidence  # noqa: E402
 from app.importers.session_staging import (  # noqa: E402

@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.routes_ingest import validate_canonical_rows
 from app.config import Settings
+from app.importers.csv_intake import validate_canonical_rows
 from app.importers.demo_settlement import (
     DEMO_BUNDLE_SOURCES,
     GATEWAY_DEMO_SOURCES,

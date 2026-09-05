@@ -10,8 +10,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.routes_ingest import validate_canonical_rows
 from app.config import Settings
+from app.importers.csv_intake import validate_canonical_rows
 from app.importers.demo_settlement import build_demo_evidence
 from app.importers.session_staging import resolve_session_dir, stage_source_revision
 from app.main import create_app
@@ -402,7 +402,7 @@ def test_failed_scope_migration_preserves_v6_history_and_is_retryable(
         )
     db = Database(settings.db_path)
     try:
-        assert db.schema_version == 9
+        assert db.schema_version == 10
         row = db.query_one("SELECT * FROM gateway_demo_evidence")
         assert row is not None and row["scope"] == "FULL_DEMO"
         new_id, reused = record_demo_evidence(
