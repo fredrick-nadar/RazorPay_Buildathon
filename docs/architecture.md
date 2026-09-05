@@ -32,7 +32,6 @@ flowchart LR
   subgraph BackendProcess["Python process — uvicorn app.main:app (port 8000)"]
     API["FastAPI routers (thin)"]
     DOM["Domain services:<br/>reconciliation, verifier, corrections,<br/>audit, investigator, workflow"]
-    TG["TelegramChannel<br/>(one poller thread, optional)"]
   end
   DB[("SQLite file<br/>ARGUS_DB_PATH")]
   ST[("Immutable import staging tree<br/>ARGUS_IMPORT_STAGING_ROOT")]
@@ -43,7 +42,6 @@ flowchart LR
   API --> DOM
   DOM --> DB
   DOM --> ST
-  TG --> DOM
 ```
 
 - The browser normally talks only to the Next.js origin. `/api/:path*` is
@@ -52,8 +50,6 @@ flowchart LR
 - A direct browser-to-backend call is possible and is governed by the validated
   CORS policy in `backend/app/cors.py`. The default policy allows only the
   local development frontend and the isolated Playwright frontend port.
-- `TelegramChannel` runs inside the backend process as one daemon thread. It
-  makes only **outbound** HTTPS long-poll requests; nothing inbound is exposed.
 
 ## 2. Backend module map
 
@@ -70,7 +66,6 @@ flowchart LR
 | Orchestration | `backend/app/runs.py`, `backend/app/workflow/controller.py` | Run identity, idempotency, durable progress. |
 | Evaluation | `backend/app/evaluation/*` | Benchmark evaluator; evaluator-only label access. |
 | Persistence | `backend/app/persistence/*` | The only place a SQLite connection is opened. |
-| Channels | `backend/app/telegram/channel.py` | Optional Telegram evidence intake. |
 
 ## 3. Authority model
 
@@ -117,8 +112,8 @@ refused by the deterministic guardrails before execution.
 
 ## 5. Deliberate non-dependencies
 
-PostgreSQL, Redis, S3, Celery, message queues, microservices, Kubernetes, a
-Telegram SDK, and any vector/RAG store are **not** used. SQLite plus a
+PostgreSQL, Redis, S3, Celery, message queues, microservices, Kubernetes, chat
+or bot channel SDKs, and any vector/RAG store are **not** used. SQLite plus a
 filesystem staging tree is the whole persistence story, which is what makes the
 fresh-clone and restart contracts in
 [`security-and-deployment.md`](security-and-deployment.md) provable offline.

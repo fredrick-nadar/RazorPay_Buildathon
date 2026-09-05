@@ -33,7 +33,7 @@ of the reconciliation runtime.
 
 - [`docs/architecture.md`](docs/architecture.md) — process, storage and authority boundaries
 - [`docs/data-flow.md`](docs/data-flow.md) — intake paths, run pipeline, what leaves the machine
-- [`docs/security-and-deployment.md`](docs/security-and-deployment.md) — CORS, persistence, restart/restore, secrets, Telegram boundary, limitations
+- [`docs/security-and-deployment.md`](docs/security-and-deployment.md) — CORS, persistence, restart/restore, secrets, limitations
 - [`docs/reconciliation_rules.md`](docs/reconciliation_rules.md), [`docs/verification_rules.md`](docs/verification_rules.md), [`docs/investigator_rules.md`](docs/investigator_rules.md), [`docs/data_dictionary.md`](docs/data_dictionary.md)
 
 ## Requirements
@@ -63,13 +63,13 @@ cd frontend && npx playwright install chromium
 
 No configuration is required. With no environment variables set, ARGUS starts
 in **rules-only** mode against a local SQLite database. Copy `.env.example` to
-`.env.local` (gitignored) only if you want optional model, Razorpay Test Mode,
-Telegram or voice features; it contains variable **names only**.
+`.env.local` (gitignored) only if you want optional model, Razorpay Test Mode
+or voice features; it contains variable **names only**.
 
 ## Run
 
-Backend (one process — see the Telegram boundary in
-[`docs/security-and-deployment.md`](docs/security-and-deployment.md#4-telegram-deployment-boundary)):
+Backend (one process — see
+[`docs/security-and-deployment.md`](docs/security-and-deployment.md#1-supported-deployment-topology)):
 
 ```bash
 .venv\Scripts\python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
@@ -282,13 +282,13 @@ created eight controlled refunds.”**
 Primary and backup demo recordings are **owner-supplied release assets**; they
 do not exist in this repository yet, and Phase 8 correctly fails until they and
 the release manifest described in
-[`docs/security-and-deployment.md`](docs/security-and-deployment.md#7-release-submission-manifest)
+[`docs/security-and-deployment.md`](docs/security-and-deployment.md#6-release-submission-manifest)
 are present.
 
 ## Status and limitations
 
 See [`BUILD_STATUS.md`](BUILD_STATUS.md) for the current phase status and
-[`docs/security-and-deployment.md`](docs/security-and-deployment.md#8-known-limitations)
+[`docs/security-and-deployment.md`](docs/security-and-deployment.md#7-known-limitations)
 for known limitations. In short: this is a single-process prototype on SQLite,
-using synthetic data only, with Test Mode read-only Razorpay access, simulated
-corrections, and an optional Telegram channel that requires one backend process.
+using synthetic data only, with Test Mode read-only Razorpay access and
+simulated corrections.

@@ -13,9 +13,8 @@ ARGUS is a Buildathon prototype with a deliberately small footprint:
 - **one** frontend process (`next start`, or `next dev` locally);
 - **one** SQLite database file and **one** import-staging directory.
 
-There is no queue, cache, object store, container orchestrator or second
-database, and none should be added to make the demo work. Scaling the backend
-to multiple workers is **not supported** while Telegram is enabled (see §4).
+There is no queue, cache, object store, container orchestrator, second
+database or message channel, and none should be added to make the demo work.
 
 ### Local single-process commands
 
@@ -51,7 +50,7 @@ by a deploy). Keep them together: they are one backup and restore unit.
 
 | Setting | Environment variable | Default | Holds |
 | --- | --- | --- | --- |
-| `db_path` | `ARGUS_DB_PATH` | `argus.local.sqlite3` | Runs, normalized rows, matches, cases, proofs, previews, approvals, audit events, Telegram pairings/offsets. |
+| `db_path` | `ARGUS_DB_PATH` | `argus.local.sqlite3` | Runs, normalized rows, matches, cases, proofs, previews, approvals, audit events. |
 | `import_staging_root` | `ARGUS_IMPORT_STAGING_ROOT` | `artifacts/raw/imports` | Immutable source revisions, activation manifests and receipts, run snapshots. |
 
 Enforced behaviour:
@@ -174,39 +173,7 @@ credentials. That is fixed. `backend/app/cors.py` now owns the whole contract:
 The Next.js `/api/:path*` rewrite is unaffected: it is a server-to-server call
 that carries no `Origin` header.
 
-## 4. Telegram deployment boundary
-
-The Telegram channel is **optional and disabled by default**
-(`ARGUS_TELEGRAM_ENABLED` unset). It is a stdlib long-polling adapter — no SDK,
-no webhook, no tunnel, no public URL, no second service.
-
-**One backend process only.** The channel starts one poller thread inside the
-backend process. Running the backend with multiple workers or replicas while
-Telegram is enabled would start **competing pollers** against the same bot:
-Telegram's `getUpdates` hands each update to whichever poller asked first, so
-updates would be split unpredictably across processes and the durable offset in
-SQLite would be advanced by racing writers. The supported demo deployment is
-therefore a single backend process. A multi-process deployment must first move
-this channel into one dedicated worker or add a leader election; ARGUS
-deliberately does **not** ship a distributed lock for a prototype.
-
-Failure isolation, all covered by tests:
-
-- With Telegram disabled, no Telegram network call occurs at all — asserted in
-  `test_release_rules_only.py` with the transport tripwired.
-- An empty/blank `ARGUS_TELEGRAM_BOT_TOKEN` is normalized to "not configured"
-  and does not prevent rules-only startup while Telegram is disabled.
-- `ARGUS_TELEGRAM_ENABLED=true` without a token is rejected at configuration
-  time with a named error, rather than starting a channel that cannot work.
-- An unreachable Telegram API degrades **only** the channel: its state becomes
-  `DEGRADED` with a failure code, while reconciliation, verification, approval
-  and audit continue normally.
-- A malformed update is isolated and cannot terminate the poller.
-
-Telegram carries no financial authority: `/approve`, `/apply`, `/resolve` and
-`/razorpay` are explicitly refused.
-
-## 5. Rules-only fallback
+## 4. Rules-only fallback
 
 ARGUS must remain inspectable with no model access. With every model credential
 absent, `Settings.rules_only` is true and the deterministic pipeline —
@@ -217,12 +184,12 @@ approval, audit — runs unchanged. Cases that would have been investigated stay
 did not run.
 
 `backend/tests/integration/test_release_rules_only.py` proves this offline: it
-strips every credential environment variable, disables Telegram, arms tripwires
-on the socket layer and on each module's outbound transport, asserts each
+strips every credential environment variable, arms tripwires on the socket
+layer and on each module's outbound transport, asserts each
 tripwire genuinely fires when called, then runs the deterministic synthetic
 dataset and requires measured output with zero outbound attempts.
 
-## 6. Secret management
+## 5. Secret management
 
 - Secrets are read from environment variables or a gitignored `.env` /
   `.env.local`. `.env.example` contains **names only** and is checked by the
@@ -252,12 +219,10 @@ Environment variables, **by name only** (values belong in a gitignored file):
 `ARGUS_INVESTIGATOR_REQUIRE_TOOL_CALL`,
 `ARGUS_RAZORPAY_KEY_ID`, `ARGUS_RAZORPAY_KEY_SECRET`,
 `ARGUS_RAZORPAY_WEBHOOK_SECRET`,
-`ARGUS_TELEGRAM_ENABLED`, `ARGUS_TELEGRAM_BOT_TOKEN`,
-`ARGUS_TELEGRAM_POLL_TIMEOUT_S`, `ARGUS_TELEGRAM_PAIRING_TTL_S`,
 `ARGUS_VOICE_STT_API_KEY`, `ARGUS_VOICE_TTS_API_KEY`,
 `ARGUS_BACKEND_ORIGIN` (frontend build-time proxy target).
 
-## 7. Release submission manifest
+## 6. Release submission manifest
 
 `python scripts/verify_phase.py --phase 8` requires an owner-supplied manifest
 at `artifacts/release/submission-manifest.json`. It is **not** generated by any
@@ -329,11 +294,9 @@ Until the owner records the primary and backup videos and captures screenshots
 from the running application, **Phase 8 is expected to FAIL**. That is correct
 behaviour, not a software defect. The gate must not be weakened to pass.
 
-## 8. Known limitations
+## 7. Known limitations
 
 - Prototype scope: single-process, SQLite-backed, synthetic data only.
-- Telegram is offline-verified but still awaits owner live acceptance with a
-  real bot; multi-worker deployment is unsupported while it is enabled.
 - Razorpay integration is Test Mode read-only. No real money moves and no
   production ERP is written; corrections are always simulated entries.
 - Live model providers are optional and unmanaged: no retries beyond the

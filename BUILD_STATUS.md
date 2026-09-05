@@ -107,9 +107,6 @@ Implemented in this release-engineering slice (software side):
 - Enforced persistence contract: `ARGUS_DB_PATH` and `ARGUS_IMPORT_STAGING_ROOT`
   validated; startup creates only the required parent directories; automatic,
   ordered, idempotent migration; offline restart/restore integration proof.
-- Documented Telegram deployment boundary (one backend process; competing
-  pollers under multiple workers) with tests proving no network access when
-  disabled and channel-only degradation on failure.
 - Rules-only availability release check with armed, non-vacuous outbound
   tripwires on every real transport boundary.
 - Release documentation: `README.md`, `docs/architecture.md`,
@@ -149,8 +146,7 @@ evidence, not software defects, and the gate must not be weakened to pass:
 - Application screenshots whose displayed values are traceable to committed
   benchmark artifacts.
 - `artifacts/release/submission-manifest.json` describing the above (schema in
-  `docs/security-and-deployment.md`, section 7).
-- Owner live acceptance of the Telegram channel with a real bot.
+  `docs/security-and-deployment.md`, section 6).
 - Final release benchmark rerun on the frozen holdout, republished from the
   regenerated artifacts.
 - Commit this release-engineering slice; until then Phase 8 correctly fails
@@ -162,4 +158,4 @@ evidence, not software defects, and the gate must not be weakened to pass:
 - Live external LLM provider API keys remain optional and separate from offline deterministic fake provider benchmark tests.
 - Razorpay Test Mode client is read-only and synthetic offline-first; no live real money movements or production ERP mutation capabilities exist.
 - The ARGUS Voice Control Layer (optional work #3, PRD 18) is implemented and gated; multilingual Tier-1 expansion (ta/te/kn demo-ready) requires per-language test packs before those languages may be labelled ARGUS_TESTED.
-- Telegram is offline-verified only; a multi-worker backend deployment is unsupported while it is enabled.
+- The Telegram evidence-intake channel was removed from submission scope. Its schema-v10 tables remain as inert historical migration history so an existing local database still starts; no runtime code reads or writes them.

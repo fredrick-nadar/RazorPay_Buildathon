@@ -1,10 +1,10 @@
 """Release check: ARGUS stays usable with every live external service absent.
 
-The submission must not depend on a live model provider, a Telegram bot, or
-Razorpay being reachable. This test removes all model credentials, disables
-Telegram, and arms tripwires on every real outbound boundary in the backend,
-then runs the deterministic synthetic dataset in rules-only mode and requires
-measured output with no invented provider claim.
+The submission must not depend on a live model provider, a speech provider, or
+Razorpay being reachable. This test removes all model credentials and arms
+tripwires on every real outbound boundary in the backend, then runs the
+deterministic synthetic dataset in rules-only mode and requires measured output
+with no invented provider claim.
 
 The tripwires are proven non-vacuous: each one is called directly and must
 raise. A test that merely "made no call" because it patched the wrong symbol
@@ -24,7 +24,6 @@ from fastapi.testclient import TestClient
 
 import app.ai.base as ai_base
 import app.importers.razorpay_client as razorpay_client
-import app.telegram.channel as telegram_channel
 import app.voice.transcribe as voice_transcribe
 from app.config import Settings
 from app.domain.enums import BatchStatus
@@ -51,7 +50,6 @@ MODEL_ENV_NAMES = (
     "RAZORPAY_KEY_ID",
     "ARGUS_RAZORPAY_KEY_SECRET",
     "RAZORPAY_KEY_SECRET",
-    "ARGUS_TELEGRAM_BOT_TOKEN",
 )
 
 
@@ -115,19 +113,17 @@ def offline(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
     # attribute, so it is armed ONCE and labelled as the one shared boundary it
     # is; claiming two independent tripwires there would be false.
     #
-    # app.telegram.channel and app.voice.transcribe do ``from urllib.request
-    # import urlopen``, so each holds its own module-local name that the shared
-    # patch above would not affect. Those are genuinely separate and are armed
-    # separately. test_tripwire_topology_matches_the_import_graph pins these
-    # facts so the labels can never drift from the code.
+    # app.voice.transcribe does ``from urllib.request import urlopen``, so it
+    # holds its own module-local name that the shared patch above would not
+    # affect. It is genuinely separate and is armed separately.
+    # test_tripwire_topology_matches_the_import_graph pins these facts so the
+    # labels can never drift from the code.
     monkeypatch.setattr(urllib.request, "urlopen", tripwire("urllib.request.urlopen"))
-    monkeypatch.setattr(telegram_channel, "urlopen", tripwire("telegram.urlopen"))
     monkeypatch.setattr(voice_transcribe, "urlopen", tripwire("voice.urlopen"))
     calls["armed"] = (
         "socket.connect",
         "socket.create_connection",
         "urllib.request.urlopen",
-        "telegram.urlopen",
         "voice.urlopen",
     )
     yield calls
@@ -138,7 +134,6 @@ def _settings(tmp_path: Path) -> Settings:
         db_path=tmp_path / "rules-only.sqlite3",
         import_staging_root=tmp_path / "staging",
         ai_provider="none",
-        telegram_enabled=False,
         _env_file=None,
     )
 
@@ -149,8 +144,7 @@ def test_tripwire_topology_matches_the_import_graph() -> None:
     assert ai_base.urllib.request is razorpay_client.urllib.request is urllib.request
     assert "urlopen" not in vars(ai_base)
     assert "urlopen" not in vars(razorpay_client)
-    # Genuinely separate module-local names.
-    assert "urlopen" in vars(telegram_channel)
+    # A genuinely separate module-local name.
     assert "urlopen" in vars(voice_transcribe)
 
 
@@ -160,7 +154,6 @@ def test_tripwires_are_not_vacuous(offline: dict[str, Any]) -> None:
         "socket.connect",
         "socket.create_connection",
         "urllib.request.urlopen",
-        "telegram.urlopen",
         "voice.urlopen",
     )
     # The shared stdlib boundary, reached through each of its two callers.
@@ -168,9 +161,7 @@ def test_tripwires_are_not_vacuous(offline: dict[str, Any]) -> None:
         ai_base.urllib.request.urlopen("https://api.groq.com/openai/v1/models")
     with pytest.raises(OutboundNetworkAttempted):
         razorpay_client.urllib.request.urlopen("https://api.razorpay.com/v1/payments")
-    # The two module-local bindings.
-    with pytest.raises(OutboundNetworkAttempted):
-        telegram_channel.urlopen("https://api.telegram.org/botX/getMe")
+    # The module-local binding.
     with pytest.raises(OutboundNetworkAttempted):
         voice_transcribe.urlopen("https://api.sarvam.ai/speech-to-text")
     # The ultimate boundary.
@@ -180,7 +171,6 @@ def test_tripwires_are_not_vacuous(offline: dict[str, Any]) -> None:
     assert offline["attempts"] == [
         "urllib.request.urlopen",
         "urllib.request.urlopen",
-        "telegram.urlopen",
         "voice.urlopen",
         "socket.create_connection",
     ]
@@ -223,67 +213,3 @@ def test_application_starts_and_reports_health_with_every_provider_absent(
     assert health.status_code == 200
     assert version.status_code == 200
     assert offline["attempts"] == [], "startup must not contact any external service"
-
-
-def test_telegram_disabled_makes_no_network_call_and_never_blocks_startup(
-    offline: dict[str, Any], tmp_path: Path
-) -> None:
-    settings = _settings(tmp_path)
-    assert settings.telegram_enabled is False
-    with TestClient(create_app(settings)) as client:
-        channel = client.app.state.telegram_channel  # type: ignore[attr-defined]
-        status = channel.status()
-        assert status["enabled"] is False
-        assert status["state"] == "DISABLED"
-        # Reconciliation stays available while the channel is off.
-        assert client.get("/api/v1/health").status_code == 200
-    assert offline["attempts"] == []
-
-
-def test_telegram_failure_degrades_only_the_telegram_channel(tmp_path: Path) -> None:
-    """An unreachable Telegram API must not take reconciliation down with it."""
-    from app.telegram.channel import TelegramApiError, TelegramChannel
-    from app.workflow.controller import ReconciliationController
-
-    settings = Settings(
-        db_path=tmp_path / "tg.sqlite3",
-        import_staging_root=tmp_path / "staging",
-        telegram_enabled=True,
-        telegram_bot_token="synthetic-not-a-real-token",  # noqa: S106 - synthetic
-        telegram_poll_timeout_s=1,
-        _env_file=None,
-    )
-    database = open_database(settings)
-    controller = ReconciliationController(database, settings)
-    controller.start()
-
-    class UnreachableClient:
-        def get_me(self) -> dict[str, Any]:
-            raise TelegramApiError("Telegram request failed.")
-
-    channel = TelegramChannel(settings, database, controller, client=UnreachableClient())
-    try:
-        channel.start()
-        channel.close()
-        assert channel.status()["failure_code"] == "BOT_AUTHENTICATION_FAILED"
-        # The financial path is untouched by the channel outage.
-        result = execute_run(DEV_INPUTS, database)
-        assert result.status is BatchStatus.COMPLETED
-    finally:
-        controller.close()
-        database.close()
-
-
-def test_telegram_config_problems_do_not_block_rules_only_startup(tmp_path: Path) -> None:
-    # Disabled + a junk token is not a startup failure.
-    settings = Settings(
-        db_path=tmp_path / "junk.sqlite3",
-        import_staging_root=tmp_path / "staging",
-        telegram_enabled=False,
-        telegram_bot_token="   ",
-        _env_file=None,
-    )
-    assert settings.telegram_enabled is False
-    assert settings.telegram_bot_token is None
-    with TestClient(create_app(settings)) as client:
-        assert client.get("/api/v1/health").status_code == 200

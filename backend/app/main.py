@@ -18,11 +18,9 @@ from app.api.routes_meta import router as meta_router
 from app.api.routes_razorpay import router as razorpay_router
 from app.api.routes_runs import router as runs_router
 from app.api.routes_status import router as status_router
-from app.api.routes_telegram import router as telegram_router
 from app.config import APP_NAME, Settings, get_settings
 from app.importers.session_staging import SourceRecoveryError, SourceRevisionError
 from app.persistence.database import open_database
-from app.telegram.channel import TelegramChannel
 from app.voice.api import router as voice_router
 from app.workflow.controller import ReconciliationController
 
@@ -36,14 +34,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.db = open_database(resolved)
         app.state.reconciliation_controller = ReconciliationController(app.state.db, resolved)
         app.state.reconciliation_controller.start()
-        app.state.telegram_channel = TelegramChannel(
-            resolved, app.state.db, app.state.reconciliation_controller
-        )
-        app.state.telegram_channel.start()
         try:
             yield
         finally:
-            app.state.telegram_channel.close()
             app.state.reconciliation_controller.close()
             app.state.db.close()
 
@@ -81,7 +74,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(voice_router)
     app.include_router(ai_router)
     app.include_router(ingest_router)
-    app.include_router(telegram_router)
     return app
 
 

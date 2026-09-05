@@ -113,21 +113,6 @@ interface AiStatus {
   fake_selected: boolean;
 }
 
-interface TelegramRuntimeStatus {
-  configured: boolean;
-  enabled: boolean;
-  state: "DISABLED" | "STARTING" | "RUNNING" | "DEGRADED" | "STOPPED";
-  bot_username: string | null;
-  failure_code: string | null;
-}
-
-interface TelegramConnection {
-  session_id: string;
-  status: "NOT_PAIRED" | "PENDING" | "CLAIMED" | "REVOKED";
-  pairing_code?: string;
-  expires_at_utc?: string;
-}
-
 const IMPORT_SESSION_KEY = "argus_import_session_v1";
 
 function delay(milliseconds: number): Promise<void> {
@@ -304,10 +289,6 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   const [reconciliationMode, setReconciliationMode] = useState<ReconciliationMode>("rules-only");
   const [aiStatusLoading, setAiStatusLoading] = useState(false);
-  const [telegramStatus, setTelegramStatus] = useState<TelegramRuntimeStatus | null>(null);
-  const [telegramConnection, setTelegramConnection] = useState<TelegramConnection | null>(null);
-  const [telegramBusy, setTelegramBusy] = useState(false);
-  const [telegramError, setTelegramError] = useState<string | null>(null);
   const workflowRequestRef = useRef(0);
   const [fileError, setFileError] = useState<string | null>(null);
   const [intendedType, setIntendedType] = useState<DocumentType>("payments");
@@ -427,42 +408,6 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
       });
     return () => { cancelled = true; };
   }, [open]);
-
-  const refreshTelegram = useCallback(async () => {
-    if (!sessionId) return;
-    try {
-      const [statusResponse, connectionResponse] = await Promise.all([
-        fetch("/api/v1/telegram/status"),
-        fetch(`/api/v1/telegram/sessions/${encodeURIComponent(sessionId)}`),
-      ]);
-      const status = await statusResponse.json();
-      const connection = await connectionResponse.json();
-      if (!statusResponse.ok || !connectionResponse.ok) {
-        throw new Error("Telegram status unavailable");
-      }
-      setTelegramStatus(status as TelegramRuntimeStatus);
-      setTelegramConnection((current) => ({
-        ...(connection as TelegramConnection),
-        pairing_code:
-          connection.status === "PENDING" && current?.status === "PENDING"
-            ? current.pairing_code
-            : undefined,
-      }));
-      setTelegramError(null);
-    } catch {
-      setTelegramError("Telegram channel status could not be loaded.");
-    }
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (open && sessionId) void refreshTelegram();
-  }, [open, sessionId, refreshTelegram]);
-
-  useEffect(() => {
-    if (!open || telegramConnection?.status !== "PENDING") return;
-    const timer = window.setInterval(() => void refreshTelegram(), 2000);
-    return () => window.clearInterval(timer);
-  }, [open, telegramConnection?.status, refreshTelegram]);
 
   const finishSuccessfulJob = useCallback((job: ReconciliationJob) => {
     if (!job.run_id) throw new Error("The completed workflow did not link a reconciliation run.");
@@ -707,52 +652,6 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
     } finally {
       setDemoGenerating(false);
     }
-  }
-
-  async function createTelegramPairing() {
-    if (!sessionId || telegramBusy) return;
-    setTelegramBusy(true);
-    setTelegramError(null);
-    try {
-      const response = await fetch("/api/v1/telegram/pairing-codes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId }),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.detail || "Telegram pairing could not be created.");
-      setTelegramConnection({ ...body, status: "PENDING" } as TelegramConnection);
-    } catch (error) {
-      setTelegramError(
-        error instanceof Error ? error.message : "Telegram pairing could not be created.",
-      );
-    } finally {
-      setTelegramBusy(false);
-    }
-  }
-
-  async function disconnectTelegram() {
-    if (!sessionId || telegramBusy) return;
-    setTelegramBusy(true);
-    try {
-      const response = await fetch(
-        `/api/v1/telegram/sessions/${encodeURIComponent(sessionId)}`,
-        { method: "DELETE" },
-      );
-      if (!response.ok) throw new Error("Telegram connection could not be removed.");
-      setTelegramConnection({ session_id: sessionId, status: "NOT_PAIRED" });
-      setTelegramError(null);
-    } catch {
-      setTelegramError("Telegram connection could not be removed.");
-    } finally {
-      setTelegramBusy(false);
-    }
-  }
-
-  async function refreshTelegramIntake() {
-    setTelegramBusy(true);
-    await Promise.all([refreshTelegram(), refreshSession()]);
-    setTelegramBusy(false);
   }
 
   async function runReconciliation() {
@@ -1015,7 +914,7 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
                     <div className="min-w-0">
                       <h3 className="text-[13px] font-bold text-slate-950">{LABELS[type]}</h3>
                       <p className="mt-1 break-all text-[11px] text-slate-600">{source ? source.original_filename : "Upload a matching synthetic CSV"}</p>
-                      {source && <p className="mt-1 text-[11px] text-slate-500">{source.origin === "MANUAL_CSV" ? "Your upload · saved in this session" : source.origin === "TELEGRAM_CSV" ? "Telegram upload · saved in this session" : source.origin === "SYNTHETIC_DEMO" ? "Legacy auto-generated file · upload required" : source.origin} · {source.accepted_count} valid rows{source.quarantined_count > 0 ? ` · ${source.quarantined_count} quarantined` : ""}</p>}
+                      {source && <p className="mt-1 text-[11px] text-slate-500">{source.origin === "MANUAL_CSV" ? "Your upload · saved in this session" : source.origin === "SYNTHETIC_DEMO" ? "Legacy auto-generated file · upload required" : source.origin} · {source.accepted_count} valid rows{source.quarantined_count > 0 ? ` · ${source.quarantined_count} quarantined` : ""}</p>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1025,53 +924,6 @@ export function ConnectDatasetModal({ open, onClose, onSyncSuccess }: ConnectDat
                 </div>
               </article>;
             })}
-
-            <details className="rounded-xl border border-slate-200 bg-white px-3 py-3 sm:px-4">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[12px] font-bold text-slate-950 [&::-webkit-details-marker]:hidden">
-                <span>Telegram intake</span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-slate-600">
-                  {telegramConnection?.status === "CLAIMED" ? "Paired" : telegramStatus?.state ?? "Optional"}
-                </span>
-              </summary>
-              <div className="mt-3 border-t border-slate-100 pt-3">
-                {!telegramStatus?.enabled ? (
-                  <p className="text-[11px] leading-5 text-slate-500">
-                    Optional local channel. Configure the BotFather token and restart the backend to enable it.
-                  </p>
-                ) : telegramConnection?.status === "CLAIMED" ? (
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] font-semibold text-slate-900">
-                        Connected{telegramStatus.bot_username ? ` to @${telegramStatus.bot_username}` : ""}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        Use /upload bank, /upload ledger, /status, /reconcile, or /cases in the private chat.
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button type="button" disabled={telegramBusy} onClick={() => void refreshTelegramIntake()} className="rounded-lg border border-slate-300 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-700 hover:bg-slate-50 disabled:opacity-50">Refresh intake</button>
-                      <button type="button" disabled={telegramBusy} onClick={() => void disconnectTelegram()} className="rounded-lg border border-slate-300 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-700 hover:bg-slate-50 disabled:opacity-50">Disconnect</button>
-                    </div>
-                  </div>
-                ) : telegramConnection?.status === "PENDING" && telegramConnection.pairing_code ? (
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] text-slate-500">Send this once in the bot&apos;s private chat:</p>
-                      <code className="mt-1 block font-mono text-sm font-bold tracking-wider text-slate-950">/pair {telegramConnection.pairing_code}</code>
-                    </div>
-                    <span className="font-mono text-[9px] uppercase tracking-wider text-slate-500">Short-lived · one use</span>
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="text-[11px] leading-5 text-slate-500">
-                      Pair one private Telegram chat to this import session. Credentials and approvals remain dashboard-only.
-                    </p>
-                    <button type="button" disabled={telegramBusy || telegramStatus.state !== "RUNNING"} onClick={() => void createTelegramPairing()} className="rounded-lg bg-slate-950 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-500">{telegramBusy ? "Preparing…" : "Generate pairing code"}</button>
-                  </div>
-                )}
-                {telegramError && <p role="alert" className="mt-2 text-[11px] font-medium text-slate-700">{telegramError}</p>}
-              </div>
-            </details>
 
             {(analyzing || fileError) && <div>{analyzing ? <p className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600">Profiling columns and checking known aliases…</p> : fileError && <ApiError message={fileError} />}</div>}
 

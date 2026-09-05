@@ -95,7 +95,6 @@ def persistence(tmp_path: Path) -> tuple[Settings, Path]:
     settings = Settings(
         db_path=root / "db" / "argus.sqlite3",
         import_staging_root=root / "staging",
-        telegram_enabled=False,
         _env_file=None,
     )
     assert not settings.db_path.exists()

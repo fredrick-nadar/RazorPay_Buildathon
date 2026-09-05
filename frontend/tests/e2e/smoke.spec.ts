@@ -31,10 +31,9 @@ test("empty dashboard gives one truthful path to the first run", async ({ page }
   await expect(page.getByText("Nothing to answer from yet")).toBeVisible();
 
   await page.getByRole("button", { name: "Import evidence" }).click();
-  await page.getByText("Telegram intake", { exact: true }).click();
-  await expect(
-    page.getByText(/Configure the BotFather token and restart the backend/),
-  ).toBeVisible();
+  // The intake modal offers the three dashboard evidence sources and nothing else.
+  await expect(page.getByText("Bank statement", { exact: true })).toBeVisible();
+  await expect(page.getByText("Merchant ledger", { exact: true })).toBeVisible();
 });
 
 test("unavailable dashboard fails closed and exposes retry", async ({ page }) => {

@@ -467,7 +467,15 @@ def _migration_8_to_9_statements() -> tuple[str, ...]:
 
 
 def _migration_9_to_10_statements() -> tuple[str, ...]:
-    """One-time Telegram pairing and idempotent long-poll cursor state."""
+    """INERT historical schema from the withdrawn Telegram intake channel.
+
+    The Telegram feature was removed from the submission scope. Migration
+    history is append-only: this step stays exactly as it shipped so an
+    existing v10 database still starts, and dropping the tables would be a
+    destructive migration for no functional gain. No runtime code reads or
+    writes ``telegram_pairings`` or ``telegram_bot_offsets`` any more; on a
+    fresh database they are created empty and stay empty.
+    """
     return (
         """
         CREATE TABLE telegram_pairings (

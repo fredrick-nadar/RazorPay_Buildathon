@@ -12,7 +12,10 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
+from app.config import Settings
+from app.main import create_app
 from app.persistence import migrations
 from app.persistence.database import Database, PersistenceMigrationError
 from app.persistence.migrations import BASELINE_SCHEMA_V1
@@ -50,7 +53,11 @@ V5_TABLES = (
 
 V6_TABLES = ("gateway_demo_evidence",)
 V8_TABLES = ("reconciliation_jobs", "reconciliation_job_events")
-V10_TABLES = ("telegram_pairings", "telegram_bot_offsets")
+# Schema v10 shipped with the Telegram intake channel, which has since been
+# removed from scope. Migration history is append-only, so these tables are
+# still created and must still exist for an existing v10 database to start;
+# no runtime code reads or writes them any more.
+V10_INERT_TABLES = ("telegram_pairings", "telegram_bot_offsets")
 
 ALL_RUNTIME_TABLES = (
     *V2_TABLES,
@@ -59,7 +66,7 @@ ALL_RUNTIME_TABLES = (
     *V5_TABLES,
     *V6_TABLES,
     *V8_TABLES,
-    *V10_TABLES,
+    *V10_INERT_TABLES,
 )
 
 
@@ -102,6 +109,36 @@ class TestFreshDatabase:
             assert rows == []
         finally:
             database.close()
+
+    def test_withdrawn_telegram_tables_exist_but_stay_inert(self, tmp_path: Path) -> None:
+        """v10 schema still exists for compatibility; nothing writes to it.
+
+        The Telegram intake channel was removed from scope. Its tables survive
+        so an existing v10 database still starts, but a full application boot
+        and a reconciliation run must leave them empty.
+        """
+        settings = Settings(
+            db_path=tmp_path / "inert.sqlite3",
+            import_staging_root=tmp_path / "staging",
+            _env_file=None,
+        )
+        with TestClient(create_app(settings)) as client:
+            assert client.get("/api/v1/health").status_code == 200
+            # The removed control plane is gone, not merely hidden.
+            assert client.get("/api/v1/telegram/status").status_code == 404
+            database = client.app.state.db
+            for table in V10_INERT_TABLES:
+                assert database.query_all(f"SELECT * FROM {table}") == []
+
+    def test_no_runtime_module_references_the_inert_tables(self) -> None:
+        backend_app = Path(__file__).resolve().parents[2] / "app"
+        offenders = [
+            path.relative_to(backend_app).as_posix()
+            for path in backend_app.rglob("*.py")
+            if any(table in path.read_text(encoding="utf-8") for table in V10_INERT_TABLES)
+            and path.name != "migrations.py"
+        ]
+        assert offenders == [], f"runtime code still references withdrawn tables: {offenders}"
 
 
 class TestUpgradeFromV1:
@@ -173,7 +210,7 @@ class TestUpgradeFromV1:
             assert set(V5_TABLES) <= _table_names(path)
             assert set(V6_TABLES) <= _table_names(path)
             assert set(V8_TABLES) <= _table_names(path)
-            assert set(V10_TABLES) <= _table_names(path)
+            assert set(V10_INERT_TABLES) <= _table_names(path)
             rows = upgraded.query_all("SELECT run_id FROM runs")
             assert [row["run_id"] for row in rows] == ["run-existing"]
         finally:

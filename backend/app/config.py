@@ -83,10 +83,6 @@ class Settings(BaseSettings):
     # the fallback reserve above protects the next provider.
     ai_provider_max_attempts: int = Field(default=1, ge=1, le=3)
     workflow_max_attempts: int = Field(default=2, ge=1, le=5)
-    telegram_enabled: bool = False
-    telegram_bot_token: SecretStr | None = None
-    telegram_poll_timeout_s: int = Field(default=10, ge=1, le=50)
-    telegram_pairing_ttl_s: int = Field(default=600, ge=60, le=3600)
     # SYNTHETIC demo merchant fee agreement. Not Razorpay published pricing.
     # Integer basis points keep every expected amount exact integer paise.
     # The MDR/GST audit reads these instead of request query parameters, so a
@@ -216,7 +212,6 @@ class Settings(BaseSettings):
         "openai_api_key",
         "razorpay_key_secret",
         "razorpay_webhook_secret",
-        "telegram_bot_token",
         "sarvam_api_key",
         "elevenlabs_api_key",
         mode="before",
@@ -362,12 +357,6 @@ class Settings(BaseSettings):
             raise ValueError(f"ARGUS_CORS_ALLOWED_ORIGINS is invalid: {exc}") from None
         return self
 
-    @model_validator(mode="after")
-    def _require_telegram_token_when_enabled(self) -> Settings:
-        if self.telegram_enabled and self.telegram_bot_token is None:
-            raise ValueError("ARGUS_TELEGRAM_BOT_TOKEN is required when Telegram is enabled")
-        return self
-
     @property
     def rules_only(self) -> bool:
         """True when no usable model is configured; rules-only mode must always start."""
@@ -421,8 +410,6 @@ class Settings(BaseSettings):
             "log_level": self.log_level,
             "razorpay_test_mode_configured": self.razorpay_key_id is not None
             and self.razorpay_key_secret is not None,
-            "telegram_enabled": self.telegram_enabled,
-            "telegram_configured": self.telegram_bot_token is not None,
         }
 
 
